@@ -18,6 +18,7 @@ class ABRRGhostCar;
 class ABRRVehiclePawn;
 class ABRRAnimDecor;
 class ABRRLook;
+class ABRRPhoto;
 class ABRRSprites;
 class UMaterialParameterCollection;
 class ABRRWrecks;
@@ -72,6 +73,12 @@ private:
 	// The classic and remastered looks (brr.Look).
 	UPROPERTY()
 	TObjectPtr<ABRRLook> Look;
+
+	// Path-traced stills (P, brr.PhotoSamples; -BRRPhoto=<seconds> takes one and quits).
+	UPROPERTY()
+	TObjectPtr<ABRRPhoto> Photo;
+	double PhotoAt = -1;   // -BRRPhoto: race-clock seconds to take it at
+	double RaceClock = 0;  // seconds since the race was built
 
 	// The import's MPC_BRR: its DrawDistance is the view distance (brr.ViewCells).
 	UPROPERTY()

@@ -144,13 +144,18 @@ void ABRRLook::Apply(bool bInRemastered, bool bInPathTracing, bool bInFrameGener
 	// Resolution with Ray Reconstruction denoising Lumen's rays, Frame Generation, and Reflex to win
 	// back the latency it costs.
 	SetCVar(TEXT("r.ScreenPercentage"), bRemastered && !bNativeResolution ? 67 : 100);
+	// The path tracer renders every pixel itself and denoises its own result: no upscaler, no
+	// generated frames, and no progress bar drawn into the image.
+	const bool bRealTime = bRemastered && !bPathTracing;
+	if (bPathTracing) SetCVar(TEXT("r.ScreenPercentage"), 100);
 	if (HasDlss())
 	{
-		SetCVar(TEXT("r.NGX.DLSS.Enable"), bRemastered ? 1 : 0);
-		SetCVar(TEXT("r.NGX.DLSS.DenoiserMode"), bRemastered ? 1 : 0);
+		SetCVar(TEXT("r.NGX.DLSS.Enable"), bRealTime ? 1 : 0);
+		SetCVar(TEXT("r.NGX.DLSS.DenoiserMode"), bRealTime ? 1 : 0);
 	}
-	if (HasCVar(TEXT("r.Streamline.DLSSG.Enable"))) SetCVar(TEXT("r.Streamline.DLSSG.Enable"), bFrameGeneration ? 1 : 0);
-	if (HasCVar(TEXT("t.Streamline.Reflex.Enable"))) SetCVar(TEXT("t.Streamline.Reflex.Enable"), bRemastered ? 1 : 0);
-	SetCVar(TEXT("r.PathTracing.Denoiser"), bPathTracing ? 1 : 0); // the engine's NNE denoiser between samples
+	if (HasCVar(TEXT("r.Streamline.DLSSG.Enable"))) SetCVar(TEXT("r.Streamline.DLSSG.Enable"), bFrameGeneration && bRealTime ? 1 : 0);
+	if (HasCVar(TEXT("t.Streamline.Reflex.Enable"))) SetCVar(TEXT("t.Streamline.Reflex.Enable"), bRealTime ? 1 : 0);
+	SetCVar(TEXT("r.PathTracing.Denoiser"), bPathTracing ? 1 : 0); // the engine's NNE denoiser, on the gathered samples
+	SetCVar(TEXT("r.PathTracing.ProgressDisplay"), 0);
 	if (GEngine) GEngine->Exec(World, bPathTracing ? TEXT("ShowFlag.PathTracing 1") : TEXT("ShowFlag.PathTracing 0"));
 }

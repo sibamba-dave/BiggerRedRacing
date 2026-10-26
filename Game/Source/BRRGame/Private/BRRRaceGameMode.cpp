@@ -7,6 +7,7 @@
 #include "BRRVehiclePawn.h"
 #include "BRRAnimDecor.h"
 #include "BRRLook.h"
+#include "BRRPhoto.h"
 #include "BRRSprites.h"
 #include "BRRWrecks.h"
 #include "Camera/PlayerCameraManager.h"
@@ -25,7 +26,9 @@
 #include "GameFramework/GameUserSettings.h"
 #include "Kismet/KismetMaterialLibrary.h"
 #include "Materials/MaterialParameterCollection.h"
+#include "HAL/PlatformMisc.h"
 #include "Misc/CommandLine.h"
+#include "Misc/Paths.h"
 #include "Misc/Parse.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBRRRace, Log, All);
@@ -48,6 +51,9 @@ namespace
 
 	TAutoConsoleVariable<int32> CVarDlaa(TEXT("brr.DLAA"), 0,
 		TEXT("1: the remastered look at full resolution, DLSS anti-aliasing it (DLAA) instead of upscaling from two thirds (TSR: TAA at 100%)."));
+
+	TAutoConsoleVariable<int32> CVarPhotoSamples(TEXT("brr.PhotoSamples"), 512,
+		TEXT("Samples per pixel the path tracer gathers for a photo (P in a race)."));
 
 	TAutoConsoleVariable<bool> CVarSurfaceHandling(TEXT("brr.SurfaceHandling"), true,
 		TEXT("The player's car handles as the surface under it does in the original (off: the track's everywhere)."));
@@ -187,6 +193,8 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 	DrawRange = LoadObject<UMaterialParameterCollection>(nullptr, TEXT("/Game/BRR/Materials/MPC_BRR.MPC_BRR"));
 	Look = GetWorld()->SpawnActor<ABRRLook>();
 	Look->Build(World.SunDirection, DrawRange);
+	Photo = GetWorld()->SpawnActor<ABRRPhoto>();
+	FParse::Value(FCommandLine::Get(), TEXT("BRRPhoto="), PhotoAt);
 	Sprites = GetWorld()->SpawnActor<ABRRSprites>();
 	Sprites->Build(World, LevelName);
 	AnimDecor = GetWorld()->SpawnActor<ABRRAnimDecor>();
@@ -241,6 +249,7 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 void ABRRRaceGameMode::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	RaceClock += DeltaSeconds;
 	if (!Race || !PlayerCar) return;
 
 	// The original's rules and opponents advance in whole 28 ms ticks.
@@ -311,6 +320,13 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 		if (const APlayerController* PC = GetWorld()->GetFirstPlayerController())
 		{
 			if (PC->WasInputKeyJustPressed(EKeys::F5)) CVarLook->Set(Look->IsRemastered() ? 0 : 1, ECVF_SetByConsole);
+			if (Photo && (PC->WasInputKeyJustPressed(EKeys::P) || (PhotoAt >= 0 && RaceClock >= PhotoAt)))
+			{
+				const FString Name = FString::Printf(TEXT("Photo_%s_%s.png"), *LevelName, *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S")));
+				Photo->Take(Look, CVarPhotoSamples.GetValueOnGameThread(), FPaths::Combine(FPaths::ScreenShotDir(), Name));
+				if (PhotoAt >= 0) PhotoAt = -2; // taken: quit once it is saved
+			}
+			if (PhotoAt == -2 && Photo && !Photo->IsBusy() && !Photo->LastSaved().IsEmpty()) FPlatformMisc::RequestExit(false, TEXT("BRRPhoto"));
 		}
 		Look->Apply(CVarLook.GetValueOnGameThread() != 0, CVarPathTracing.GetValueOnGameThread() != 0, CVarFrameGeneration.GetValueOnGameThread() != 0,
 			CVarDlaa.GetValueOnGameThread() != 0);

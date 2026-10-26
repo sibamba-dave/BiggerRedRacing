@@ -50,7 +50,7 @@ The game runs in a borderless window over the whole desktop (Alt+Enter for a win
 `-ResX=`/`-ResY=` to start in one).
 
 Controls: W/Up accelerate, S/Down brake and reverse, A/D or Left/Right steer, Space handbrake,
-R recover, Shift boost. Gamepad: triggers, left stick, X handbrake, Y recover, A boost.
+R recover, Shift boost, P photo, F5 look, C camera. Gamepad: triggers, left stick, X handbrake, Y recover, A boost.
 
 Dev switches: `-BRRDriveTest` (handling comparison, see `Docs/Handling.md`), `-BRRAutopilot` (drives
 the player's car along a ghost's racing line, recovering when stuck).
@@ -77,8 +77,7 @@ not the level's palette colours (export `T_<LEVEL>_Palette` from the import as t
   Super Resolution with Ray Reconstruction (denoising Lumen's rays), plus DLSS Frame Generation and
   Reflex, when NVIDIA's plugins are installed (`brr.FrameGeneration 0` turns frame generation off),
   else by TSR. `brr.DLAA 1` renders at full resolution instead: DLAA (TSR as plain anti-aliasing
-  without DLSS). `brr.PathTracing 1` renders through the path tracer (with the engine's denoiser)
-  for stills. The terrain's liquids are shaded as what they are: water dark and glassy under
+  without DLSS). The terrain's liquids are shaded as what they are: water dark and glassy under
   moving ripples, reflecting the sky and the banks; ice smooth and shining; lava glowing. The
   original has no such notion, so `FBRRWorld::LiquidOf` reads it off each level's surface types:
   the WATER circuits' river is TRACK, the lakes and the sea elsewhere are SLIPPY, which is ice on
@@ -87,6 +86,13 @@ not the level's palette colours (export `T_<LEVEL>_Palette` from the import as t
 NVIDIA's DLSS 4.5 plugins for UE 5.8 (DLSS, Streamline and its parts) go in the engine, e.g.
 `Engine/Plugins/Marketplace/NVIDIA/`; the project enables `DLSS` and `Streamline`. They are not part
 of this repository.
+
+Photo mode (P in a race): the race pauses, the path tracer gathers `brr.PhotoSamples` (512) samples
+per pixel at full resolution, the engine's denoiser cleans them, and the still is saved without the
+HUD to `Saved/Screenshots/` as `Photo_<LEVEL>_<time>.png`; then the race carries on. The path tracer
+starts its samples over whenever anything moves, and UE 5.8's temporal denoiser for it is
+offline-only, so it is for stills; `brr.PathTracing 1` shows it live, grainy in motion.
+`-BRRPhoto=<seconds>` takes one at that point in the race and quits.
 
 The materials carry both looks (`MPC_BRR.Remaster`); `ABRRLook` spawns the remastered sky and
 lighting and sets the renderer. Needs DX12 / SM6 and a ray-tracing GPU for the remastered look.
