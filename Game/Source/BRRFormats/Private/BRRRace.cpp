@@ -498,9 +498,18 @@ FTransform FBRRRace::PlayerCameraTransform(double Alpha) const
 	const double Mirror = double(I.Scene.map_w - 1) * bigred::kTerrainTexelWorldSize;
 	const FVector Eye = BRR::GameToUE(Mirror - V.eye[0], -V.eye[1], V.eye[2]);
 	auto Dir = [](const float D[3]) { return FVector(D[2], -D[0], D[1]); }; // render dir -> UE
-	const FVector Forward = Dir(V.forward).GetSafeNormal();
-	const FVector Up = Dir(V.up).GetSafeNormal();
-	return FTransform(FRotationMatrix::MakeFromXZ(Forward, Up).ToQuat(), Eye);
+	const FVector Ahead = Dir(V.forward).GetSafeNormal2D();
+	// The view looks at the controller's aim point - the car lifted by the preset's aim height,
+	// or the tunnel one - not at the car, which ORR's bearing pitches to. Measured on captures of
+	// the original (WATER1 and DIRT1 grids, Tools/dosbox-x): the car sits ~16 degrees below the
+	// view centre in both, which this reproduces; ORR's port kept it dead centre.
+	const bigred::VehicleSim& Car = I.Cars[I.Player];
+	const int32 AimHeight = Car.in_tunnel ? bigred::kTunnelAimHeight : bigred::kCameraPresets[I.Camera.preset].aim_height;
+	const FVector Aim = BRR::GameToUE(Car.world_x(), Car.world_y() - AimHeight, Car.world_z());
+	const FVector ToAim = Aim - Eye;
+	const double Pitch = FMath::Atan2(ToAim.Z, ToAim.Size2D());
+	const FVector Forward = Ahead * FMath::Cos(Pitch) + FVector::UpVector * FMath::Sin(Pitch);
+	return FTransform(FRotationMatrix::MakeFromXZ(Forward, FVector::UpVector).ToQuat(), Eye);
 }
 
 void FBRRRace::CyclePlayerCamera() { Impl->Camera.cycle_preset(); }

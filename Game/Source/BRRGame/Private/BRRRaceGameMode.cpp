@@ -34,9 +34,13 @@ namespace
 		TEXT("How far the world is drawn, in terrain cells of view depth: the original's view distance, which it ")
 		TEXT("retuned between 10 and 22 against the frame rate. 0 draws the whole map."));
 
-	// The original's 4:3 screen and 60-degree vertical field; any other window shape is letterboxed.
+	// The original's 4:3 screen; any other window shape is letterboxed.
 	constexpr float ClassicAspect = 4.f / 3.f;
-	const float ClassicHorizontalFov = float(FMath::RadiansToDegrees(2.0 * FMath::Atan(FMath::Tan(FMath::DegreesToRadians(30.0)) * ClassicAspect)));
+	// The original's vertical field of view, solved from a capture of the original (WATER1 grid,
+	// Tools/dosbox-x) against known scenery: a focal length of 476 pixels on its 480-line screen.
+	// ORR uses 60 degrees, a choice.
+	constexpr double ClassicVerticalFovDegrees = 53.5;
+	const float ClassicHorizontalFov = float(FMath::RadiansToDegrees(2.0 * FMath::Atan(FMath::Tan(FMath::DegreesToRadians(ClassicVerticalFovDegrees * 0.5)) * ClassicAspect)));
 
 	// "L_DIRT1" (or a PIE "UEDPIE_0_L_DIRT1") -> "DIRT1"; empty for any other map.
 	FString LevelFromMap(const UWorld* World)
