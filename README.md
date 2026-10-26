@@ -97,6 +97,25 @@ offline-only, so it is for stills; `brr.PathTracing 1` shows it live, grainy in 
 The materials carry both looks (`MPC_BRR.Remaster`); `ABRRLook` spawns the remastered sky and
 lighting and sets the renderer. Needs DX12 / SM6 and a ray-tracing GPU for the remastered look.
 
+### Upscaled textures
+The remastered look draws the original's texture pages upscaled 4x by an ESRGAN model, with a
+normal and roughness map derived from each; classic keeps the original pixels. The import writes
+every page to `Game/Saved/BRRAtlases/<terrain|pages>/<hash>.png` (named by its pixels, so a page
+levels share is done once), `Tools/upscale_textures.py --batch` upscales what the cache lacks into
+`Tools/upscale/cache/`, and the next import uses it:
+```
+py -3.11 -m venv Tools\upscale\.venv
+Tools\upscale\.venv\Scripts\python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+Tools\upscale\.venv\Scripts\python -m pip install spandrel pillow numpy
+Tools\upscale\.venv\Scripts\python -I Tools\upscale_textures.py Tools\upscale\models\4x_foolhardy_Remacri.pth --batch Game\Saved\BRRAtlases Tools\upscale\cache
+```
+The model is `4x_foolhardy_Remacri.pth` (OpenModelDB; e.g. huggingface.co/uwg/upscaler), in
+`Tools/upscale/models/` (git-ignored, like the venv and the cache). Of those tried on the
+original's art (Real-ESRGAN x4plus, UltraSharp, NMKD Siax, NMKD Superscale, Remacri) it adds the
+most texture without speckling it; x4plus, trained on photographs, smears the ground flat. Terrain
+pages are upscaled tile by tile (the map lays tiles next to unrelated ones), and transparency
+stays crisp.
+
 ## Reference captures of the original
 The original runs in DOSBox-X for side-by-side checks. Put the portable 64-bit build in
 `Tools/dosbox-x/` (git-ignored), copy the rip's `RACING\` to `Tools/dosbox-x/c/RACING\`, and start it

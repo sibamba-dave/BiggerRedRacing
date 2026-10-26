@@ -9,6 +9,7 @@ public class BRRImporter : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new[]
 		{
 			"AssetRegistry",
+			"ImageCore",
 			"BRRFormats",
 			"MaterialEditor",
 			"MeshDescription",

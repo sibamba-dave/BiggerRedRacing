@@ -27,7 +27,13 @@
 #include "Engine/PostProcessVolume.h"
 #include "Engine/CollisionProfile.h"
 #include "Materials/MaterialInstanceConstant.h"
+#include "ImageCore.h"
+#include "ImageUtils.h"
+#include "Materials/MaterialExpressionConstant4Vector.h"
+#include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
+#include "Misc/Paths.h"
+#include "Misc/SecureHash.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "StaticMeshAttributes.h"
 #include "UObject/Package.h"
@@ -96,6 +102,44 @@ namespace
 		return Texture;
 	}
 
+	// The upscaled pages for the remastered look (Tools/upscale_textures.py). Every page the
+	// importer meets is written to Saved/BRRAtlases/<terrain|pages>/<hash>.png, named by its pixels
+	// so a page several levels share is upscaled once; the tool leaves <hash>.png (the colour, 4x)
+	// and <hash>_nr.png (tangent-space normal in RGB, roughness variation about one half in A) in
+	// Tools/upscale/cache, and the next import picks them up. Classic never reads them.
+	FString PageHash(const FBRRImage& Image)
+	{
+		uint8 Digest[FSHA1::DigestSize];
+		FSHA1::HashBuffer(Image.Pixels.GetData(), Image.Pixels.Num() * sizeof(FColor), Digest);
+		return BytesToHex(Digest, 8);
+	}
+
+	FString UpscaleCacheDir() { return FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("../Tools/upscale/cache")); }
+
+	void DumpPage(const FBRRImage& Image, const FString& Hash, bool bTerrain)
+	{
+		const FString Path = FPaths::ProjectSavedDir() / TEXT("BRRAtlases") / (bTerrain ? TEXT("terrain") : TEXT("pages")) / Hash + TEXT(".png");
+		if (IFileManager::Get().FileExists(*Path)) return;
+		FImageUtils::SaveImageByExtension(*Path, FImageView(Image.Pixels.GetData(), Image.Width, Image.Height));
+	}
+
+	// An upscaled page as a texture: the colour in sRGB, the normal/roughness map as raw data.
+	UTexture2D* MakeUpscaledTexture(const FString& PackageName, const FString& File, bool bColour)
+	{
+		FImage Image;
+		if (!FImageUtils::LoadImage(*File, Image)) return nullptr;
+		Image.ChangeFormat(ERawImageFormat::BGRA8, Image.GammaSpace); // the bytes as written, no gamma change
+		UTexture2D* Texture = NewAsset<UTexture2D>(PackageName);
+		Texture->Source.Init(Image.SizeX, Image.SizeY, 1, 1, TSF_BGRA8, Image.RawData.GetData());
+		Texture->SRGB = bColour;
+		Texture->LODGroup = TEXTUREGROUP_World;
+		Texture->MipGenSettings = TMGS_FromTextureGroup;
+		Texture->CompressionSettings = TC_Default;
+		Texture->PostEditChange();
+		SaveAsset(Texture);
+		return Texture;
+	}
+
 	// The two classic masters: unlit, palette colours shown as-is. Textured is masked on the atlas
 	// alpha (palette index 0); Flat takes the vertex colour.
 	struct FMasters
@@ -104,6 +148,7 @@ namespace
 		UMaterial* Flat = nullptr;
 		UMaterial* Sky = nullptr;      // the original's banded sky, from an 18x1 palette strip
 		UMaterial* Display = nullptr;  // replaces the tonemapper: scene colour out as sRGB, untouched
+		UTexture2D* FlatDetail = nullptr; // a page's normal/roughness map where it has no upscale: flat, average
 	};
 
 	UMaterialExpressionCustom* MakeCustom(UMaterial* Mat, const FString& Code, ECustomMaterialOutputType Output,
@@ -185,7 +230,11 @@ namespace
 	// alpha by MakeMesh: 1 ground, 2/3 water, 1/3 ice, 0 lava): water as a dark, glassy surface
 	// under moving ripples, which Lumen's reflections show the sky and the banks in; ice as a
 	// smooth, shining one; lava glowing. The classic look ignores it.
-	void ConnectLook(UMaterial* Mat, UMaterialParameterCollection* Collection, UMaterialExpression* Colour, int32 ColourOutput)
+	//
+	// Detail (float4) is the surface's own relief: a tangent-space normal and a roughness variation
+	// about one half, from the upscaled page's normal/roughness map - flat and average without one.
+	void ConnectLook(UMaterial* Mat, UMaterialParameterCollection* Collection, UMaterialExpression* Colour, int32 ColourOutput,
+		UMaterialExpression* Detail)
 	{
 		auto Make = [Mat](UClass* Class, int32 X, int32 Y) { return UMaterialEditingLibrary::CreateMaterialExpression(Mat, Class, X, Y); };
 		UMaterialExpression* Remaster = MakeCollectionValue(Mat, Collection, TEXT("Remaster"), -500, 400);
@@ -207,12 +256,12 @@ namespace
 		{
 			return MakeCustomOutputs(Mat, FString::Printf(TEXT("int k = (int)K;\n%s"), Code), Type,
 				{ MakeTuple(FName(TEXT("C")), Colour, ColourOutput), MakeTuple(FName(TEXT("R")), Remaster, 0), MakeTuple(FName(TEXT("K")), (UMaterialExpression*)Kind, 0),
-				  MakeTuple(FName(TEXT("Rough")), Rough, 0), MakeTuple(FName(TEXT("Shine")), Shine, 0) }, Y);
+				  MakeTuple(FName(TEXT("Rough")), Rough, 0), MakeTuple(FName(TEXT("Shine")), Shine, 0), MakeTuple(FName(TEXT("D")), Detail, 0) }, Y);
 		};
 		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return C.rgb * (1 - R) + (k == 3 ? C.rgb * 16.0 : 0);"), CMOT_Float3, 0), TEXT(""), MP_EmissiveColor);
 		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return C.rgb * R * (k == 1 ? 0.35 : k == 3 ? 0.02 : 1.0);"), CMOT_Float3, 100), TEXT(""), MP_BaseColor);
 		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return R * (k == 1 || k == 2 ? 0.5 : Shine);"), CMOT_Float1, 200), TEXT(""), MP_Specular);
-		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return k == 1 ? 0.03 : k == 2 ? 0.1 : k == 3 ? 0.55 : Rough;"), CMOT_Float1, 300), TEXT(""), MP_Roughness);
+		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return k == 1 ? 0.03 : k == 2 ? 0.1 : k == 3 ? 0.55 : saturate(Rough + (D.w - 0.5));"), CMOT_Float1, 300), TEXT(""), MP_Roughness);
 
 		// The ripples: four travelling waves, a few metres long, summed into a world-space slope
 		// and handed to the material in tangent space (the atlas tiles turn and mirror from cell to
@@ -233,8 +282,9 @@ namespace
 		ToTangent->Input.Connect(0, Ripples);
 		ToTangent->TransformSourceType = TRANSFORMSOURCE_World;
 		ToTangent->TransformType = TRANSFORM_Tangent;
-		UMaterialExpressionCustom* Normal = MakeCustomOutputs(Mat, TEXT("return K == 1 ? normalize(N) : float3(0, 0, 1);"), CMOT_Float3,
-			{ MakeTuple(FName(TEXT("N")), (UMaterialExpression*)ToTangent, 0), MakeTuple(FName(TEXT("K")), (UMaterialExpression*)Kind, 0) }, 900);
+		UMaterialExpressionCustom* Normal = MakeCustomOutputs(Mat, TEXT("return K == 1 ? normalize(N) : R > 0.5 ? normalize(D.xyz) : float3(0, 0, 1);"), CMOT_Float3,
+			{ MakeTuple(FName(TEXT("N")), (UMaterialExpression*)ToTangent, 0), MakeTuple(FName(TEXT("K")), (UMaterialExpression*)Kind, 0),
+			  MakeTuple(FName(TEXT("R")), Remaster, 0), MakeTuple(FName(TEXT("D")), Detail, 0) }, 900);
 		UMaterialEditingLibrary::ConnectMaterialProperty(Normal, TEXT(""), MP_Normal);
 	}
 
@@ -255,6 +305,18 @@ namespace
 			SaveAsset(Collection);
 		}
 		{
+			FBRRImage Flat;
+			Flat.Width = Flat.Height = 4;
+			Flat.Pixels.Init(FColor(128, 128, 255, 128), 16);
+			UTexture2D* Texture = NewAsset<UTexture2D>(Root / TEXT("Textures/T_BRR_FlatDetail"));
+			Texture->Source.Init(4, 4, 1, 1, TSF_BGRA8, reinterpret_cast<const uint8*>(Flat.Pixels.GetData()));
+			Texture->SRGB = false;
+			Texture->CompressionSettings = TC_Default;
+			Texture->PostEditChange();
+			SaveAsset(Texture);
+			M.FlatDetail = Texture;
+		}
+		{
 			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Textured"));
 			Mat->SetShadingModel(MSM_DefaultLit);
 			Mat->BlendMode = BLEND_Masked;
@@ -269,13 +331,23 @@ namespace
 			Classic->ConstMipValue = 0;
 			auto* Smooth = Cast<UMaterialExpressionTextureSampleParameter2D>(
 				UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionTextureSampleParameter2D::StaticClass(), -800, 250));
-			Smooth->ParameterName = TEXT("Atlas");
+			// Remastered: the upscaled page where there is one (AtlasHD; else the page itself), and
+			// its normal/roughness map (AtlasDetail).
+			Smooth->ParameterName = TEXT("AtlasHD");
 			Smooth->Texture = Default;
 			Smooth->SamplerSource = SSM_Wrap_WorldGroupSettings;
+			auto* DetailMap = Cast<UMaterialExpressionTextureSampleParameter2D>(
+				UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionTextureSampleParameter2D::StaticClass(), -800, 1300));
+			DetailMap->ParameterName = TEXT("AtlasDetail");
+			DetailMap->Texture = M.FlatDetail;
+			DetailMap->SamplerType = SAMPLERTYPE_LinearColor;
+			DetailMap->SamplerSource = SSM_Wrap_WorldGroupSettings;
+			UMaterialExpressionCustom* Detail = MakeCustomOutputs(Mat, TEXT("return float4(T.rgb * 2 - 1, T.a);"), CMOT_Float4,
+				{ MakeTuple(FName(TEXT("T")), (UMaterialExpression*)DetailMap, 5) }, 1300);
 			UMaterialExpression* Remaster = MakeCollectionValue(Mat, Collection, TEXT("Remaster"), -800, 500);
 			UMaterialExpressionCustom* Colour = MakeCustomOutputs(Mat, TEXT("return lerp(A, B, R);"), CMOT_Float4,
 				{ MakeTuple(FName(TEXT("A")), (UMaterialExpression*)Classic, 5), MakeTuple(FName(TEXT("B")), (UMaterialExpression*)Smooth, 5), MakeTuple(FName(TEXT("R")), Remaster, 0) }, 500);
-			ConnectLook(Mat, Collection, Colour, 0);
+			ConnectLook(Mat, Collection, Colour, 0, Detail);
 			auto* Mask = MakeCustomOutputs(Mat, TEXT("return C.a * D;"), CMOT_Float1,
 				{ MakeTuple(FName(TEXT("C")), (UMaterialExpression*)Colour, 0), MakeTuple(FName(TEXT("D")), MakeDrawRange(Mat, Collection), 0) }, 600);
 			UMaterialEditingLibrary::ConnectMaterialProperty(Mask, TEXT(""), MP_OpacityMask);
@@ -344,7 +416,10 @@ namespace
 			UMaterialExpressionCustom* Decode = MakeCustom(Mat, TEXT(
 				"float3 c = saturate(Srgb.rgb);\n"
 				"return lerp(pow((c + 0.055) / 1.055, 2.4), c / 12.92, step(c, 0.04045));"), CMOT_Float3, { { TEXT("Srgb"), Colour } });
-			ConnectLook(Mat, Collection, Decode, 0);
+			auto* Detail = Cast<UMaterialExpressionConstant4Vector>(
+				UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionConstant4Vector::StaticClass(), -800, 1300));
+			Detail->Constant = FLinearColor(0, 0, 1, 0.5f); // flat colours have no relief
+			ConnectLook(Mat, Collection, Decode, 0, Detail);
 			Mat->BlendMode = BLEND_Masked;
 			UMaterialEditingLibrary::ConnectMaterialProperty(MakeDrawRange(Mat, Collection), TEXT(""), MP_OpacityMask);
 			UMaterialEditingLibrary::RecompileMaterial(Mat);
@@ -367,6 +442,8 @@ namespace
 		FString Prefix;   // <LEVEL>
 		FMasters Masters;
 		TMap<int32, UTexture2D*> Textures;
+		TSet<int32> TerrainAtlases; // pages the terrain draws from: a grid of tiles, upscaled tile by tile
+		TMap<int32, TPair<UTexture2D*, UTexture2D*>> Upscaled; // colour, detail; null where not upscaled
 		TMap<TTuple<int32, bool, ESurface>, UMaterialInstanceConstant*> Materials;
 
 		UMaterialInstanceConstant* MaterialFor(int32 Atlas, bool bTwoSided, ESurface Surface = ESurface::Ground)
@@ -386,6 +463,24 @@ namespace
 					Texture = MakeTexture(Dir / TEXT("Textures") / FString::Printf(TEXT("T_%s_Atlas%02d"), *Prefix, Atlas), World->Atlases[Atlas], true);
 				}
 				MI->SetTextureParameterValueEditorOnly(FMaterialParameterInfo(TEXT("Atlas")), Texture);
+				TPair<UTexture2D*, UTexture2D*>* Up = Upscaled.Find(Atlas);
+				if (!Up)
+				{
+					const FBRRImage& Page = World->Atlases[Atlas];
+					const FString Hash = PageHash(Page);
+					DumpPage(Page, Hash, TerrainAtlases.Contains(Atlas));
+					const FString Base = UpscaleCacheDir() / Hash;
+					const FString Stem = Dir / TEXT("Textures") / FString::Printf(TEXT("T_%s_Atlas%02d"), *Prefix, Atlas);
+					TPair<UTexture2D*, UTexture2D*> New(nullptr, nullptr);
+					if (IFileManager::Get().FileExists(*(Base + TEXT(".png"))) && IFileManager::Get().FileExists(*(Base + TEXT("_nr.png"))))
+					{
+						New.Key = MakeUpscaledTexture(Stem + TEXT("_HD"), Base + TEXT(".png"), true);
+						New.Value = MakeUpscaledTexture(Stem + TEXT("_Detail"), Base + TEXT("_nr.png"), false);
+					}
+					Up = &Upscaled.Add(Atlas, New);
+				}
+				MI->SetTextureParameterValueEditorOnly(FMaterialParameterInfo(TEXT("AtlasHD")), Up->Key ? Up->Key : Texture);
+				MI->SetTextureParameterValueEditorOnly(FMaterialParameterInfo(TEXT("AtlasDetail")), Up->Value ? Up->Value : Masters.FlatDetail);
 			}
 			if (bTwoSided)
 			{
@@ -572,6 +667,10 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 	Assets.Dir = Options.DestRoot / Level;
 	Assets.Prefix = Level;
 	Assets.Masters = MakeMasters(Options.DestRoot);
+	for (const FBRRMeshSection& Section : World.Terrain.Sections)
+	{
+		if (Section.Atlas != INDEX_NONE) Assets.TerrainAtlases.Add(Section.Atlas);
+	}
 
 	UStaticMesh* Terrain = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Terrain"), *Level), World.Terrain, true);
 	UStaticMesh* Decor = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Decor"), *Level), World.Decor, true);
