@@ -130,7 +130,8 @@ struct BRRFORMATS_API FBRRWorld
 	TArray<FBRRPlacement> Placements;
 	TArray<FBRRGate> Gates;
 	TArray<FBRRStart> Grid;          // retail six-car grid
-	TArray<FString> CarList;
+	TArray<FString> CarList;              // vehicles raced on this level (`car` lines)
+	TArray<FString> PresentationVehicles; // `car` lines that only decorate the front end (FEHELI)
 	int32 Laps = 3;
 
 	TArray<FBRRGhostTrack> Ghosts;

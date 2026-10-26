@@ -208,7 +208,10 @@ bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<
 				Start.Yaw = BRR::Bam16ToDegrees(R.yaw_bam16);
 			}
 		}
-		for (const std::string& Car : bigred::parse_car_list(Script)) Out.CarList.Add(FromUtf8(Car));
+		for (const std::string& Car : bigred::parse_car_list(Script))
+		{
+			(bigred::is_presentation_vehicle(Car) ? Out.PresentationVehicles : Out.CarList).Add(FromUtf8(Car));
+		}
 		Out.Laps = bigred::parse_laps(Script);
 
 		for (int32 Slot = 0; Slot < 10; ++Slot)

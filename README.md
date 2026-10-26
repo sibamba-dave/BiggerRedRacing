@@ -10,6 +10,9 @@ A UE 5.8 rebuild of *Big Red Racing* (Big Red Software / Domark, 1996). Phase A 
 - `Game/` – UE 5.8 C++ project
   - `Source/BRRFormats` – parsers for the original file formats (runtime, no engine deps beyond Core)
   - `Source/BRRGame` – gameplay
+  - `Plugins/BRRImporter` – editor plugin that bakes the original data into `Content/BRR/<LEVEL>/`
+    (textures, unlit materials, terrain/decor/vehicle meshes, a map with the grid). Local only: the
+    output is derived from your copy of the game and is gitignored.
 - `ThirdParty/OpenRedRacing` – reference reimplementation (submodule), used as a format/physics oracle
 - `Docs/Formats.md` – format spec
 
@@ -18,6 +21,20 @@ A UE 5.8 rebuild of *Big Red Racing* (Big Red Software / Domark, 1996). Phase A 
 D:\Games\UE_5.8\Engine\Build\BatchFiles\Build.bat BiggerRedRacingEditor Win64 Development -Project=%CD%\Game\BiggerRedRacing.uproject
 UnrealEditor-Cmd.exe Game\BiggerRedRacing.uproject -ExecCmds="Automation RunTests BRR;Quit" -unattended -NullRHI
 ```
+
+## Importing the original levels
+In the editor: **Tools → Big Red Racing → <LEVEL>** (or *Import all levels*). Headless:
+```
+UnrealEditor-Cmd.exe Game\BiggerRedRacing.uproject -run=BRRImport -Level=DIRT1 [-Vehicles=JEEP,ATV] [-Colour=1]
+UnrealEditor-Cmd.exe Game\BiggerRedRacing.uproject -run=BRRImport -All
+```
+Then open `/Game/BRR/<LEVEL>/L_<LEVEL>`.
+
+Screenshot regression (no window; run from PowerShell so `/Game/...` isn't path-mangled):
+```
+UnrealEditor.exe Game\BiggerRedRacing.uproject /Game/BRR/DIRT1/L_DIRT1 -game -RenderOffScreen -ResX=1280 -ResY=800 -BRRShot=60 -BRRShotName=DIRT1.png
+```
+writes `Game/Saved/Screenshots/WindowsEditor/DIRT1.png` and quits.
 
 ## Credits
 Format parsers are adapted from [OpenRedRacing](https://github.com/nynjardin/OpenRedRacing) (MIT, Copyright (c) 2026 PaPe), which in turn credits jacobgelling/red-archive and red-image. Big Red Racing and its data are the property of their respective owners.

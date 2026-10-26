@@ -1,0 +1,16 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1",
+	"FriendlyName": "Big Red Racing Importer",
+	"Description": "Bakes the original Big Red Racing data (via BRRFormats) into UE textures, materials, meshes and maps.",
+	"Category": "Bigger Red Racing",
+	"CanContainContent": false,
+	"Modules": [
+		{
+			"Name": "BRRImporter",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}
