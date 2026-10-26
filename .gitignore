@@ -27,3 +27,6 @@ Tools/**/build/
 
 # Portable DOSBox-X for reference captures of the original (Tools/README in docs)
 Tools/dosbox-x/
+
+# Python bytecode from the Tools scripts
+__pycache__/
