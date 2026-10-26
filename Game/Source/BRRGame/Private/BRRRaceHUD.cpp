@@ -161,6 +161,9 @@ void ABRRRaceHUD::DrawHUD()
 	// The original draws its SVGA artwork 1:1 on a 640x480 screen; every position below is that
 	// screen's, measured on a capture of the original (WATER1, Tools/dosbox-x), times K.
 	const float K = H / 480.f;
+	// The right-hand items keep their distance from the right edge on a wider screen than the
+	// original's 4:3 (the remastered look); on 4:3 this is 0.
+	const float Right = FMath::Max(0.f, W - 640.f * K);
 	const FBRRRacerStatus Me = Race->Status(Race->PlayerIndex());
 
 	// Top left: the level's map, 1:1, its outline at (2, 2), and every racer's dot on it in its
@@ -191,15 +194,15 @@ void ABRRRaceHUD::DrawHUD()
 		const int32 Place = FMath::Clamp(Me.Place, 1, 9);
 		const int32 Ordinal = OrdinalSt + (Place == 1 ? 0 : Place == 2 ? 1 : Place == 3 ? 2 : 3);
 		const float PlaceW = (SpriteWidth(Game, Digit0 + Place) + SpriteWidth(Game, Ordinal)) * K;
-		Sprite(Game, Ordinal, Sprite(Game, Digit0 + Place, 610.f * K - PlaceW, 24.f * K, K), 24.f * K, K);
+		Sprite(Game, Ordinal, Sprite(Game, Digit0 + Place, Right + 610.f * K - PlaceW, 24.f * K, K), 24.f * K, K);
 		// The boost, in the vehicle's mode (DIRT1's Jeep and WATER1's inflatable, captured): a
 		// pip per burst from (546, 84), 18 apart, spent ones dark; or a 76x14 frame at (526, 74)
 		// with the red fill over the 72x10 inside from (528, 76), emptying from the right.
 		const FBRRBoost Boost = Race->PlayerBoost();
-		auto At = [this, K](int32 Glyph, float X, float Y)
+		auto At = [this, K, Right](int32 Glyph, float X, float Y)
 		{
 			const FIntPoint In = GameInset.IsValidIndex(Glyph) ? GameInset[Glyph] : FIntPoint::ZeroValue;
-			Sprite(Game, Glyph, (X - In.X) * K, (Y - In.Y) * K, K);
+			Sprite(Game, Glyph, Right + (X - In.X) * K, (Y - In.Y) * K, K);
 		};
 		if (Boost.Mode == 1)
 		{
@@ -207,10 +210,10 @@ void ABRRRaceHUD::DrawHUD()
 		}
 		else if (Boost.Mode == 2)
 		{
-			auto Rect = [this, K](int32 Glyph, FVector2D Uv, float X, float Y, float W, float H)
+			auto Rect = [this, K, Right](int32 Glyph, FVector2D Uv, float X, float Y, float W, float H)
 			{
 				if (!Game.IsValidIndex(Glyph) || W <= 0) return;
-				FCanvasTileItem Tile(FVector2D(X * K, Y * K), Game[Glyph]->GetResource(), FVector2D(W * K, H * K), Uv, Uv, FLinearColor::White);
+				FCanvasTileItem Tile(FVector2D(Right + X * K, Y * K), Game[Glyph]->GetResource(), FVector2D(W * K, H * K), Uv, Uv, FLinearColor::White);
 				Tile.BlendMode = SE_BLEND_Opaque;
 				Canvas->DrawItem(Tile);
 			};
@@ -218,7 +221,7 @@ void ABRRRaceHUD::DrawHUD()
 			Rect(Pip, FillTexel, 528.f, 76.f, 72.f * float(FMath::Clamp(Boost.Fraction, 0.0, 1.0)), 10.f);
 		}
 		const FString Laps = FString::Printf(TEXT("%d/%d"), FMath::Min(Me.Lap, Race->Laps()), Race->Laps());
-		Text(Laps, 598.f * K - TextWidth(Laps, 2.f * K), 108.f * K, 2.f * K);
+		Text(Laps, Right + 598.f * K - TextWidth(Laps, 2.f * K), 108.f * K, 2.f * K);
 	}
 
 	// Centre: the banners the game has artwork for.

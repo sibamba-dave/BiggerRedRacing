@@ -17,6 +17,7 @@ class ACameraActor;
 class ABRRGhostCar;
 class ABRRVehiclePawn;
 class ABRRAnimDecor;
+class ABRRLook;
 class ABRRSprites;
 class UMaterialParameterCollection;
 class ABRRWrecks;
@@ -67,6 +68,10 @@ private:
 	// The destructible decor, built from the level at race start.
 	UPROPERTY()
 	TObjectPtr<ABRRWrecks> Wrecks;
+
+	// The classic and remastered looks (brr.Look).
+	UPROPERTY()
+	TObjectPtr<ABRRLook> Look;
 
 	// The import's MPC_BRR: its DrawDistance is the view distance (brr.ViewCells).
 	UPROPERTY()

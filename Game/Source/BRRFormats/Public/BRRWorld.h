@@ -174,6 +174,9 @@ struct BRRFORMATS_API FBRRWorld
 
 	TArray<FColor> Palette;          // the level's 256 colours (MAP.COL)
 	TArray<FColor> SkyStrip;         // 18 sky colours: SkyBandDegrees order, then ground near, ground far
+	// The level's `light` line: the direction the original's sun light travels (UE, unit), which
+	// the original uses to shade its vehicles and the remaster to place the sun.
+	FVector SunDirection = FVector(-0.65, 0.65, -0.38).GetSafeNormal();
 
 	int32 MapWidth = 0;              // terrain cells
 	int32 MapHeight = 0;

@@ -74,7 +74,9 @@ namespace
 		return NewObject<T>(Package, *FPackageName::GetLongPackageAssetName(PackageName), AssetFlags);
 	}
 
-	UTexture2D* MakeTexture(const FString& PackageName, const FBRRImage& Image)
+	// bMips: a mip chain for the remastered look's filtered sampling (the classic look reads only
+	// the top mip); the palette and sky strips are lookup tables and have none.
+	UTexture2D* MakeTexture(const FString& PackageName, const FBRRImage& Image, bool bMips = false)
 	{
 		UTexture2D* Texture = NewAsset<UTexture2D>(PackageName);
 		// FColor is BGRA in memory, which is exactly TSF_BGRA8.
@@ -82,7 +84,10 @@ namespace
 		Texture->SRGB = true;
 		Texture->Filter = TF_Nearest;
 		Texture->LODGroup = TEXTUREGROUP_Pixels2D;
-		Texture->MipGenSettings = TMGS_NoMipmaps;
+		Texture->MipGenSettings = bMips ? TMGS_SimpleAverage : TMGS_NoMipmaps;
+		// Never streamed: the classic look reads the top mip, and a streamed texture serves a blurred
+		// lower one until the top arrives (82% of a classic frame was off the palette).
+		Texture->NeverStream = true;
 		Texture->CompressionSettings = TC_EditorIcon; // uncompressed: palette art must stay exact
 		Texture->PostEditChange();
 		SaveAsset(Texture);
@@ -143,6 +148,49 @@ namespace
 			{ { TEXT("WorldPos"), WorldPos }, { TEXT("Camera"), Camera }, { TEXT("Forward"), Forward }, { TEXT("Range"), Range } });
 	}
 
+	UMaterialExpression* MakeCollectionValue(UMaterial* Mat, UMaterialParameterCollection* Collection, FName Name, int32 X, int32 Y)
+	{
+		auto* Value = Cast<UMaterialExpressionCollectionParameter>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionCollectionParameter::StaticClass(), X, Y));
+		Value->Collection = Collection;
+		Value->ParameterName = Name;
+		Value->ParameterId = Collection->GetParameterId(Name);
+		return Value;
+	}
+
+	UMaterialExpressionCustom* MakeCustomOutputs(UMaterial* Mat, const FString& Code, ECustomMaterialOutputType Output,
+		TArray<TTuple<FName, UMaterialExpression*, int32>> Inputs, int32 Y)
+	{
+		auto* Custom = Cast<UMaterialExpressionCustom>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionCustom::StaticClass(), -250, Y));
+		Custom->Code = Code;
+		Custom->OutputType = Output;
+		Custom->Inputs.Reset();
+		for (const TTuple<FName, UMaterialExpression*, int32>& In : Inputs)
+		{
+			FCustomInput& Input = Custom->Inputs.AddDefaulted_GetRef();
+			Input.InputName = In.Get<0>();
+			Input.Input.Connect(In.Get<2>(), In.Get<1>());
+		}
+		return Custom;
+	}
+
+	// The two looks off one material, switched at runtime by MPC_BRR.Remaster (ABRRRaceGameMode):
+	// classic (0) is the original's colour as emissive on a black, unshining surface - unlit, the
+	// palette exact; remastered (1) is the same colour as a lit base colour.
+	void ConnectLook(UMaterial* Mat, UMaterialParameterCollection* Collection, UMaterialExpression* Colour, int32 ColourOutput)
+	{
+		UMaterialExpression* Remaster = MakeCollectionValue(Mat, Collection, TEXT("Remaster"), -500, 400);
+		auto Part = [&](const TCHAR* Code, ECustomMaterialOutputType Type, int32 Y)
+		{
+			return MakeCustomOutputs(Mat, Code, Type, { MakeTuple(FName(TEXT("C")), Colour, ColourOutput), MakeTuple(FName(TEXT("R")), Remaster, 0) }, Y);
+		};
+		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return C.rgb * (1 - R);"), CMOT_Float3, 0), TEXT(""), MP_EmissiveColor);
+		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return C.rgb * R;"), CMOT_Float3, 100), TEXT(""), MP_BaseColor);
+		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return 0.35 * R;"), CMOT_Float1, 200), TEXT(""), MP_Specular);
+		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return 0.75;"), CMOT_Float1, 300), TEXT(""), MP_Roughness);
+	}
+
 	FMasters MakeMasters(const FString& Root)
 	{
 		FMasters M;
@@ -152,22 +200,37 @@ namespace
 			Distance.ParameterName = TEXT("DrawDistance");
 			Distance.DefaultValue = 0.f; // the editor shows the whole map
 			Collection->ScalarParameters.Add(Distance);
+			FCollectionScalarParameter Remaster;
+			Remaster.ParameterName = TEXT("Remaster");
+			Remaster.DefaultValue = 0.f;
+			Collection->ScalarParameters.Add(Remaster);
 			Collection->PostEditChange();
 			SaveAsset(Collection);
 		}
 		{
 			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Textured"));
-			Mat->SetShadingModel(MSM_Unlit);
+			Mat->SetShadingModel(MSM_DefaultLit);
 			Mat->BlendMode = BLEND_Masked;
-			auto* Tex = Cast<UMaterialExpressionTextureSampleParameter2D>(
-				UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionTextureSampleParameter2D::StaticClass(), -300, 0));
-			Tex->ParameterName = TEXT("Atlas");
-			Tex->Texture = LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/DefaultTexture.DefaultTexture"));
-			UMaterialEditingLibrary::ConnectMaterialProperty(Tex, TEXT("RGB"), MP_EmissiveColor);
-			auto* Mask = Cast<UMaterialExpressionMultiply>(
-				UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionMultiply::StaticClass(), -150, 200));
-			Mask->A.Connect(4, Tex); // alpha
-			Mask->B.Connect(0, MakeDrawRange(Mat, Collection));
+			// Classic samples the top mip with the texture's own nearest filter; remastered with
+			// the world's filtering (trilinear/anisotropic) across the mips.
+			UTexture2D* Default = LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/DefaultTexture.DefaultTexture"));
+			auto* Classic = Cast<UMaterialExpressionTextureSampleParameter2D>(
+				UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionTextureSampleParameter2D::StaticClass(), -800, 0));
+			Classic->ParameterName = TEXT("Atlas");
+			Classic->Texture = Default;
+			Classic->MipValueMode = TMVM_MipLevel;
+			Classic->ConstMipValue = 0;
+			auto* Smooth = Cast<UMaterialExpressionTextureSampleParameter2D>(
+				UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionTextureSampleParameter2D::StaticClass(), -800, 250));
+			Smooth->ParameterName = TEXT("Atlas");
+			Smooth->Texture = Default;
+			Smooth->SamplerSource = SSM_Wrap_WorldGroupSettings;
+			UMaterialExpression* Remaster = MakeCollectionValue(Mat, Collection, TEXT("Remaster"), -800, 500);
+			UMaterialExpressionCustom* Colour = MakeCustomOutputs(Mat, TEXT("return lerp(A, B, R);"), CMOT_Float4,
+				{ MakeTuple(FName(TEXT("A")), (UMaterialExpression*)Classic, 5), MakeTuple(FName(TEXT("B")), (UMaterialExpression*)Smooth, 5), MakeTuple(FName(TEXT("R")), Remaster, 0) }, 500);
+			ConnectLook(Mat, Collection, Colour, 0);
+			auto* Mask = MakeCustomOutputs(Mat, TEXT("return C.a * D;"), CMOT_Float1,
+				{ MakeTuple(FName(TEXT("C")), (UMaterialExpression*)Colour, 0), MakeTuple(FName(TEXT("D")), MakeDrawRange(Mat, Collection), 0) }, 600);
 			UMaterialEditingLibrary::ConnectMaterialProperty(Mask, TEXT(""), MP_OpacityMask);
 			UMaterialEditingLibrary::RecompileMaterial(Mat);
 			SaveAsset(Mat);
@@ -229,12 +292,12 @@ namespace
 			// as a texture sample would be. Read as linear, every flat face came out too bright:
 			// (32, 32, 32) showed as (99, 99, 99).
 			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Flat"));
-			Mat->SetShadingModel(MSM_Unlit);
+			Mat->SetShadingModel(MSM_DefaultLit);
 			UMaterialExpression* Colour = UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionVertexColor::StaticClass(), -500, 0);
 			UMaterialExpressionCustom* Decode = MakeCustom(Mat, TEXT(
 				"float3 c = saturate(Srgb.rgb);\n"
 				"return lerp(pow((c + 0.055) / 1.055, 2.4), c / 12.92, step(c, 0.04045));"), CMOT_Float3, { { TEXT("Srgb"), Colour } });
-			UMaterialEditingLibrary::ConnectMaterialProperty(Decode, TEXT(""), MP_EmissiveColor);
+			ConnectLook(Mat, Collection, Decode, 0);
 			Mat->BlendMode = BLEND_Masked;
 			UMaterialEditingLibrary::ConnectMaterialProperty(MakeDrawRange(Mat, Collection), TEXT(""), MP_OpacityMask);
 			UMaterialEditingLibrary::RecompileMaterial(Mat);
@@ -268,7 +331,7 @@ namespace
 				UTexture2D*& Texture = Textures.FindOrAdd(Atlas);
 				if (!Texture)
 				{
-					Texture = MakeTexture(Dir / TEXT("Textures") / FString::Printf(TEXT("T_%s_Atlas%02d"), *Prefix, Atlas), World->Atlases[Atlas]);
+					Texture = MakeTexture(Dir / TEXT("Textures") / FString::Printf(TEXT("T_%s_Atlas%02d"), *Prefix, Atlas), World->Atlases[Atlas], true);
 				}
 				MI->SetTextureParameterValueEditorOnly(FMaterialParameterInfo(TEXT("Atlas")), Texture);
 			}
@@ -561,10 +624,12 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 		SkyMesh->SetMaterial(0, SkyMaterial);
 		SkyMesh->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName); // a profile survives loading; a bare flag does not
 		SkyMesh->SetCastShadow(false);
+		Sky->Tags.Add(TEXT("BRRClassicSky")); // the remastered look has a real sky instead
 	}
 	{
 		APostProcessVolume* Look = Map->SpawnActor<APostProcessVolume>();
 		Look->SetActorLabel(TEXT("ClassicLook"));
+		Look->Tags.Add(TEXT("BRRClassicLook")); // weighted out by the remastered look
 		Look->bUnbound = true;
 		FPostProcessSettings& P = Look->Settings;
 		P.WeightedBlendables.Array.Add(FWeightedBlendable(1.f, Assets.Masters.Display));

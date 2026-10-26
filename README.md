@@ -61,6 +61,20 @@ the track's everywhere.
 Palette check: `python Tools/palette_check.py <screenshot.png> <palette.png>` reports pixels that are
 not the level's palette colours (export `T_<LEVEL>_Palette` from the import as the palette).
 
+## Classic and remastered looks
+`brr.Look` picks the look, live (F5 in a race):
+- `0`, classic: the original exactly - unlit palette colours (every pixel a palette entry,
+  `Tools/palette_check.py`), its banded sky, its view distance, 4:3, no anti-aliasing.
+- `1`, remastered (default): the same world lit - the level's own sun in a sky atmosphere with
+  volumetric clouds and height fog, Lumen global illumination and reflections on hardware ray
+  tracing, virtual shadow maps, filmic post (auto exposure, bloom, AO, motion blur), filtered and
+  mipmapped textures, widescreen, everything in view, upscaled by TSR (or DLSS when NVIDIA's DLSS
+  plugin is installed in the engine: it is picked up automatically). `brr.PathTracing 1` renders
+  through the path tracer (with the engine's denoiser) for stills.
+
+The materials carry both looks (`MPC_BRR.Remaster`); `ABRRLook` spawns the remastered sky and
+lighting and sets the renderer. Needs DX12 / SM6 and a ray-tracing GPU for the remastered look.
+
 ## Reference captures of the original
 The original runs in DOSBox-X for side-by-side checks. Put the portable 64-bit build in
 `Tools/dosbox-x/` (git-ignored), copy the rip's `RACING\` to `Tools/dosbox-x/c/RACING\`, and start it

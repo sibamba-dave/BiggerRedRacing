@@ -6,6 +6,7 @@
 #include "BRRRaceHUD.h"
 #include "BRRVehiclePawn.h"
 #include "BRRAnimDecor.h"
+#include "BRRLook.h"
 #include "BRRSprites.h"
 #include "BRRWrecks.h"
 #include "Camera/PlayerCameraManager.h"
@@ -19,6 +20,8 @@
 #include "EngineUtils.h"
 #include "Kismet/GameplayStatics.h"
 #include "HAL/IConsoleManager.h"
+#include "Engine/Engine.h"
+#include "Engine/GameViewportClient.h"
 #include "Kismet/KismetMaterialLibrary.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "Misc/CommandLine.h"
@@ -33,6 +36,11 @@ namespace
 	TAutoConsoleVariable<int32> CVarViewCells(TEXT("brr.ViewCells"), BRR::ViewCellsDefault,
 		TEXT("How far the world is drawn, in terrain cells of view depth: the original's view distance, which it ")
 		TEXT("retuned between 10 and 22 against the frame rate. 0 draws the whole map."));
+
+	TAutoConsoleVariable<int32> CVarLook(TEXT("brr.Look"), 1,
+		TEXT("0: the classic look, the original's exactly. 1: the remastered look (lit, Lumen, ray traced, upscaled). F5 toggles in a race."));
+	TAutoConsoleVariable<int32> CVarPathTracing(TEXT("brr.PathTracing"), 0,
+		TEXT("1: the remastered look through the path tracer (for stills: it converges over still frames)."));
 
 	TAutoConsoleVariable<bool> CVarSurfaceHandling(TEXT("brr.SurfaceHandling"), true,
 		TEXT("The player's car handles as the surface under it does in the original (off: the track's everywhere)."));
@@ -155,6 +163,8 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 	Wrecks = GetWorld()->SpawnActor<ABRRWrecks>();
 	Wrecks->Build(World.Wrecks, LevelName);
 	DrawRange = LoadObject<UMaterialParameterCollection>(nullptr, TEXT("/Game/BRR/Materials/MPC_BRR.MPC_BRR"));
+	Look = GetWorld()->SpawnActor<ABRRLook>();
+	Look->Build(World.SunDirection, DrawRange);
 	Sprites = GetWorld()->SpawnActor<ABRRSprites>();
 	Sprites->Build(World, LevelName);
 	AnimDecor = GetWorld()->SpawnActor<ABRRAnimDecor>();
@@ -262,9 +272,32 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 			if (PC->GetViewTarget() != RaceCamera) PC->SetViewTarget(RaceCamera);
 		}
 	}
+	if (Look)
+	{
+		if (const APlayerController* PC = GetWorld()->GetFirstPlayerController())
+		{
+			if (PC->WasInputKeyJustPressed(EKeys::F5)) CVarLook->Set(Look->IsRemastered() ? 0 : 1, ECVF_SetByConsole);
+		}
+		Look->Apply(CVarLook.GetValueOnGameThread() != 0, CVarPathTracing.GetValueOnGameThread() != 0);
+		if (RaceCamera)
+		{
+			// Classic: the original's 4:3, letterboxed. Remastered: the window's own shape, with the
+			// original's vertical field of view.
+			UCameraComponent* Lens = RaceCamera->GetCameraComponent();
+			double Aspect = ClassicAspect;
+			if (Look->IsRemastered())
+			{
+				FVector2D Size(16, 9);
+				if (GEngine && GEngine->GameViewport) GEngine->GameViewport->GetViewportSize(Size);
+				Aspect = Size.Y > 0 ? Size.X / Size.Y : 16.0 / 9.0;
+			}
+			Lens->bConstrainAspectRatio = !Look->IsRemastered();
+			Lens->SetFieldOfView(float(FMath::RadiansToDegrees(2.0 * FMath::Atan(FMath::Tan(FMath::DegreesToRadians(ClassicVerticalFovDegrees * 0.5)) * Aspect))));
+		}
+	}
 	if (DrawRange)
 	{
-		const int32 Cells = CVarViewCells.GetValueOnGameThread();
+		const int32 Cells = Look && Look->IsRemastered() ? 0 : CVarViewCells.GetValueOnGameThread();
 		UKismetMaterialLibrary::SetScalarParameterValue(GetWorld(), DrawRange, TEXT("DrawDistance"),
 			Cells > 0 ? float(Cells * BRR::TerrainCellCm) : 0.f);
 	}
@@ -340,7 +373,7 @@ void ABRRRaceGameMode::UpdateAutopilot()
 	const FVector Here = PlayerCar->GetBodyOriginTransform().GetLocation();
 	auto Dist2D = [&Here](const FVector& P) { return FVector::Dist2D(Here, P); };
 	const int32 Last = AutopilotLine.Num() - 1;
-	for (int32 Look = 0; Look < 400 && AutopilotCursor < Last; ++Look)
+	for (int32 Step = 0; Step < 400 && AutopilotCursor < Last; ++Step)
 	{
 		// Jump forward to the nearest point within the next stretch of line.
 		int32 Best = AutopilotCursor;

@@ -141,6 +141,13 @@ bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<
 			Script.assign(Txt->begin(), Txt->end());
 			Out.ScriptText = FromUtf8(Script);
 		}
+		{
+			// ORR sun_direction, in render space (+Y up), mapped to UE as every direction is.
+			const bigred::SunLight Sun = bigred::parse_light(Script);
+			const double A = Sun.elevation * 2.0 * PI / 65536.0, B = Sun.azimuth * 2.0 * PI / 65536.0;
+			const FVector Render(-FMath::Cos(A) * FMath::Sin(B), -FMath::Sin(A), -FMath::Cos(A) * FMath::Cos(B));
+			Out.SunDirection = FVector(Render.Z, -Render.X, Render.Y).GetSafeNormal();
+		}
 		if (const bigred::Blob* Raw = bigred::find_member(Scene.lev, "VIEW.RAW"))
 		{
 			if (Raw->size() == bigred::kRawSize)
