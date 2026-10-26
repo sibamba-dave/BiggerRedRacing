@@ -84,7 +84,9 @@ float ABRRRaceHUD::Sprite(const TArray<TObjectPtr<UTexture2D>>& Sheet, int32 Ind
 	UTexture2D* T = Sheet[Index];
 	FCanvasTileItem Tile(FVector2D(FMath::RoundToFloat(X), FMath::RoundToFloat(Y)), T->GetResource(),
 		FVector2D(T->GetSizeX() * Scale, T->GetSizeY() * Scale), FLinearColor(1, 1, 1, Alpha));
-	Tile.BlendMode = SE_BLEND_Translucent;
+	// The artwork's alpha is all or nothing (palette index 0); a translucent blend would mix the
+	// edges with the world behind, which the original's 8-bit screen never could.
+	Tile.BlendMode = Alpha < 1.f ? SE_BLEND_Translucent : SE_BLEND_Masked;
 	Canvas->DrawItem(Tile);
 	return X + T->GetSizeX() * Scale;
 }
@@ -105,7 +107,7 @@ float ABRRRaceHUD::Text(const FString& S, float X, float Y, float Scale, const F
 		UTexture2D* T = Alphabet[G];
 		FCanvasTileItem Tile(FVector2D(FMath::RoundToFloat(X), FMath::RoundToFloat(Y)), T->GetResource(),
 			FVector2D(T->GetSizeX() * Scale, T->GetSizeY() * Scale), Tint);
-		Tile.BlendMode = SE_BLEND_Translucent;
+		Tile.BlendMode = SE_BLEND_Masked;
 		Canvas->DrawItem(Tile);
 		X += (T->GetSizeX() + 1.f) * Scale;
 	}
@@ -204,8 +206,8 @@ void ABRRRaceHUD::DrawHUD()
 		const float Ms = FMath::Max(1.f, FMath::RoundToFloat(K));
 		const float Mx = Margin, My = PlaceBottom + 6.f * K;
 		FCanvasTileItem Map(FVector2D(Mx, My), MapTexture->GetResource(),
-			FVector2D(MapTexture->GetSizeX() * Ms, MapTexture->GetSizeY() * Ms), FLinearColor(1, 1, 1, 0.85f));
-		Map.BlendMode = SE_BLEND_Translucent;
+			FVector2D(MapTexture->GetSizeX() * Ms, MapTexture->GetSizeY() * Ms), FLinearColor::White);
+		Map.BlendMode = SE_BLEND_Masked; // opaque, as the original's 8-bit map
 		Canvas->DrawItem(Map);
 		// Every racer's dot in its own colour, as the original draws them; the player's last.
 		auto Dot = [&](int32 R)

@@ -155,7 +155,10 @@ namespace
 		}
 		{
 			// Unlit palette colours reach here exactly as authored; encode them for the display
-			// with no tone curve, so a pixel on screen is the original's palette entry.
+			// with no tone curve, so a pixel on screen is the original's palette entry. Snapped to
+			// the 8-bit step and lifted a quarter of one: the scene colour is fp16, and somewhere
+			// on the way out a value a hair under a step is truncated (208 came out as 207, see
+			// Tools/palette_check.py), which rounding and truncation both survive from here.
 			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Display"));
 			Mat->MaterialDomain = MD_PostProcess;
 			Mat->BlendableLocation = BL_ReplacingTonemapper;
@@ -166,17 +169,25 @@ namespace
 				"float3 c = saturate(Linear.rgb);\n"
 				"float3 lo = c * 12.92;\n"
 				"float3 hi = 1.055 * pow(c, 1.0 / 2.4) - 0.055;\n"
-				"return lerp(hi, lo, step(c, 0.0031308));"), CMOT_Float3, { { TEXT("Linear"), Scene } });
+				"float3 s = lerp(hi, lo, step(c, 0.0031308));\n"
+				"return saturate((floor(s * 255.0 + 0.5) + 0.25) / 255.0);"), CMOT_Float3, { { TEXT("Linear"), Scene } });
 			UMaterialEditingLibrary::ConnectMaterialProperty(Encode, TEXT(""), MP_EmissiveColor);
 			UMaterialEditingLibrary::RecompileMaterial(Mat);
 			SaveAsset(Mat);
 			M.Display = Mat;
 		}
 		{
+			// The vertex colour holds the palette entry's own bytes (a static mesh build sRGB-
+			// encodes it, and the vertex factory hands the bytes over raw), so it is decoded here
+			// as a texture sample would be. Read as linear, every flat face came out too bright:
+			// (32, 32, 32) showed as (99, 99, 99).
 			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Flat"));
 			Mat->SetShadingModel(MSM_Unlit);
-			UMaterialExpression* Colour = UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionVertexColor::StaticClass(), -300, 0);
-			UMaterialEditingLibrary::ConnectMaterialProperty(Colour, TEXT(""), MP_EmissiveColor);
+			UMaterialExpression* Colour = UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionVertexColor::StaticClass(), -500, 0);
+			UMaterialExpressionCustom* Decode = MakeCustom(Mat, TEXT(
+				"float3 c = saturate(Srgb.rgb);\n"
+				"return lerp(pow((c + 0.055) / 1.055, 2.4), c / 12.92, step(c, 0.04045));"), CMOT_Float3, { { TEXT("Srgb"), Colour } });
+			UMaterialEditingLibrary::ConnectMaterialProperty(Decode, TEXT(""), MP_EmissiveColor);
 			UMaterialEditingLibrary::RecompileMaterial(Mat);
 			SaveAsset(Mat);
 			M.Flat = Mat;
@@ -265,7 +276,7 @@ namespace
 					const FVertexInstanceID Instance = Desc.CreateVertexInstance(Vertex);
 					Normals[Instance] = Normal;
 					UVs.Set(Instance, 0, V.UV);
-					Colors[Instance] = FVector4f(FLinearColor(V.Color));
+					Colors[Instance] = FVector4f(FLinearColor(V.Color)); // the build sRGB-encodes it back to the palette bytes (M_BRR_Flat)
 					Corners[K] = Instance;
 				}
 				Desc.CreateTriangle(Group, Corners);
@@ -437,6 +448,17 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 			Comp->SetVisibility(false);
 			Comp->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
 		}
+	}
+
+	// The level's 256 colours as a 256x1 strip: the reference every pixel on screen should come from
+	// (Tools/palette_check.py).
+	if (World.Palette.Num() == 256)
+	{
+		FBRRImage Strip;
+		Strip.Width = 256;
+		Strip.Height = 1;
+		Strip.Pixels = World.Palette;
+		MakeTexture(Assets.Dir / TEXT("Textures") / FString::Printf(TEXT("T_%s_Palette"), *Level), Strip);
 	}
 
 	// The classic look: the original's sky, and palette colours shown exactly.
