@@ -66,6 +66,8 @@ struct FBRRBoost
 	double Fraction = 1.0;  // stock left, 0..1 (mode 2)
 };
 
+struct FBRRMesh;
+
 class BRRFORMATS_API FBRRRace
 {
 public:
@@ -84,7 +86,7 @@ public:
 	void EnableSound(bool bCommentary);
 	// What the race cannot see of the player's Chaos car, for its sound: a knock against solid
 	// scenery (the speed into it, cm/s) and a recovery onto the track.
-	void ReportPlayerImpact(double SpeedIntoCmPerSecond);
+	void ReportPlayerImpact(double SpeedIntoCmPerSecond, const FVector& Where = FVector::ZeroVector);
 	void ReportPlayerRecovered();
 	bool IsGhost(int32 Racer) const;
 	FString VehicleOf(int32 Racer) const;
@@ -126,6 +128,13 @@ public:
 	// revs, nitro, gear, height - in the level's palette; false when the vehicle has none. The
 	// sheet persists, as in the original: each call draws over the last.
 	bool DrawDashboard(TArray<FColor>& OutPixels, int32& OutWidth, int32& OutHeight);
+
+	// The ground effects every car raises - dust, spray, impact sparks - as the original runs them
+	// (ORR ParticleField: a ring of 100 puffs, each playing its flipbook where it was born). Their
+	// sheets are the import's atlas pages from WorldBase (FBRRWorld::ParticleAtlasBase) on.
+	void SetParticleAtlasBase(int32 WorldBase);
+	// The live particles as triangles in UE space, turned to the camera where they are sprites.
+	void GetParticles(const FVector& CameraRight, const FVector& CameraUp, FBRRMesh& Out) const;
 
 	// Destructible decor (FBRRWorld::Wrecks, by scenery instance), shared by the whole field. The
 	// player knocks a piece over when the original's blocker probe touches it, as in

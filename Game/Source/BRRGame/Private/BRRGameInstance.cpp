@@ -9,7 +9,7 @@
 
 namespace
 {
-	const TCHAR* Section = TEXT("BRR");
+	const TCHAR* ConfigSection = TEXT("BRR");
 	const TCHAR* FrontEndMap = TEXT("/Engine/Maps/Entry");
 }
 
@@ -23,11 +23,11 @@ void UBRRGameInstance::Init()
 		BRR::LoadTournament(DataDir, Tournament, Error);
 		Text.Load(DataDir);
 	}
-	GConfig->GetFloat(Section, TEXT("SoundVolume"), SoundVolume, GGameUserSettingsIni);
-	GConfig->GetFloat(Section, TEXT("MusicVolume"), MusicVolume, GGameUserSettingsIni);
-	GConfig->GetBool(Section, TEXT("Commentary"), bCommentary, GGameUserSettingsIni);
-	GConfig->GetInt(Section, TEXT("Look"), Look, GGameUserSettingsIni);
-	GConfig->GetInt(Section, TEXT("ViewCells"), ViewCells, GGameUserSettingsIni);
+	GConfig->GetFloat(ConfigSection, TEXT("SoundVolume"), SoundVolume, GGameUserSettingsIni);
+	GConfig->GetFloat(ConfigSection, TEXT("MusicVolume"), MusicVolume, GGameUserSettingsIni);
+	GConfig->GetBool(ConfigSection, TEXT("Commentary"), bCommentary, GGameUserSettingsIni);
+	GConfig->GetInt(ConfigSection, TEXT("Look"), Look, GGameUserSettingsIni);
+	GConfig->GetInt(ConfigSection, TEXT("ViewCells"), ViewCells, GGameUserSettingsIni);
 	ApplySettings();
 }
 
@@ -47,11 +47,11 @@ void UBRRGameInstance::ApplySettings() const
 
 void UBRRGameInstance::SaveSettings() const
 {
-	GConfig->SetFloat(Section, TEXT("SoundVolume"), SoundVolume, GGameUserSettingsIni);
-	GConfig->SetFloat(Section, TEXT("MusicVolume"), MusicVolume, GGameUserSettingsIni);
-	GConfig->SetBool(Section, TEXT("Commentary"), bCommentary, GGameUserSettingsIni);
-	GConfig->SetInt(Section, TEXT("Look"), Look, GGameUserSettingsIni);
-	GConfig->SetInt(Section, TEXT("ViewCells"), ViewCells, GGameUserSettingsIni);
+	GConfig->SetFloat(ConfigSection, TEXT("SoundVolume"), SoundVolume, GGameUserSettingsIni);
+	GConfig->SetFloat(ConfigSection, TEXT("MusicVolume"), MusicVolume, GGameUserSettingsIni);
+	GConfig->SetBool(ConfigSection, TEXT("Commentary"), bCommentary, GGameUserSettingsIni);
+	GConfig->SetInt(ConfigSection, TEXT("Look"), Look, GGameUserSettingsIni);
+	GConfig->SetInt(ConfigSection, TEXT("ViewCells"), ViewCells, GGameUserSettingsIni);
 	GConfig->Flush(false, GGameUserSettingsIni);
 	ApplySettings();
 }

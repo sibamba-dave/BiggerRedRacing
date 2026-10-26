@@ -692,6 +692,8 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 
 	UStaticMesh* Terrain = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Terrain"), *Level), World.Terrain, true, ESurface::Ground, true);
 	UStaticMesh* Decor = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Decor"), *Level), World.Decor, true, ESurface::Ground, true);
+	// The ground effects' sheets: no mesh draws them, the race's particles do (ABRRParticles).
+	for (int32 Page = 0; Page < World.ParticleAtlasCount; ++Page) Assets.MaterialFor(World.ParticleAtlasBase + Page, true, ESurface::Ground);
 	TArray<FVehicleAssets> VehicleAssets;
 	for (const FBRRVehicleMesh& Vehicle : World.Vehicles) VehicleAssets.Add(MakeVehicle(Assets, Vehicle));
 

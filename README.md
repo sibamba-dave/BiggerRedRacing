@@ -87,6 +87,10 @@ View distance: `brr.ViewCells` (console or `-ExecCmds="brr.ViewCells N"`) draws 
 cells deep, as the original did; it retuned this between 10 and 22 against the frame rate, and the
 default is 16. 0 draws the whole map.
 
+Ground effects: every car raises the original's dust, spray and impact sparks (the theme's `spot`
+shapes, ORR's 100-puff `ParticleField` playing each flipbook where it was born), drawn each frame
+from the import's atlas pages (`ABRRParticles`).
+
 Surface handling: the player's car takes the original's handling for the surface under it (track,
 slippy, grass, sand, ...: turning, acceleration, braking, top speed). `brr.SurfaceHandling 0` uses
 the track's everywhere.

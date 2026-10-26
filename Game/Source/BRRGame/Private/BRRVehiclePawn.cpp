@@ -337,7 +337,12 @@ void ABRRVehiclePawn::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPri
 	const UStaticMeshComponent* Mesh = Cast<UStaticMeshComponent>(OtherComp);
 	if (!Mesh || !Mesh->GetStaticMesh() || Mesh->GetStaticMesh()->GetName().EndsWith(TEXT("_Terrain"))) return;
 	const double Mass = Chassis ? Chassis->GetMass() : 0.0;
-	if (Mass > 0) ImpactSpeed = FMath::Max(ImpactSpeed, NormalImpulse.Size() / Mass);
+	const double Speed = Mass > 0 ? NormalImpulse.Size() / Mass : 0.0;
+	if (Speed > ImpactSpeed)
+	{
+		ImpactSpeed = Speed;
+		ImpactPoint = HitLocation;
+	}
 }
 
 void ABRRVehiclePawn::SetSurfaces(const FBRRHandlingMetrics& Handling)

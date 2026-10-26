@@ -6,6 +6,7 @@
 #include "BRRRaceHUD.h"
 #include "BRRAudio.h"
 #include "BRRGameInstance.h"
+#include "BRRParticles.h"
 #include "BRRSoundOutput.h"
 #include "AudioDevice.h"
 #include "BRRVehiclePawn.h"
@@ -244,6 +245,8 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 		if (It->ActorHasTag(TEXT("BRRPreview"))) It->Destroy();
 	}
 	Wrecks = GetWorld()->SpawnActor<ABRRWrecks>();
+	Particles = GetWorld()->SpawnActor<ABRRParticles>();
+	Race->SetParticleAtlasBase(World.ParticleAtlasBase);
 	Wrecks->Build(World.Wrecks, LevelName);
 	DrawRange = LoadObject<UMaterialParameterCollection>(nullptr, TEXT("/Game/BRR/Materials/MPC_BRR.MPC_BRR"));
 	Look = GetWorld()->SpawnActor<ABRRLook>();
@@ -319,7 +322,7 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 
 	// The original's rules and opponents advance in whole 28 ms ticks.
 	BRRAudio::SetVolumes(CVarSoundVolume.GetValueOnGameThread(), CVarMusicVolume.GetValueOnGameThread());
-	if (const double Knock = PlayerCar->TakeImpactSpeed(); Knock > 0) Race->ReportPlayerImpact(Knock);
+	if (const double Knock = PlayerCar->TakeImpactSpeed(); Knock > 0) Race->ReportPlayerImpact(Knock, PlayerCar->ImpactPoint);
 	if (PlayerCar->TakeRecovered()) Race->ReportPlayerRecovered();
 	const FTransform PlayerPose = PlayerCar->GetBodyOriginTransform();
 	const FVector PlayerVelocity = PlayerCar->GetVelocity();
@@ -418,6 +421,13 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 		{
 			RaceCamera->SetActorTransform(Race->PlayerCameraTransform(Alpha, bRemastered ? CVarCameraDistance.GetValueOnGameThread() : 1.0,
 				bRemastered ? CVarCameraLift.GetValueOnGameThread() : 0.0));
+		}
+		if (Particles)
+		{
+			FBRRMesh Puffs;
+			const FRotationMatrix View(RaceCamera->GetActorRotation());
+			Race->GetParticles(View.GetUnitAxis(EAxis::Y), View.GetUnitAxis(EAxis::Z), Puffs);
+			Particles->Update(Puffs, LevelName);
 		}
 		UE_LOG(LogBRRRace, VeryVerbose, TEXT("camera %s rot %s | car %s rot %s"), *RaceCamera->GetActorLocation().ToCompactString(),
 			*RaceCamera->GetActorRotation().ToCompactString(), *PlayerCar->GetBodyOriginTransform().GetLocation().ToCompactString(),

@@ -183,6 +183,11 @@ struct BRRFORMATS_API FBRRWorld
 
 	// Texture pages shared by every mesh below (terrain atlases, scenery pages, vehicle sheets).
 	TArray<FBRRImage> Atlases;
+	// The ground effects' sheets (dust, spray, sparks: the theme's `spot` shapes, ORR
+	// particle_render), appended to the atlases after the vehicles'. The race draws its particles
+	// from these pages (FBRRRace::SetParticleAtlasBase).
+	int32 ParticleAtlasBase = INDEX_NONE;
+	int32 ParticleAtlasCount = 0;
 
 	TArray<FColor> Palette;          // the level's 256 colours (MAP.COL)
 	TArray<FColor> SkyStrip;         // 18 sky colours: SkyBandDegrees order, then ground near, ground far

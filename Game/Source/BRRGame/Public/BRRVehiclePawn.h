@@ -83,6 +83,7 @@ public:
 	// For the race's sound, read and cleared by the game mode: the hardest knock against solid
 	// scenery since (speed into it, cm/s), and whether the car was put back on the track.
 	double TakeImpactSpeed() { const double S = ImpactSpeed; ImpactSpeed = 0; return S; }
+	FVector ImpactPoint = FVector::ZeroVector; // where the hardest of them struck
 	bool TakeRecovered() { const bool b = bRecovered; bRecovered = false; return b; }
 	virtual void NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp, bool bSelfMoved,
 		FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit) override;

@@ -17,6 +17,9 @@
 #include "formats/vehicle_script.h"
 #include "scene/chase_camera.h"
 #include "scene/dashboard.h"
+#include "scene/particle_render.h"
+#include "sim/particles.h"
+#include "BRRMeshConvert.h"
 #include "scene/level_scene.h"
 #include "scene/vehicle_render.h"
 #include "sim/race.h"
@@ -332,10 +335,16 @@ struct FBRRRace::FImpl
 	int32 GhostRate = 0x200;
 	std::string GameDir, LevelName, Script; // for the sound
 	int32 PendingImpact = 0;                // 1/512 units per tick, the next tick's knock
+	TOptional<FVector> PendingSpark;        // game units: where it struck (the impact sparks)
 	bool bRecovered = false;
 	std::unique_ptr<FBRRRaceSound> Sound;
 	bigred::Dashboard Dash;   // the player's, when its vehicle has one
 	bool bCabin = false;      // the cabin view is on
+	bigred::ParticleField Particles;
+	bigred::ParticleVisuals ParticleLooks;
+	int32 RaceParticleBase = 0;   // where this scene's copy of the sheets starts
+	int32 WorldParticleBase = INDEX_NONE;
+	uint32 TimerTicks = 0;        // the original's 14 ms counter, which the emitter reads
 	uint32 BandClock = 0;
 
 	void LinkField()
@@ -476,6 +485,15 @@ TUniquePtr<FBRRRace> FBRRRace::Create(const FString& DataDir, const FString& Lev
 		I.Camera.reset(I.Cars[I.Player], I.Terrain);
 		I.CameraPrev = I.Camera.now;
 		I.CameraAim = I.CameraAimPrev = I.AimOf(I.Cars[I.Player]);
+		{
+			const std::string Env = bigred::env_name_for_level(Name);
+			const bigred::ArchivePtr EnvArchive = bigred::game_archive_or_empty(GameDir, Env + ".ENV");
+			std::vector<bigred::SpotEffect> Spots;
+			if (const bigred::Blob* Txt = bigred::find_member(*EnvArchive, Env + ".TXT")) Spots = bigred::parse_spot_effects(std::string(Txt->begin(), Txt->end()));
+			I.Particles.configure(Spots);
+			I.RaceParticleBase = I.Scene.atlas_count;
+			I.ParticleLooks = bigred::build_particle_visuals(Spots, *EnvArchive, I.Scene);
+		}
 		return Race;
 	}
 	catch (const std::exception& E)
@@ -609,6 +627,14 @@ void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity,
 		P.nitro_refused = false;
 		P.just_destroyed = false;
 		I.PendingImpact = 0;
+		if (I.PendingSpark)
+		{
+			P.spark_x = int32(I.PendingSpark->X);
+			P.spark_y = int32(I.PendingSpark->Y);
+			P.spark_z = int32(I.PendingSpark->Z);
+			P.spark_pending = true;
+			I.PendingSpark.Reset();
+		}
 
 		// The boost, in VehicleSim::step's order: read_input counts a running burst down,
 		// update_nitro fires one off the reserve (mode 1 on the key's edge, mode 2 while held),
@@ -696,6 +722,15 @@ void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity,
 			}
 			I.RubberBand();
 		}
+		// The ground effects, in the original's order: every car emits right after the physics,
+		// then the field ages twice - it runs on the 14 ms timer, the physics on every other tick.
+		for (bigred::VehicleSim& Car : I.Cars)
+		{
+			if (Car.tune) I.Particles.emit(Car, I.TimerTicks);
+		}
+		I.Particles.tick();
+		I.Particles.tick();
+		I.TimerTicks += 2;
 		if (I.Sound)
 		{
 			I.Sound->OnTick(I.Race, I.Cars, I.Camera.now, bCarContact, I.bRecovered);
@@ -737,8 +772,10 @@ void FBRRRace::EnableSound(bool bCommentary)
 	}
 }
 
-void FBRRRace::ReportPlayerImpact(double SpeedIntoCmPerSecond)
+void FBRRRace::ReportPlayerImpact(double SpeedIntoCmPerSecond, const FVector& Where)
 {
+	// Sparks for a real knock only (over ~12 km/h into it), not every graze.
+	if (!Where.IsZero() && SpeedIntoCmPerSecond > 350.0) Impl->PendingSpark = UEToGame(Where);
 	// In the game's own measure, 1/512 units per tick: the strongest knock of the tick counts.
 	const int32 Magnitude = int32(FMath::Min(SpeedIntoCmPerSecond / BRR::CmPerUnit * 512.0 * TickSeconds, double(0x7fffffff)));
 	Impl->PendingImpact = FMath::Max(Impl->PendingImpact, Magnitude);
@@ -791,6 +828,30 @@ void FBRRRace::CyclePlayerCamera(bool bCabinAvailable)
 	else
 	{
 		I.Camera.cycle_preset();
+	}
+}
+
+void FBRRRace::SetParticleAtlasBase(int32 WorldBase) { Impl->WorldParticleBase = WorldBase; }
+
+void FBRRRace::GetParticles(const FVector& CameraRight, const FVector& CameraUp, FBRRMesh& Out) const
+{
+	const FImpl& I = *Impl;
+	Out = FBRRMesh();
+	if (I.WorldParticleBase == INDEX_NONE || I.Particles.live_count() == 0) return;
+	// UE directions into ORR's render space (X mirrored about the map, +Y up).
+	const float Right[3] = { float(-CameraRight.Y), float(CameraRight.Z), float(CameraRight.X) };
+	const float Up[3] = { float(-CameraUp.Y), float(CameraUp.Z), float(CameraUp.X) };
+	const std::vector<bigred::TerrainVertex> Verts = bigred::place_particles(I.ParticleLooks, I.Particles, Right, Up, I.Scene.map_w, bigred::kRenderScale);
+	const double Mirror = double(I.Scene.map_w - 1) * bigred::kTerrainTexelWorldSize;
+	const double InvScale = 1.0 / double(bigred::kRenderScale);
+	Out = ConvertTriangles(Verts, 0, Verts.size(), [&](float X, float Y, float Z)
+	{
+		return BRR::GameToUE(Mirror - X * InvScale, -Y * InvScale, Z * InvScale);
+	});
+	// This scene's sheets sit at different pages than the import's: same order, another start.
+	for (FBRRMeshSection& S : Out.Sections)
+	{
+		if (S.Atlas >= I.RaceParticleBase) S.Atlas = I.WorldParticleBase + (S.Atlas - I.RaceParticleBase);
 	}
 }
 

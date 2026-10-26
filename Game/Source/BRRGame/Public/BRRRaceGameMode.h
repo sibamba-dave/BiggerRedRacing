@@ -71,6 +71,10 @@ private:
 	UPROPERTY()
 	TObjectPtr<ABRRWrecks> Wrecks;
 
+	// The ground effects: dust, spray, sparks.
+	UPROPERTY()
+	TObjectPtr<class ABRRParticles> Particles;
+
 	// The classic and remastered looks (brr.Look).
 	UPROPERTY()
 	TObjectPtr<ABRRLook> Look;

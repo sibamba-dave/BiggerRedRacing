@@ -1,4 +1,5 @@
 #include "BRRWorld.h"
+#include "BRRMeshConvert.h"
 
 #include "BRRConvert.h"
 
@@ -12,6 +13,7 @@
 #include "formats/vehicle_script.h"
 #include "scene/level_scene.h"
 #include "scene/dashboard.h"
+#include "scene/particle_render.h"
 #include "scene/vehicle_render.h"
 #include "sim/race.h"
 #include "sim/replay.h"
@@ -33,40 +35,6 @@ namespace
 			Image.Pixels[I] = FColor(Rgba[I * 4], Rgba[I * 4 + 1], Rgba[I * 4 + 2], Rgba[I * 4 + 3]);
 		}
 		return Image;
-	}
-
-	// Groups ORR's flat triangle list into sections by (atlas, sidedness), mapping each vertex to UE
-	// with ToUE and reversing winding for the handedness flip.
-	template <typename FToUE>
-	FBRRMesh ConvertTriangles(const std::vector<TerrainVertex>& Verts, size_t First, size_t Count, FToUE&& ToUE)
-	{
-		FBRRMesh Mesh;
-		TMap<TPair<int32, bool>, int32> SectionOf;
-		const size_t End = FMath::Min(First + Count, Verts.size());
-		for (size_t T = First; T + 2 < End; T += 3)
-		{
-			const TerrainVertex& A = Verts[T];
-			const int32 Atlas = A.has_texture != 0.0f ? int32(A.layer) : INDEX_NONE;
-			const bool bTwoSided = A.cull == 0.0f;
-			int32& Index = SectionOf.FindOrAdd({ Atlas, bTwoSided }, INDEX_NONE);
-			if (Index == INDEX_NONE)
-			{
-				Index = Mesh.Sections.Num();
-				FBRRMeshSection& New = Mesh.Sections.AddDefaulted_GetRef();
-				New.Atlas = Atlas;
-				New.bTwoSided = bTwoSided;
-			}
-			FBRRMeshSection& Section = Mesh.Sections[Index];
-			for (const size_t K : { T, T + 2, T + 1 })
-			{
-				const TerrainVertex& V = Verts[K];
-				FBRRVertex& Out = Section.Vertices.AddDefaulted_GetRef();
-				Out.Position = FVector3f(ToUE(V.x, V.y, V.z));
-				Out.UV = FVector2f(V.u, V.v);
-				Out.Color = FLinearColor(V.r, V.g, V.b).ToFColor(false);
-			}
-		}
-		return Mesh;
 	}
 
 	// ORR "local render space" (+Y up, true world units) -> UE local cm.
@@ -421,6 +389,18 @@ bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<
 					}
 				}
 			}
+		}
+
+		{
+			// The ground effects, last: their sheets go after everything else's.
+			const std::string Env = bigred::env_name_for_level(Name);
+			const bigred::ArchivePtr EnvArchive = bigred::game_archive_or_empty(GameDir, Env + ".ENV");
+			std::vector<bigred::SpotEffect> Spots;
+			if (const bigred::Blob* Txt = bigred::find_member(*EnvArchive, Env + ".TXT")) Spots = bigred::parse_spot_effects(std::string(Txt->begin(), Txt->end()));
+			const int32 Before = Scene.atlas_count;
+			bigred::build_particle_visuals(Spots, *EnvArchive, Scene);
+			Out.ParticleAtlasBase = Before;
+			Out.ParticleAtlasCount = Scene.atlas_count - Before;
 		}
 
 		const size_t PageBytes = size_t(BRR::AtlasWidth) * BRR::AtlasHeight * 4;

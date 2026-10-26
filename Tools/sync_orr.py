@@ -18,7 +18,8 @@ DST = ROOT / "Game" / "Source" / "BRRFormats" / "Private" / "ORR"
 DIRS = ["formats", "sim"]
 # Mesh builders only: no GL/SDL. They turn the original data into the triangle lists ORR draws.
 SCENE_FILES = ["level_scene.h", "level_scene.cpp", "vehicle_render.h", "vehicle_render.cpp",
-               "chase_camera.h", "chase_camera.cpp", "camera_sample.h", "dashboard.h", "dashboard.cpp"]
+               "chase_camera.h", "chase_camera.cpp", "camera_sample.h", "dashboard.h", "dashboard.cpp",
+               "particle_render.h", "particle_render.cpp"]
 # The sound: sample loading and the per-car voice logic. Not the SDL mixer or the music player -
 # BRRFormats implements bigred::Mixer itself (BRRMixer.cpp) and UE plays what it mixes.
 AUDIO_FILES = ["sound_bank.h", "sound_bank.cpp", "vehicle_audio.h", "vehicle_audio.cpp", "mixer.h"]
