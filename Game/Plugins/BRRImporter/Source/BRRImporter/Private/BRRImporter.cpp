@@ -395,6 +395,23 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 	SpawnMeshActor(Map, Terrain, FTransform::Identity, TEXT("Terrain"));
 	SpawnMeshActor(Map, Decor, FTransform::Identity, TEXT("Decor"));
 
+	// The start gantry, one actor per countdown state; the race shows one at a time. Red, the
+	// state the original shows before the start, is the only one visible and solid in the map.
+	static const TCHAR* LightStates[] = { TEXT("Red"), TEXT("RedAmber"), TEXT("Amber"), TEXT("Green") };
+	for (int32 K = 0; K < World.StartLights.Num() && K < UE_ARRAY_COUNT(LightStates); ++K)
+	{
+		UStaticMesh* Mesh = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_StartLights_%s"), *Level, LightStates[K]), World.StartLights[K], true);
+		AStaticMeshActor* Lights = SpawnMeshActor(Map, Mesh, FTransform::Identity, FString::Printf(TEXT("StartLights_%s"), LightStates[K]));
+		if (!Lights) continue;
+		Lights->Tags.Add(*FString::Printf(TEXT("BRRStartLight%d"), K));
+		if (K > 0)
+		{
+			UStaticMeshComponent* Comp = Lights->GetStaticMeshComponent();
+			Comp->SetVisibility(false);
+			Comp->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+		}
+	}
+
 	// The classic look: the original's sky, and palette colours shown exactly.
 	if (World.SkyStrip.Num() == 18)
 	{

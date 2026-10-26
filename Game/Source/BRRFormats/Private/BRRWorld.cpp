@@ -158,6 +158,11 @@ bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<
 		};
 		Out.Terrain = ConvertTriangles(World, 0, TerrainVerts, WorldRenderToUE);
 		Out.Decor = ConvertTriangles(World, TerrainVerts, World.size() - TerrainVerts, WorldRenderToUE);
+		if (!Scene.start_lights.empty())
+		{
+			for (const std::pair<int, int>& Range : Scene.lights_ranges)
+				Out.StartLights.Add(ConvertTriangles(Scene.lights_buf, size_t(Range.first), size_t(Range.second), WorldRenderToUE));
+		}
 
 		for (const bigred::SceneryInstance& Inst : Scene.instances)
 		{

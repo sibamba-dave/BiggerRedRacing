@@ -55,7 +55,13 @@ private:
 	UPROPERTY()
 	TObjectPtr<ACameraActor> RaceCamera;
 
+	// The start gantry's lamp states from the import (red, red+amber, amber, green); null where missing.
+	UPROPERTY()
+	TArray<TObjectPtr<AActor>> StartLights;
+	int32 ShownStartLight = 0;
+
 	void UpdateAutopilot();
+	void UpdateStartLights();
 
 	TArray<FTransform> PrevPose, CurrPose;
 	TArray<FVector> AutopilotLine;

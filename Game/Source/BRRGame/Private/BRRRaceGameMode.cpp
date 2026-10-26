@@ -9,6 +9,8 @@
 #include "Camera/CameraComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Kismet/GameplayStatics.h"
@@ -130,6 +132,16 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 	{
 		if (It->ActorHasTag(TEXT("BRRPreview"))) It->Destroy();
 	}
+	StartLights.Init(nullptr, 4);
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		for (int32 K = 0; K < StartLights.Num(); ++K)
+		{
+			if (It->ActorHasTag(*FString::Printf(TEXT("BRRStartLight%d"), K))) StartLights[K] = *It;
+		}
+	}
+	ShownStartLight = -1;
+	UpdateStartLights();
 
 	const int32 N = Race->NumRacers();
 	Ghosts.SetNum(N);
@@ -185,6 +197,7 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 	}
 
 	PlayerCar->bControlsLocked = !Race->HasStarted();
+	UpdateStartLights();
 	if (bAutopilot && Race->HasStarted()) UpdateAutopilot();
 
 	const FBRRRacerStatus Me = Race->Status(Race->PlayerIndex());
@@ -245,6 +258,21 @@ void ABRRRaceGameMode::RunDriveTest()
 	LoadVehicleMeshes(Vehicle, Body, Wheels);
 	ABRRDriveTest* Test = GetWorld()->SpawnActor<ABRRDriveTest>();
 	Test->Start(DataDir, World.Vehicles[0], Body, Wheels);
+}
+
+void ABRRRaceGameMode::UpdateStartLights()
+{
+	// The gantry is the countdown - the original prints no number: red, red+amber, amber on the
+	// three beeps, then green for the rest of the race (as ORR's race screen picks it).
+	const int32 N = Race->CountdownNumber();
+	const int32 State = N >= 3 ? 0 : N == 2 ? 1 : N == 1 ? 2 : 3;
+	if (State == ShownStartLight) return;
+	ShownStartLight = State;
+	for (int32 K = 0; K < StartLights.Num(); ++K)
+	{
+		AStaticMeshActor* Lights = Cast<AStaticMeshActor>(StartLights[K]);
+		if (Lights) Lights->GetStaticMeshComponent()->SetVisibility(K == State);
+	}
 }
 
 void ABRRRaceGameMode::UpdateAutopilot()

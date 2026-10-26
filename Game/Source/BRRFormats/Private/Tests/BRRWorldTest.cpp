@@ -36,6 +36,15 @@ bool FBRRWorldDirt1Test::RunTest(const FString& Parameters)
 	TestEqual(TEXT("one vehicle"), World.Vehicles.Num(), 1);
 	TestEqual(TEXT("view screen"), World.View.Width, 320);
 	TestTrue(TEXT("ghosts"), World.Ghosts.Num() >= 6);
+	if (TestEqual(TEXT("start light states"), World.StartLights.Num(), 4))
+	{
+		for (int32 K = 0; K < 4; ++K)
+		{
+			TestTrue(FString::Printf(TEXT("start light state %d has geometry"), K), World.StartLights[K].NumTriangles() > 0);
+		}
+		AddInfo(FString::Printf(TEXT("start lights: %d/%d/%d/%d triangles"), World.StartLights[0].NumTriangles(),
+			World.StartLights[1].NumTriangles(), World.StartLights[2].NumTriangles(), World.StartLights[3].NumTriangles()));
+	}
 	for (const FBRRGhostTrack& G : World.Ghosts)
 	{
 		AddInfo(FString::Printf(TEXT("ghost %d.REC type %d car %d colour %d, %d ticks (%.1f s)"),

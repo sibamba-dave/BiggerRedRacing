@@ -242,9 +242,6 @@ void ABRRRaceHUD::DrawHUD()
 	}
 	if (Me.bWrongWay) Centred(WrongWay, CX, H * 0.30f, K);
 	else if (Me.bMissedCheckpoint) Centred(MissedCheck, CX, H * 0.30f, K);
-	// Interim, until the start gantry's lights are animated: the original prints no count.
-	const int32 Count = Race->CountdownNumber();
-	if (Count > 0) Centred(Digit0 + Count, CX, H * 0.25f, 1.5f * K);
 	if (Me.bFinished)
 	{
 		const int32 Place = FMath::Clamp(Me.Place, 1, 9);
