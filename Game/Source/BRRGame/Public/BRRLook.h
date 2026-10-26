@@ -5,9 +5,10 @@
 //                anti-aliasing.
 //   remastered - the same world lit: the level's sun (its `light` line) in a sky atmosphere with
 //                clouds and height fog, Lumen global illumination and reflections on hardware ray
-//                tracing, virtual shadow maps, a filmic post process, upscaling (DLSS when NVIDIA's
-//                plugin is installed, else TSR), widescreen, everything in view. brr.PathTracing 1
-//                switches the path tracer on for stills.
+//                tracing, virtual shadow maps, a filmic post process, upscaling (DLSS Super
+//                Resolution with Ray Reconstruction, Frame Generation and Reflex when NVIDIA's
+//                plugins are installed, else TSR), widescreen, everything in view.
+//                brr.PathTracing 1 switches the path tracer on for stills.
 //
 // Materials carry both (MPC_BRR.Remaster); the rest this actor spawns and the renderer settings
 // it sets.
@@ -35,7 +36,8 @@ public:
 	// SunDirection: where the level's sun light travels (FBRRWorld::SunDirection).
 	void Build(const FVector& SunDirection, UMaterialParameterCollection* Collection);
 
-	void Apply(bool bRemastered, bool bPathTracing);
+	// bFrameGeneration: DLSS Frame Generation, when NVIDIA's Streamline plugin is installed.
+	void Apply(bool bRemastered, bool bPathTracing, bool bFrameGeneration);
 	bool IsRemastered() const { return bRemastered; }
 
 	// Which upscaler the remastered look runs ("DLSS" or "TSR").
@@ -44,6 +46,7 @@ public:
 private:
 	bool bRemastered = false;
 	bool bPathTracing = false;
+	bool bFrameGeneration = false;
 	bool bApplied = false;
 
 	UPROPERTY()

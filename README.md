@@ -68,9 +68,15 @@ not the level's palette colours (export `T_<LEVEL>_Palette` from the import as t
 - `1`, remastered (default): the same world lit - the level's own sun in a sky atmosphere with
   volumetric clouds and height fog, Lumen global illumination and reflections on hardware ray
   tracing, virtual shadow maps, filmic post (auto exposure, bloom, AO, motion blur), filtered and
-  mipmapped textures, widescreen, everything in view, upscaled by TSR (or DLSS when NVIDIA's DLSS
-  plugin is installed in the engine: it is picked up automatically). `brr.PathTracing 1` renders
-  through the path tracer (with the engine's denoiser) for stills.
+  mipmapped textures, widescreen, everything in view, rendered at two thirds and upscaled: by DLSS
+  Super Resolution with Ray Reconstruction (denoising Lumen's rays), plus DLSS Frame Generation and
+  Reflex, when NVIDIA's plugins are installed (`brr.FrameGeneration 0` turns frame generation off),
+  else by TSR. `brr.PathTracing 1` renders through the path tracer (with the engine's denoiser)
+  for stills.
+
+NVIDIA's DLSS 4.5 plugins for UE 5.8 (DLSS, Streamline and its parts) go in the engine, e.g.
+`Engine/Plugins/Marketplace/NVIDIA/`; the project enables `DLSS` and `Streamline`. They are not part
+of this repository.
 
 The materials carry both looks (`MPC_BRR.Remaster`); `ABRRLook` spawns the remastered sky and
 lighting and sets the renderer. Needs DX12 / SM6 and a ray-tracing GPU for the remastered look.

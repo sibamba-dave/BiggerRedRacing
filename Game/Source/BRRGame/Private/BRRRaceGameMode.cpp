@@ -42,6 +42,9 @@ namespace
 	TAutoConsoleVariable<int32> CVarPathTracing(TEXT("brr.PathTracing"), 0,
 		TEXT("1: the remastered look through the path tracer (for stills: it converges over still frames)."));
 
+	TAutoConsoleVariable<int32> CVarFrameGeneration(TEXT("brr.FrameGeneration"), 1,
+		TEXT("1: DLSS Frame Generation in the remastered look, where NVIDIA's Streamline plugin is installed."));
+
 	TAutoConsoleVariable<bool> CVarSurfaceHandling(TEXT("brr.SurfaceHandling"), true,
 		TEXT("The player's car handles as the surface under it does in the original (off: the track's everywhere)."));
 
@@ -278,7 +281,7 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 		{
 			if (PC->WasInputKeyJustPressed(EKeys::F5)) CVarLook->Set(Look->IsRemastered() ? 0 : 1, ECVF_SetByConsole);
 		}
-		Look->Apply(CVarLook.GetValueOnGameThread() != 0, CVarPathTracing.GetValueOnGameThread() != 0);
+		Look->Apply(CVarLook.GetValueOnGameThread() != 0, CVarPathTracing.GetValueOnGameThread() != 0, CVarFrameGeneration.GetValueOnGameThread() != 0);
 		if (RaceCamera)
 		{
 			// Classic: the original's 4:3, letterboxed. Remastered: the window's own shape, with the

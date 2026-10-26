@@ -26,7 +26,8 @@ namespace
 		if (IConsoleVariable* Var = IConsoleManager::Get().FindConsoleVariable(Name)) Var->Set(Value, ECVF_SetByCode);
 	}
 
-	bool HasDlss() { return IConsoleManager::Get().FindConsoleVariable(TEXT("r.NGX.DLSS.Enable")) != nullptr; }
+	bool HasCVar(const TCHAR* Name) { return IConsoleManager::Get().FindConsoleVariable(Name) != nullptr; }
+	bool HasDlss() { return HasCVar(TEXT("r.NGX.DLSS.Enable")); }
 }
 
 FString ABRRLook::Upscaler() const { return HasDlss() ? TEXT("DLSS") : TEXT("TSR"); }
@@ -95,11 +96,13 @@ void ABRRLook::Build(const FVector& SunDirection, UMaterialParameterCollection* 
 	P.VignetteIntensity = 0.25f;
 }
 
-void ABRRLook::Apply(bool bInRemastered, bool bInPathTracing)
+void ABRRLook::Apply(bool bInRemastered, bool bInPathTracing, bool bInFrameGeneration)
 {
 	bInPathTracing = bInRemastered && bInPathTracing;
-	if (bApplied && bInRemastered == bRemastered && bInPathTracing == bPathTracing) return;
+	bInFrameGeneration = bInRemastered && bInFrameGeneration;
+	if (bApplied && bInRemastered == bRemastered && bInPathTracing == bPathTracing && bInFrameGeneration == bFrameGeneration) return;
 	bApplied = true;
+	bFrameGeneration = bInFrameGeneration;
 	bRemastered = bInRemastered;
 	bPathTracing = bInPathTracing;
 	UWorld* World = GetWorld();
@@ -134,15 +137,17 @@ void ABRRLook::Apply(bool bInRemastered, bool bInPathTracing)
 	SetCVar(TEXT("r.Shadow.Virtual.Enable"), bRemastered ? 1 : 0);
 	SetCVar(TEXT("r.AntiAliasingMethod"), bRemastered ? 4 : 0);
 	SetCVar(TEXT("r.AmbientOcclusionLevels"), bRemastered ? -1 : 0); // classic: SSAO darkened the emissive palette around every object
+	// Upscaling from two thirds of the resolution (DLSS / TSR "quality"). With NVIDIA's plugins: DLSS
+	// Super Resolution with Ray Reconstruction denoising Lumen's rays, Frame Generation, and Reflex
+	// to win back the latency it costs.
+	SetCVar(TEXT("r.ScreenPercentage"), bRemastered ? 67 : 100);
 	if (HasDlss())
 	{
 		SetCVar(TEXT("r.NGX.DLSS.Enable"), bRemastered ? 1 : 0);
-		SetCVar(TEXT("r.ScreenPercentage"), 100);
+		SetCVar(TEXT("r.NGX.DLSS.DenoiserMode"), bRemastered ? 1 : 0);
 	}
-	else
-	{
-		SetCVar(TEXT("r.ScreenPercentage"), bRemastered ? 67 : 100); // TSR's quality upscale
-	}
+	if (HasCVar(TEXT("r.Streamline.DLSSG.Enable"))) SetCVar(TEXT("r.Streamline.DLSSG.Enable"), bFrameGeneration ? 1 : 0);
+	if (HasCVar(TEXT("t.Streamline.Reflex.Enable"))) SetCVar(TEXT("t.Streamline.Reflex.Enable"), bRemastered ? 1 : 0);
 	SetCVar(TEXT("r.PathTracing.Denoiser"), bPathTracing ? 1 : 0); // the engine's NNE denoiser between samples
 	if (GEngine) GEngine->Exec(World, bPathTracing ? TEXT("ShowFlag.PathTracing 1") : TEXT("ShowFlag.PathTracing 0"));
 }
