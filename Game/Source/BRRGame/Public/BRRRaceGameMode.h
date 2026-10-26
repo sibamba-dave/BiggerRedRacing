@@ -16,6 +16,7 @@
 class ACameraActor;
 class ABRRGhostCar;
 class ABRRVehiclePawn;
+class ABRRWrecks;
 class UStaticMesh;
 struct FBRRVehicleMesh;
 
@@ -59,6 +60,10 @@ private:
 	UPROPERTY()
 	TArray<TObjectPtr<AActor>> StartLights;
 	int32 ShownStartLight = 0;
+
+	// The destructible decor, built from the level at race start.
+	UPROPERTY()
+	TObjectPtr<ABRRWrecks> Wrecks;
 
 	void UpdateAutopilot();
 	void UpdateStartLights();

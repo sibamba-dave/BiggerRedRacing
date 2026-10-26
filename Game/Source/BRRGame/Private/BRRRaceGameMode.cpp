@@ -5,6 +5,7 @@
 #include "BRRGhostCar.h"
 #include "BRRRaceHUD.h"
 #include "BRRVehiclePawn.h"
+#include "BRRWrecks.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 #include "Components/PrimitiveComponent.h"
@@ -132,6 +133,8 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 	{
 		if (It->ActorHasTag(TEXT("BRRPreview"))) It->Destroy();
 	}
+	Wrecks = GetWorld()->SpawnActor<ABRRWrecks>();
+	Wrecks->Build(World.Wrecks, LevelName);
 	StartLights.Init(nullptr, 4);
 	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
 	{
@@ -189,6 +192,14 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 	{
 		Accumulator -= FBRRRace::TickSeconds;
 		Race->Tick(PlayerCar->GetBodyOriginTransform(), PlayerCar->GetVelocity());
+		FVector2D Bounce;
+		if (Race->ConsumePlayerBounce(Bounce))
+		{
+			if (UPrimitiveComponent* Body = Cast<UPrimitiveComponent>(PlayerCar->GetRootComponent()))
+			{
+				Body->SetPhysicsLinearVelocity(FVector(Bounce.X, Bounce.Y, Body->GetPhysicsLinearVelocity().Z));
+			}
+		}
 		for (int32 R = 0; R < Race->NumRacers(); ++R)
 		{
 			PrevPose[R] = CurrPose[R];
@@ -198,6 +209,7 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 
 	PlayerCar->bControlsLocked = !Race->HasStarted();
 	UpdateStartLights();
+	if (Wrecks) Wrecks->Sync(*Race);
 	if (bAutopilot && Race->HasStarted()) UpdateAutopilot();
 
 	const FBRRRacerStatus Me = Race->Status(Race->PlayerIndex());

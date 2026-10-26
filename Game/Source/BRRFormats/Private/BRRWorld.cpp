@@ -163,6 +163,29 @@ bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<
 			for (const std::pair<int, int>& Range : Scene.lights_ranges)
 				Out.StartLights.Add(ConvertTriangles(Scene.lights_buf, size_t(Range.first), size_t(Range.second), WorldRenderToUE));
 		}
+		static_assert(bigred::LevelScene::kWreckStepCount == BRR::WreckStepCount, "flipbook length");
+		for (const bigred::LevelScene::WreckPiece& Piece : Scene.wrecks)
+		{
+			FBRRWreck& W = Out.Wrecks.AddDefaulted_GetRef();
+			W.Instance = Piece.instance;
+			W.Intact = ConvertTriangles(Scene.wreck_buf, size_t(Piece.intact.first), size_t(Piece.intact.second), WorldRenderToUE);
+			TMap<TPair<int32, int32>, int32> MeshOf;
+			for (const std::pair<int, int>& Range : Piece.steps)
+			{
+				int32 Index = -1;
+				if (Range != Piece.intact)
+				{
+					const TPair<int32, int32> Key(Range.first, Range.second);
+					if (const int32* Found = MeshOf.Find(Key)) Index = *Found;
+					else
+					{
+						Index = W.Steps.Add(ConvertTriangles(Scene.wreck_buf, size_t(Range.first), size_t(Range.second), WorldRenderToUE));
+						MeshOf.Add(Key, Index);
+					}
+				}
+				W.StepMesh.Add(Index);
+			}
+		}
 
 		for (const bigred::SceneryInstance& Inst : Scene.instances)
 		{

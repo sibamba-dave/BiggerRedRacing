@@ -36,6 +36,18 @@ bool FBRRWorldDirt1Test::RunTest(const FString& Parameters)
 	TestEqual(TEXT("one vehicle"), World.Vehicles.Num(), 1);
 	TestEqual(TEXT("view screen"), World.View.Width, 320);
 	TestTrue(TEXT("ghosts"), World.Ghosts.Num() >= 6);
+	if (TestTrue(TEXT("destructibles"), World.Wrecks.Num() > 0))
+	{
+		int32 Poses = 0;
+		for (const FBRRWreck& W : World.Wrecks)
+		{
+			TestEqual(TEXT("one entry per flipbook step"), W.StepMesh.Num(), BRR::WreckStepCount);
+			TestTrue(TEXT("destructible is a scenery instance"), World.Placements.IsValidIndex(W.Instance));
+			for (const int32 M : W.StepMesh) TestTrue(TEXT("step mesh index in range"), M >= -1 && M < W.Steps.Num());
+			Poses += W.Steps.Num();
+		}
+		AddInfo(FString::Printf(TEXT("destructibles: %d pieces, %d distinct knock-over poses"), World.Wrecks.Num(), Poses));
+	}
 	if (TestEqual(TEXT("start light states"), World.StartLights.Num(), 4))
 	{
 		for (int32 K = 0; K < 4; ++K)

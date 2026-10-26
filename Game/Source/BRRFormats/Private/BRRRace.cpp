@@ -247,6 +247,8 @@ struct FBRRRace::FImpl
 	int32 Player = 0;
 	bigred::ChaseCamera Camera;
 	bigred::CameraState CameraPrev;
+	bigred::SceneryState Scenery;
+	TOptional<FVector2D> PlayerBounce; // UE ground velocity, cm/s, from a destructible's push-back
 	int32 GhostRate = 0x200;
 	uint32 BandClock = 0;
 
@@ -261,6 +263,7 @@ struct FBRRRace::FImpl
 			Cars[I].field_self = int(I);
 			Cars[I].rules = &Rules;
 			Cars[I].replayed = true; // nobody is stepped by the original physics here
+			Cars[I].world = &Scenery;
 		}
 	}
 
@@ -363,6 +366,7 @@ TUniquePtr<FBRRRace> FBRRRace::Create(const FString& DataDir, const FString& Lev
 			I.VehicleNames.Add(FromUtf8(Vehicle));
 			I.Colours.Add(Colour + 1);
 		}
+		I.Scenery.resize(I.Scene.instances.size());
 		I.LinkField();
 		I.StartCars = I.Cars;
 		I.Camera.reset(I.Cars[I.Player], I.Terrain);
@@ -427,6 +431,41 @@ void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity)
 		P.travel = int32(FMath::RoundToInt64(FMath::Atan2(V.X, V.Z) * 65536.0 / (2.0 * PI))) & 0xFFFF;
 		P.dress_replayed();
 
+		// The destructible half of VehicleSim::hit_scenery: whatever prop the body's box touches
+		// goes down, for good, and on the tick it goes down it throws the car off as any blocker
+		// does (ORR's kDestructiblesPushBack; VehicleSim::resolve_contact). Everything else the
+		// car hits is static decor, and Chaos's.
+		bool bBounced = false;
+		if (P.tune && !I.Terrain.blockers.empty())
+		{
+			bigred::ObjectContact Contacts[bigred::VehicleSim::kMaxSceneryContacts];
+			const int32 Hits = I.Terrain.blocker_probe(P.px >> 9, P.py >> 9, P.pz >> 9, P.yaw >> 8,
+				I.Terrain.height_fx(P.px, P.pz) >> 9, P.tune->box, Contacts, bigred::VehicleSim::kMaxSceneryContacts);
+			for (int32 C = 0; C < Hits; ++C)
+			{
+				const bigred::SimObject* Object = Contacts[C].object;
+				if (!Object || !Object->destructible || !I.Scenery.wreck(Object->instance_index, P.tick)) continue;
+				// The reflection off the contact plane at half restitution: the part of the speed
+				// going into the piece comes back halved, the part along its face is kept.
+				const int32 Normal = Contacts[C].normal_bam16;
+				int32 Into = (P.travel - (Normal + 0x8000)) & 0xFFFF;
+				if (Into > 0x8000) Into -= 0x10000;
+				if (Into >= 0x4000 || Into <= -0x4000) continue; // running away from it
+				const int32 Inward = -bigred::fx::mul15(P.speed, bigred::fx::cos16(Into)) / 2;
+				const int32 Along = bigred::fx::mul15(P.speed, bigred::fx::sin16(Into));
+				P.speed = bigred::fx::hypot32(Along, Inward);
+				P.travel = (Normal + 0x8000 + bigred::fx::atan2_bam16(Along, Inward)) & 0xFFFF;
+				bBounced = true;
+			}
+		}
+		if (bBounced)
+		{
+			// Back to UE: the game's (x, z) ground velocity in 1/512 units per tick.
+			const double Angle = double(P.travel) * 2.0 * PI / 65536.0;
+			const double PerSecond = double(P.speed) / (512.0 * TickSeconds) * BRR::CmPerUnit;
+			I.PlayerBounce = FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * PerSecond;
+		}
+
 		I.CameraPrev = I.Camera.now;
 		I.Camera.step(P, I.Terrain);
 
@@ -465,6 +504,25 @@ FTransform FBRRRace::PlayerCameraTransform(double Alpha) const
 }
 
 void FBRRRace::CyclePlayerCamera() { Impl->Camera.cycle_preset(); }
+
+double FBRRRace::WreckSeconds(int32 Instance) const
+{
+	const FImpl& I = *Impl;
+	if (!I.Scenery.is_wrecked(Instance)) return -1.0;
+	return double(I.Cars[I.Player].tick - I.Scenery.wreck_tick[Instance]) * TickSeconds;
+}
+
+void FBRRRace::KnockOver(int32 Instance) { Impl->Scenery.wreck(Instance, Impl->Cars[Impl->Player].tick); }
+
+uint32 FBRRRace::WreckRevision() const { return Impl->Scenery.revision; }
+
+bool FBRRRace::ConsumePlayerBounce(FVector2D& OutVelocityXY)
+{
+	if (!Impl->PlayerBounce.IsSet()) return false;
+	OutVelocityXY = *Impl->PlayerBounce;
+	Impl->PlayerBounce.Reset();
+	return true;
+}
 
 bool FBRRRace::HasStarted() const { return Impl->Race.started(); }
 int32 FBRRRace::CountdownNumber() const { return Impl->Race.countdown_number(); }

@@ -31,6 +31,10 @@ namespace BRR
 	inline constexpr float SkyBandDegrees[16] = { 38.45f, 19.91f, 14.42f, 11.12f, 8.65f, 6.73f, 5.08f, 3.71f,
 		2.61f, 1.79f, 1.24f, 0.82f, 0.55f, 0.27f, 0.14f, 0.0f };
 	inline constexpr float SkyGroundBandDegrees = 7.14f;
+
+	// The knock-over flipbook: 32 steps of the original's 14 ms tick, then the settled wreck.
+	inline constexpr int32 WreckStepCount = 33;
+	inline constexpr double WreckStepSeconds = 0.014;
 }
 
 struct FBRRImage
@@ -122,6 +126,17 @@ struct FBRRVehicleMesh
 	TArray<FBRRWheel> Wheels;
 };
 
+// One destructible decor piece: how it stands, and the original's knock-over flipbook.
+struct FBRRWreck
+{
+	int32 Instance = -1;       // index into the level's scenery instances (FBRRWorld::Placements)
+	FBRRMesh Intact;           // UE world space
+	TArray<FBRRMesh> Steps;    // the distinct poses of the flipbook, UE world space
+	// Per flipbook step (BRR::WreckStepCount of them, the last being the settled wreck): index
+	// into Steps, or -1 where the step looks the same as the intact piece.
+	TArray<int32> StepMesh;
+};
+
 struct BRRFORMATS_API FBRRWorld
 {
 	FString LevelName;
@@ -142,6 +157,8 @@ struct BRRFORMATS_API FBRRWorld
 	// The start gantry's lamps (S_LIGHTS, category 0x35) in each countdown state - red, red+amber,
 	// amber, green - in UE world space. Not in Decor; empty if the level has none.
 	TArray<FBRRMesh> StartLights;
+	// Decor a vehicle can knock over (ORR LevelScene::wrecks). Not in Decor either.
+	TArray<FBRRWreck> Wrecks;
 	TArray<FBRRPlacement> Placements;
 	TArray<FBRRGate> Gates;
 	TArray<FBRRStart> Grid;          // retail six-car grid

@@ -1,5 +1,6 @@
 #include "BRRArchive.h"
 #include "BRRRace.h"
+#include "BRRWorld.h"
 
 #include "Misc/AutomationTest.h"
 
@@ -90,6 +91,66 @@ bool FBRRRaceDirt1Test::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("ghosts complete laps"), GhostLaps > 0);
 	TestEqual(TEXT("parked player has no laps"), Race->Status(Player).Lap, 0);
+	return true;
+}
+
+// DIRT1's destructible decor: the player's body set down on a piece knocks it over through the
+// original's blocker probe, a UE knock does the same, and nothing else goes down.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBRRRaceWrecksTest, "BRR.Formats.Race.Dirt1Wrecks",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBRRRaceWrecksTest::RunTest(const FString& Parameters)
+{
+	const FString DataDir = BRR::GetDataDir();
+	if (DataDir.IsEmpty())
+	{
+		AddWarning(TEXT("BRR data dir not found (set BRR_DATA_DIR); skipping."));
+		return true;
+	}
+	FString Error;
+	FBRRWorld World;
+	if (!TestTrue(FString::Printf(TEXT("load DIRT1 %s"), *Error), FBRRWorld::Load(DataDir, TEXT("DIRT1"), {}, 1, World, Error))) return false;
+	TUniquePtr<FBRRRace> Race = FBRRRace::Create(DataDir, TEXT("DIRT1"), TEXT("JEEP"), Error);
+	if (!TestTrue(FString::Printf(TEXT("create %s"), *Error), Race.IsValid())) return false;
+	if (!TestTrue(TEXT("DIRT1 has at least two destructibles"), World.Wrecks.Num() >= 2)) return false;
+
+	for (const FBRRWreck& W : World.Wrecks) TestTrue(TEXT("standing at the start"), Race->WreckSeconds(W.Instance) < 0);
+
+	// Park the player on the first piece.
+	const FBRRWreck& Hit = World.Wrecks[0];
+	FVector At = World.Placements[Hit.Instance].Location;
+	At.Z = World.GroundHeightAt(At.X, At.Y);
+	const uint32 Before = Race->WreckRevision();
+	Race->Tick(FTransform(At), FVector::ZeroVector);
+	TestTrue(TEXT("the probe knocks over the piece under the car"), Race->WreckSeconds(Hit.Instance) >= 0);
+	TestNotEqual(TEXT("revision moves"), Race->WreckRevision(), Before);
+	for (int32 T = 0; T < 10; ++T) Race->Tick(FTransform(At), FVector::ZeroVector);
+	TestTrue(TEXT("its clock runs with the ticks"), FMath::IsNearlyEqual(Race->WreckSeconds(Hit.Instance), 10 * FBRRRace::TickSeconds, 1e-6));
+
+	// Driving into a standing piece throws the car back off it, as any blocker does in the original.
+	{
+		const FBRRWreck& Bump = World.Wrecks[1];
+		FVector Piece = World.Placements[Bump.Instance].Location;
+		Piece.Z = World.GroundHeightAt(Piece.X, Piece.Y);
+		const FVector In(2000.0, 0.0, 0.0); // 20 m/s along +X
+		Race->Tick(FTransform(Piece - In.GetSafeNormal() * 150.0), In);
+		FVector2D Out;
+		if (TestTrue(TEXT("a moving car bounces off what it knocks over"), Race->ConsumePlayerBounce(Out)))
+		{
+			AddInfo(FString::Printf(TEXT("in %s cm/s, out %s cm/s"), *In.ToString(), *Out.ToString()));
+			TestTrue(TEXT("the bounce loses speed"), Out.Size() < In.Size() + 1.0);
+			TestFalse(TEXT("one bounce per knock"), Race->ConsumePlayerBounce(Out));
+		}
+	}
+
+	const FBRRWreck& Knock = World.Wrecks.Last();
+	Race->KnockOver(Knock.Instance);
+	TestTrue(TEXT("a UE knock takes it down"), Race->WreckSeconds(Knock.Instance) >= 0);
+
+	int32 Down = 0;
+	for (const FBRRWreck& W : World.Wrecks) Down += Race->WreckSeconds(W.Instance) >= 0;
+	AddInfo(FString::Printf(TEXT("%d of %d DIRT1 destructibles down"), Down, World.Wrecks.Num()));
+	TestTrue(TEXT("the rest still stand"), Down <= 3);
 	return true;
 }
 

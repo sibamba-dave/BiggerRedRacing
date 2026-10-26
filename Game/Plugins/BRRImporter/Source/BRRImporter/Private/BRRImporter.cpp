@@ -395,6 +395,25 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 	SpawnMeshActor(Map, Terrain, FTransform::Identity, TEXT("Terrain"));
 	SpawnMeshActor(Map, Decor, FTransform::Identity, TEXT("Decor"));
 
+	// The destructible decor is built by the race (ABRRWrecks) from the level data. Here: every
+	// material its flipbooks read, and a preview of the standing pieces for the editor, which the
+	// race removes like the grid preview cars.
+	FBRRMesh WreckPreview;
+	for (const FBRRWreck& W : World.Wrecks)
+	{
+		WreckPreview.Sections.Append(W.Intact.Sections);
+		for (const FBRRMesh& Step : W.Steps)
+		{
+			for (const FBRRMeshSection& Section : Step.Sections) Assets.MaterialFor(Section.Atlas, Section.bTwoSided);
+		}
+	}
+	if (AStaticMeshActor* Preview = SpawnMeshActor(Map, MakeMesh(Assets, FString::Printf(TEXT("SM_%s_WreckPreview"), *Level), WreckPreview, false),
+		FTransform::Identity, TEXT("WreckPreview")))
+	{
+		Preview->Tags.Add(TEXT("BRRPreview"));
+		Preview->GetStaticMeshComponent()->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+	}
+
 	// The start gantry, one actor per countdown state; the race shows one at a time. Red, the
 	// state the original shows before the start, is the only one visible and solid in the map.
 	static const TCHAR* LightStates[] = { TEXT("Red"), TEXT("RedAmber"), TEXT("Amber"), TEXT("Green") };

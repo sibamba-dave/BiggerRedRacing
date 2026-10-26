@@ -86,6 +86,19 @@ public:
 	FTransform PlayerCameraTransform(double Alpha) const;
 	void CyclePlayerCamera();          // the three distance presets
 
+	// Destructible decor (FBRRWorld::Wrecks, by scenery instance), shared by the whole field. The
+	// player knocks a piece over when the original's blocker probe touches it, as in
+	// VehicleSim::hit_scenery; ghosts never do (a replay has no scenery pass).
+	// Seconds since Instance went down, negative while it stands. A piece that went down while
+	// the original's 20 flipbook slots were busy reads as long settled.
+	double WreckSeconds(int32 Instance) const;
+	// Knocks Instance over now - a UE contact the probe missed. Ignored if it is already down.
+	void KnockOver(int32 Instance);
+	uint32 WreckRevision() const;      // changes whenever anything is knocked over
+	// The player's new ground velocity (UE X/Y, cm/s) after knocking a piece over: the original's
+	// push-back. True once per bounce; apply it to the car and keep its vertical speed.
+	bool ConsumePlayerBounce(FVector2D& OutVelocityXY);
+
 	bool HasStarted() const;           // the lights are out
 	int32 CountdownNumber() const;     // 3, 2, 1 while counting, 0 at "go", -1 otherwise
 	bool CountdownBeeped() const;      // a countdown beep fell in the last tick
