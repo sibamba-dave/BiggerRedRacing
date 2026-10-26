@@ -52,6 +52,14 @@ The game runs in a borderless window over the whole desktop (Alt+Enter for a win
 Controls: W/Up accelerate, S/Down brake and reverse, A/D or Left/Right steer, Space handbrake,
 R recover, Shift boost, P photo, F5 look, C camera. Gamepad: triggers, left stick, X handbrake, Y recover, A boost.
 
+Sound: the original's own - every car's engine (its pitch on the gear table's revs), skids and
+rolling on each surface, impacts, splats, landings, the boost, the countdown tones, checkpoint and
+lap cues, and the circuit's commentator - mixed by ORR's rules (eight voices, three engines, the
+commentator ducking the rest; `BRRAudio`, `FBRRRaceSound`). Under it the CD music: each circuit's
+intro track then its loop, from TOURN.TXT, played from the rip's `Music/TrackNN.wav`
+(`Tools/brr_cd.py`; `[BRR] MusicDir` to point elsewhere). `brr.SoundVolume`, `brr.MusicVolume`,
+`brr.Commentary`. `-BRRAudioDump=<file.wav>` records 20 seconds of the output.
+
 Dev switches: `-BRRDriveTest` (handling comparison, see `Docs/Handling.md`), `-BRRAutopilot` (drives
 the player's car along a ghost's racing line, recovering when stuck).
 

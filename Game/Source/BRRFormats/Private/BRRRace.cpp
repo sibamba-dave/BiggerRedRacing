@@ -4,6 +4,7 @@
 #include "BRRRace.h"
 
 #include "BRRConvert.h"
+#include "BRRRaceSound.h"
 
 #include <cmath>
 #include <exception>
@@ -22,6 +23,31 @@
 #include "sim/vehicle.h"
 
 using namespace BRR::Private;
+
+namespace
+{
+	// The rev counter (0-250, the engine's pitch) the original's gear table gives for the car's
+	// forward speed - VehicleSim::gear_curve's rev half, which is private to it. Wholly airborne
+	// the original leaves the table alone and the revs climb 5 a tick.
+	int32 PlayerRev(const bigred::VehicleSim& P)
+	{
+		if (!P.tune) return 0;
+		if (P.near_ground == 0) return FMath::Min(P.rev + 5, 250);
+		const int32 Speed = P.vfwd >= 0 ? P.vfwd : -P.vfwd;
+		const std::vector<bigred::GearRow>& Rows = P.vfwd >= 0 ? P.tune->gear_f : P.tune->gear_b;
+		if (Rows.empty()) return 0;
+		const size_t Last = std::min<size_t>(Rows.size(), 12) - 1;
+		for (size_t R = 0; R < Last; ++R)
+		{
+			if (Speed < Rows[R + 1].speed)
+			{
+				const int32 Span = FMath::Max(Rows[R + 1].speed - Rows[R].speed, 1);
+				return Rows[R].rev_lo + int32(int64(Rows[R].rev_hi - Rows[R].rev_lo) * (Speed - Rows[R].speed) / Span);
+			}
+		}
+		return P.rev;
+	}
+}
 
 namespace
 {
@@ -297,6 +323,10 @@ struct FBRRRace::FImpl
 	double PlayerSpin = 0;             // UE yaw rate, degrees/s, from another car
 	bool bPlayerContact = false;
 	int32 GhostRate = 0x200;
+	std::string GameDir, LevelName, Script; // for the sound
+	int32 PendingImpact = 0;                // 1/512 units per tick, the next tick's knock
+	bool bRecovered = false;
+	std::unique_ptr<FBRRRaceSound> Sound;
 	uint32 BandClock = 0;
 
 	void LinkField()
@@ -358,6 +388,9 @@ TUniquePtr<FBRRRace> FBRRRace::Create(const FString& DataDir, const FString& Lev
 		std::string Script;
 		if (const bigred::Blob* Txt = bigred::find_member(I.Scene.lev, Name + ".TXT")) Script.assign(Txt->begin(), Txt->end());
 		BuildSimTerrain(I.Scene, Script, I.Terrain);
+		I.GameDir = GameDir;
+		I.LevelName = Name;
+		I.Script = Script;
 
 		const std::vector<std::string> Cars = bigred::parse_car_list(Script);
 		const bigred::StartingGrid Grid = bigred::parse_grid(Script);
@@ -548,6 +581,19 @@ void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity,
 		P.speed = int32(FMath::Clamp(FMath::Sqrt(V.X * V.X + V.Z * V.Z), 0.0, double(0xFFFA)));
 		P.travel = int32(FMath::RoundToInt64(FMath::Atan2(V.X, V.Z) * 65536.0 / (2.0 * PI))) & 0xFFFF;
 		P.dress_replayed();
+		// The rest of what the car's sound reads (VehicleAudio::on_tick), which a replayed car is
+		// never given: the touchdown, the time aloft, rolled over, the revs, this tick's knocks.
+		P.vy = int32(FMath::RoundToInt64(V.Y));
+		P.landing_impact = (P.near_ground_prev == 0 && P.near_ground != 0 && P.vy > 0) ? P.vy : 0;
+		P.air_ticks = P.near_ground != 0 ? 0 : P.air_ticks + 1;
+		P.rolled_over = PlayerPose.GetUnitAxis(EAxis::Z).Z < 0.0;
+		P.rev = PlayerRev(P);
+		P.scenery_hit = I.PendingImpact > 0;
+		P.impact_magnitude = I.PendingImpact;
+		P.scenery_wrecked = -1;
+		P.nitro_refused = false;
+		P.just_destroyed = false;
+		I.PendingImpact = 0;
 
 		// The boost, in VehicleSim::step's order: read_input counts a running burst down,
 		// update_nitro fires one off the reserve (mode 1 on the key's edge, mode 2 while held),
@@ -559,6 +605,7 @@ void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity,
 			const int32_t* N = P.tune->nitro;
 			if (P.boost_timer > 0) --P.boost_timer;
 			const bool bFire = bBoostKey && (N[0] == 2 || !P.prev_nitro_key);
+			P.nitro_refused = bFire && P.nitro_fuel <= 0 && N[0] == 1;
 			if (bFire && P.nitro_fuel > 0 && P.boost_timer <= 0)
 			{
 				--P.nitro_fuel;
@@ -579,7 +626,7 @@ void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity,
 		// goes down, for good, and on the tick it goes down it throws the car off as any blocker
 		// does (ORR's kDestructiblesPushBack; VehicleSim::resolve_contact). Everything else the
 		// car hits is static decor, and Chaos's.
-		bool bBounced = false;
+		bool bBounced = false, bCarContact = false;
 		if (P.tune && !I.Terrain.blockers.empty())
 		{
 			bigred::ObjectContact Contacts[bigred::VehicleSim::kMaxSceneryContacts];
@@ -589,6 +636,8 @@ void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity,
 			{
 				const bigred::SimObject* Object = Contacts[C].object;
 				if (!Object || !Object->destructible || !I.Scenery.wreck(Object->instance_index, P.tick)) continue;
+				P.scenery_wrecked = Object->instance_index;
+				P.scenery_wrecked_var = Object->splat_var;
 				// The reflection off the contact plane at half restitution: the part of the speed
 				// going into the piece comes back halved, the part along its face is kept.
 				const int32 Normal = Contacts[C].normal_bam16;
@@ -602,7 +651,8 @@ void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity,
 				bBounced = true;
 			}
 		}
-		bBounced |= ContactCars(I, P);
+		bCarContact = ContactCars(I, P);
+		bBounced |= bCarContact;
 		if (bBounced)
 		{
 			// Back to UE: the game's (x, z) ground velocity in 1/512 units per tick.
@@ -631,12 +681,55 @@ void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity,
 			}
 			I.RubberBand();
 		}
+		if (I.Sound)
+		{
+			I.Sound->OnTick(I.Race, I.Cars, I.Camera.now, bCarContact, I.bRecovered);
+			I.bRecovered = false;
+		}
 	}
 	catch (const std::exception& E)
 	{
 		UE_LOG(LogTemp, Error, TEXT("FBRRRace::Tick: %s"), UTF8_TO_TCHAR(E.what()));
 	}
 }
+
+void FBRRRace::EnableSound(bool bCommentary)
+{
+	FImpl& I = *Impl;
+	if (I.Sound || !BRRAudio::GetMixer()) return;
+	try
+	{
+		FBRRRaceSound::FConfig C;
+		C.GameDir = I.GameDir;
+		C.Level = I.LevelName;
+		C.LevelTxt = I.Script;
+		C.Player = I.Player;
+		C.bCommentary = bCommentary;
+		for (size_t R = 0; R < I.Cars.size(); ++R)
+		{
+			C.Vehicles.push_back(ToUtf8(I.VehicleNames.IsValidIndex(int32(R)) ? I.VehicleNames[int32(R)] : FString()));
+			C.Tunings.push_back(I.Cars[R].tune);
+			C.WreckColours.push_back(I.Colours.IsValidIndex(int32(R)) ? FMath::Max(I.Colours[int32(R)] - 1, 0) : 0);
+		}
+		I.Sound = std::make_unique<FBRRRaceSound>();
+		I.Sound->Configure(C);
+		I.Sound->OnRaceStart();
+	}
+	catch (const std::exception& E)
+	{
+		UE_LOG(LogTemp, Error, TEXT("FBRRRace::EnableSound: %s"), UTF8_TO_TCHAR(E.what()));
+		I.Sound.reset();
+	}
+}
+
+void FBRRRace::ReportPlayerImpact(double SpeedIntoCmPerSecond)
+{
+	// In the game's own measure, 1/512 units per tick: the strongest knock of the tick counts.
+	const int32 Magnitude = int32(FMath::Min(SpeedIntoCmPerSecond / BRR::CmPerUnit * 512.0 * TickSeconds, double(0x7fffffff)));
+	Impl->PendingImpact = FMath::Max(Impl->PendingImpact, Magnitude);
+}
+
+void FBRRRace::ReportPlayerRecovered() { Impl->bRecovered = true; }
 
 FTransform FBRRRace::PlayerCameraTransform(double Alpha, double Distance, double Lift) const
 {

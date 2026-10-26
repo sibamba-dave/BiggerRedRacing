@@ -34,6 +34,7 @@ public:
 	ABRRRaceGameMode();
 
 	virtual void StartPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
 
@@ -73,6 +74,11 @@ private:
 	// The classic and remastered looks (brr.Look).
 	UPROPERTY()
 	TObjectPtr<ABRRLook> Look;
+
+	// The race's sound and the CD music (BRRAudio), as one stereo stream.
+	UPROPERTY()
+	TObjectPtr<class UBRRSoundOutput> SoundOutput;
+	void StartSound();
 
 	// Path-traced stills (P, brr.PhotoSamples; -BRRPhoto=<seconds> takes one and quits).
 	UPROPERTY()

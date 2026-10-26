@@ -4,6 +4,9 @@
 #include "BRRDriveTest.h"
 #include "BRRGhostCar.h"
 #include "BRRRaceHUD.h"
+#include "BRRAudio.h"
+#include "BRRSoundOutput.h"
+#include "AudioDevice.h"
 #include "BRRVehiclePawn.h"
 #include "BRRAnimDecor.h"
 #include "BRRLook.h"
@@ -64,6 +67,13 @@ namespace
 		TEXT("How far behind the car the remastered look hangs the chase camera, as a fraction of the original's distance ")
 		TEXT("(1: the original's). The classic look keeps the original's."));
 
+	TAutoConsoleVariable<float> CVarSoundVolume(TEXT("brr.SoundVolume"), 1.f,
+		TEXT("Volume of the race's sound effects and speech, 0..1."));
+	TAutoConsoleVariable<float> CVarMusicVolume(TEXT("brr.MusicVolume"), 0.6f,
+		TEXT("Volume of the CD music, 0..1."));
+	TAutoConsoleVariable<bool> CVarCommentary(TEXT("brr.Commentary"), true,
+		TEXT("The circuit's commentator (applies from the next race)."));
+
 	TAutoConsoleVariable<bool> CVarLogPerf(TEXT("brr.LogPerf"), false,
 		TEXT("Logs the frame rate, the race's pace against the wall clock and the player's speed every five seconds."));
 
@@ -90,6 +100,31 @@ ABRRRaceGameMode::ABRRRaceGameMode()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	HUDClass = ABRRRaceHUD::StaticClass();
+	SoundOutput = CreateDefaultSubobject<UBRRSoundOutput>(TEXT("Sound"));
+	SoundOutput->bAutoActivate = false;
+}
+
+void ABRRRaceGameMode::StartSound()
+{
+	// The mixer runs at the device's rate; the race's voices and the circuit's music go into it.
+	FAudioDevice* Device = GetWorld()->GetAudioDeviceRaw();
+	if (!Device || !Race || !BRRAudio::Open(int32(Device->GetSampleRate()))) return;
+	SoundOutput->Start();
+	Race->EnableSound(CVarCommentary.GetValueOnGameThread());
+	int32 Intro = 0, Loop = 0;
+	BRRAudio::CircuitMusic(DataDir, LevelName, Intro, Loop);
+	BRRAudio::PlayMusic(Intro, Loop);
+	FString Dump;
+	if (FParse::Value(FCommandLine::Get(), TEXT("BRRAudioDump="), Dump)) BRRAudio::DumpTo(Dump, 20.f);
+	UE_LOG(LogBRRRace, Display, TEXT("Sound at %d Hz; music: CD tracks %d then %d from %s"), int32(Device->GetSampleRate()), Intro, Loop,
+		*BRRAudio::GetMusicDir());
+}
+
+void ABRRRaceGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	BRRAudio::StopMusic();
+	Race.Reset(); // its voices stop with it
+	Super::EndPlay(EndPlayReason);
 }
 
 void ABRRRaceGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
@@ -154,6 +189,7 @@ void ABRRRaceGameMode::StartPlay()
 		PC->Possess(PlayerCar);
 		PC->SetViewTarget(RaceCamera);
 	}
+	StartSound();
 }
 
 bool ABRRRaceGameMode::LoadVehicleMeshes(const FString& Vehicle, int32 Colour, UStaticMesh*& OutBody, TArray<UStaticMesh*>& OutWheels) const
@@ -265,6 +301,9 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 	if (!Race || !PlayerCar) return;
 
 	// The original's rules and opponents advance in whole 28 ms ticks.
+	BRRAudio::SetVolumes(CVarSoundVolume.GetValueOnGameThread(), CVarMusicVolume.GetValueOnGameThread());
+	if (const double Knock = PlayerCar->TakeImpactSpeed(); Knock > 0) Race->ReportPlayerImpact(Knock);
+	if (PlayerCar->TakeRecovered()) Race->ReportPlayerRecovered();
 	const FTransform PlayerPose = PlayerCar->GetBodyOriginTransform();
 	const FVector PlayerVelocity = PlayerCar->GetVelocity();
 	if (!bHaveLastPlayer) LastPlayerPose = PlayerPose, LastPlayerVelocity = PlayerVelocity, bHaveLastPlayer = true;
@@ -322,8 +361,8 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 		if (Now - PerfSince >= 5.0)
 		{
 			const double Wall = Now - PerfSince;
-			UE_LOG(LogBRRRace, Display, TEXT("perf: %.1f fps, race at %.2fx real time, physics at %.2fx, %.0f km/h"), PerfFrames / Wall,
-				PerfTicks * FBRRRace::TickSeconds / Wall, PerfPhysics / Wall, PlayerCar->GetVelocity().Size() * 0.036);
+			UE_LOG(LogBRRRace, Display, TEXT("perf: %.1f fps, race at %.2fx real time, physics at %.2fx, %.0f km/h; sound: %s"), PerfFrames / Wall,
+				PerfTicks * FBRRRace::TickSeconds / Wall, PerfPhysics / Wall, PlayerCar->GetVelocity().Size() * 0.036, *BRRAudio::DebugState());
 			PerfSince = Now;
 			PerfFrames = PerfTicks = 0;
 			PerfPhysics = 0;

@@ -67,6 +67,7 @@ ABRRVehiclePawn::ABRRVehiclePawn()
 	Chassis->SetCollisionProfileName(TEXT("Vehicle"));
 	Chassis->SetSimulatePhysics(true);
 	Chassis->BodyInstance.bUseCCD = true;
+	Chassis->SetNotifyRigidBodyCollision(true); // hit events, for the race's impact sound (NotifyHit)
 	SetRootComponent(Chassis);
 
 	BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Body"));
@@ -239,6 +240,18 @@ void ABRRVehiclePawn::Recover(const TOptional<FTransform>& Where)
 	SetActorTransform(Target, false, nullptr, ETeleportType::ResetPhysics);
 	Chassis->SetPhysicsLinearVelocity(FVector::ZeroVector);
 	Chassis->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+	bRecovered = true;
+}
+
+void ABRRVehiclePawn::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp, bool bSelfMoved,
+	FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit)
+{
+	Super::NotifyHit(MyComp, Other, OtherComp, bSelfMoved, HitLocation, HitNormal, NormalImpulse, Hit);
+	// The ground is not an obstacle: landings are the race's to hear (VehicleSim::landing_impact).
+	const UStaticMeshComponent* Mesh = Cast<UStaticMeshComponent>(OtherComp);
+	if (!Mesh || !Mesh->GetStaticMesh() || Mesh->GetStaticMesh()->GetName().EndsWith(TEXT("_Terrain"))) return;
+	const double Mass = Chassis ? Chassis->GetMass() : 0.0;
+	if (Mass > 0) ImpactSpeed = FMath::Max(ImpactSpeed, NormalImpulse.Size() / Mass);
 }
 
 void ABRRVehiclePawn::SetSurfaces(const FBRRHandlingMetrics& Handling)

@@ -69,6 +69,13 @@ public:
 	// Puts the car back on its wheels where it is (or at Where), at rest.
 	void Recover(const TOptional<FTransform>& Where = {});
 
+	// For the race's sound, read and cleared by the game mode: the hardest knock against solid
+	// scenery since (speed into it, cm/s), and whether the car was put back on the track.
+	double TakeImpactSpeed() { const double S = ImpactSpeed; ImpactSpeed = 0; return S; }
+	bool TakeRecovered() { const bool b = bRecovered; bRecovered = false; return b; }
+	virtual void NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp, bool bSelfMoved,
+		FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit) override;
+
 	bool bControlsLocked = true;          // until the lights go out
 	TOptional<FBRRDriveInput> ScriptedInput; // drive-test / autopilot override
 
@@ -99,6 +106,8 @@ public:
 
 private:
 	bool bBoostKey = false;
+	double ImpactSpeed = 0;
+	bool bRecovered = false;
 	struct FWheelVisual
 	{
 		TObjectPtr<UStaticMeshComponent> Mesh;

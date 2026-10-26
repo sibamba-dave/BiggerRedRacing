@@ -78,6 +78,14 @@ public:
 
 	int32 NumRacers() const;
 	int32 PlayerIndex() const;
+
+	// The race's sound (FBRRRaceSound, through BRRAudio's mixer): every car's engine, skids,
+	// impacts, the countdown, and the circuit's commentator when bCommentary. Off until called.
+	void EnableSound(bool bCommentary);
+	// What the race cannot see of the player's Chaos car, for its sound: a knock against solid
+	// scenery (the speed into it, cm/s) and a recovery onto the track.
+	void ReportPlayerImpact(double SpeedIntoCmPerSecond);
+	void ReportPlayerRecovered();
 	bool IsGhost(int32 Racer) const;
 	FString VehicleOf(int32 Racer) const;
 	int32 ColourOf(int32 Racer) const;   // team colour 1..6
