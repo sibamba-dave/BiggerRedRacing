@@ -25,6 +25,21 @@ namespace
 	constexpr double SteerResponse = 8.0; // 1/s, steering input smoothing
 	constexpr double SlipDecay = 8.0;     // 1/s, sideways velocity decay on the ground
 	constexpr double ScrubRate = 1.0;     // 1/s, speed scrub towards the steady turning speed at full lock
+	constexpr double OverSpeedDecay = 2.0; // 1/s, back down to a slower surface's top speed
+
+	// The original's grip switching makes its yaw rate jitter turn to turn; follow its trend.
+	TArray<FVector2D> SmoothCurve(const TArray<FVector2D>& In)
+	{
+		TArray<FVector2D> Out;
+		for (int32 I = 0; I < In.Num(); ++I)
+		{
+			FVector2D Sum = FVector2D::ZeroVector;
+			int32 Count = 0;
+			for (int32 J = FMath::Max(0, I - 3); J <= FMath::Min(In.Num() - 1, I + 3); ++J, ++Count) Sum += In[J];
+			Out.Add(Sum / Count);
+		}
+		return Out;
+	}
 }
 
 UBRRVehicleWheel::UBRRVehicleWheel()
@@ -172,21 +187,8 @@ void ABRRVehiclePawn::Setup(const FBRRVehicleMesh& Vehicle, UStaticMesh* Body, c
 	Torque->AddKey(EngineMaxRPM, 0.27f);
 
 	// Steering is the original's (see ApplyOriginalSteering); Chaos tyres only follow.
-	// The original's grip switching makes its yaw rate jitter turn to turn; follow its trend.
-	auto Smooth = [](const TArray<FVector2D>& In)
-	{
-		TArray<FVector2D> Out;
-		for (int32 I = 0; I < In.Num(); ++I)
-		{
-			FVector2D Sum = FVector2D::ZeroVector;
-			int32 Count = 0;
-			for (int32 J = FMath::Max(0, I - 3); J <= FMath::Min(In.Num() - 1, I + 3); ++J, ++Count) Sum += In[J];
-			Out.Add(Sum / Count);
-		}
-		return Out;
-	};
-	YawCurve = Smooth(Ref.TurnCurve);
-	CoastYawCurve = Smooth(Ref.CoastTurnCurve);
+	YawCurve = SmoothCurve(Ref.TurnCurve);
+	CoastYawCurve = SmoothCurve(Ref.CoastTurnCurve);
 	if (Ref.YawTimeConstant > 0) YawResponse = 1.0 / Ref.YawTimeConstant;
 	TurnScrubSpeed = Ref.TurnSpeed;
 
@@ -239,6 +241,43 @@ void ABRRVehiclePawn::Recover(const TOptional<FTransform>& Where)
 	Chassis->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
 }
 
+void ABRRVehiclePawn::SetSurfaces(const FBRRHandlingMetrics& Handling)
+{
+	// Each surface against the track the engine and brakes were fitted to (Setup): its share of
+	// the track's acceleration and braking, its top speed, its own turning.
+	const FBRRSurfaceMetrics& Track = Handling.Surfaces[0];
+	auto Accel = [](const FBRRSurfaceMetrics& M) { return M.TimeTo60 > 0 ? 0.6 * M.TopSpeed / M.TimeTo60 : 0.0; };
+	auto Decel = [](const FBRRSurfaceMetrics& M) { return M.BrakeTime > 0 ? M.TopSpeed / M.BrakeTime : 0.0; };
+	Surfaces.Reset();
+	for (const FBRRSurfaceMetrics& M : Handling.Surfaces)
+	{
+		FSurfaceHandling& S = Surfaces.AddDefaulted_GetRef();
+		S.Yaw = SmoothCurve(M.TurnCurve);
+		S.CoastYaw = SmoothCurve(M.CoastTurnCurve);
+		S.YawResponse = M.YawTimeConstant > 0 ? 1.0 / M.YawTimeConstant : YawResponse;
+		S.ScrubSpeed = M.TurnSpeed;
+		S.TopSpeed = M.TopSpeed;
+		S.Throttle = Accel(Track) > 0 ? FMath::Clamp(Accel(M) / Accel(Track), 0.0, 1.0) : 1.0;
+		S.Brake = Decel(Track) > 0 ? FMath::Clamp(Decel(M) / Decel(Track), 0.0, 1.0) : 1.0;
+	}
+	CurrentSurface = -1;
+	SetSurface(0);
+}
+
+void ABRRVehiclePawn::SetSurface(int32 Surface)
+{
+	if (Surface == CurrentSurface || !Surfaces.IsValidIndex(Surface)) return;
+	CurrentSurface = Surface;
+	const FSurfaceHandling& S = Surfaces[Surface];
+	if (!S.Yaw.IsEmpty()) YawCurve = S.Yaw;
+	if (!S.CoastYaw.IsEmpty()) CoastYawCurve = S.CoastYaw;
+	YawResponse = S.YawResponse;
+	TurnScrubSpeed = S.ScrubSpeed;
+	SurfaceTopSpeed = S.TopSpeed;
+	ThrottleScale = S.Throttle;
+	BrakeScale = S.Brake;
+}
+
 FBRRDriveInput ABRRVehiclePawn::ReadPlayerInput() const
 {
 	FBRRDriveInput In;
@@ -268,8 +307,12 @@ void ABRRVehiclePawn::Tick(float DeltaSeconds)
 		In.bBrake = false;
 		Chassis->AddForce(GetActorForwardVector() * BoostAccel, NAME_None, /*bAccelChange=*/true);
 	}
-	Movement->SetThrottleInput(In.bAccel ? 1.f : 0.f);
-	Movement->SetBrakeInput(In.bBrake ? 1.f : 0.f);
+	// The surface's top speed: past it the throttle is off and the car is brought back down.
+	const double Fwd = GetForwardSpeed();
+	const bool bOverSpeed = SurfaceTopSpeed > 0 && Fwd > SurfaceTopSpeed;
+	if (bOverSpeed) Chassis->AddForce(-GetActorForwardVector() * (Fwd - SurfaceTopSpeed) * OverSpeedDecay, NAME_None, /*bAccelChange=*/true);
+	Movement->SetThrottleInput(In.bAccel && !bOverSpeed ? float(ThrottleScale) : 0.f);
+	Movement->SetBrakeInput(In.bBrake ? float(BrakeScale) : 0.f);
 	Movement->SetSteeringInput((In.bRight ? 1.f : 0.f) - (In.bLeft ? 1.f : 0.f));
 	Movement->SetHandbrakeInput(In.bHandbrake);
 	// A car that settled on the grid goes to sleep, and Chaos does not wake it for the drivetrain.

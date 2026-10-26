@@ -583,6 +583,8 @@ FBRRBoost FBRRRace::PlayerBoost() const
 	return Out;
 }
 
+int32 FBRRRace::PlayerSurface() const { return Impl->Cars[Impl->Player].land & 7; }
+
 bool FBRRRace::IsPlayerBoosting() const { return Impl->Cars[Impl->Player].boost_timer > 0; }
 
 double FBRRRace::PlayerBoostAccel() const { return Impl->BoostAccel; }

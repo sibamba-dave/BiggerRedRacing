@@ -146,6 +146,49 @@ bool FBRRRaceBoostTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// The surface under the player follows the map: sweeping the car over DIRT1 and WATER1 finds the
+// track it starts on and the other surfaces around it.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBRRRaceSurfacesTest, "BRR.Formats.Race.Surfaces",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBRRRaceSurfacesTest::RunTest(const FString& Parameters)
+{
+	const FString DataDir = BRR::GetDataDir();
+	if (DataDir.IsEmpty())
+	{
+		AddWarning(TEXT("BRR data dir not found (set BRR_DATA_DIR); skipping."));
+		return true;
+	}
+	for (const TPair<const TCHAR*, const TCHAR*>& L : { TPair<const TCHAR*, const TCHAR*>(TEXT("DIRT1"), TEXT("JEEP")), TPair<const TCHAR*, const TCHAR*>(TEXT("WATER1"), TEXT("INFLATE")) })
+	{
+		FString Error;
+		FBRRWorld World;
+		if (!TestTrue(TEXT("world"), FBRRWorld::Load(DataDir, L.Key, {}, 1, World, Error))) continue;
+		TUniquePtr<FBRRRace> Race = FBRRRace::Create(DataDir, L.Key, L.Value, Error);
+		if (!TestTrue(FString::Printf(TEXT("%s %s"), L.Key, *Error), Race.IsValid())) continue;
+		const FTransform Grid = Race->RacerTransform(Race->PlayerIndex());
+		Race->Tick(Grid, FVector::ZeroVector);
+		const int32 OnGrid = Race->PlayerSurface();
+		TMap<int32, int32> Seen;
+		const FBox Map = World.Terrain.GetBounds() == FBox3f(ForceInit) ? FBox(ForceInit) : FBox(World.Terrain.GetBounds());
+		for (int32 I = 0; I < 40; ++I)
+		{
+			for (int32 J = 0; J < 40; ++J)
+			{
+				FVector At = FMath::Lerp(Map.Min, Map.Max, FVector((I + 0.5) / 40.0, (J + 0.5) / 40.0, 0.0));
+				At.Z = World.GroundHeightAt(At.X, At.Y);
+				Race->Tick(FTransform(Grid.GetRotation(), At), FVector::ZeroVector);
+				++Seen.FindOrAdd(Race->PlayerSurface());
+			}
+		}
+		FString Hist;
+		for (const TPair<int32, int32>& S : Seen) Hist += FString::Printf(TEXT(" %s:%d"), FBRRHandlingMetrics::SurfaceName(S.Key), S.Value);
+		AddInfo(FString::Printf(TEXT("SURFACES %s: grid on %s; 1600 samples:%s"), L.Key, FBRRHandlingMetrics::SurfaceName(OnGrid), *Hist));
+		TestTrue(TEXT("more than one surface on the map"), Seen.Num() > 1);
+	}
+	return true;
+}
+
 // Every level's field: which vehicle and team colour each grid block races in.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBRRRaceFieldsTest, "BRR.Formats.Race.Fields",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

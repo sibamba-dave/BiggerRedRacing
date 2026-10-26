@@ -54,6 +54,10 @@ View distance: `brr.ViewCells` (console or `-ExecCmds="brr.ViewCells N"`) draws 
 cells deep, as the original did; it retuned this between 10 and 22 against the frame rate, and the
 default is 16. 0 draws the whole map.
 
+Surface handling: the player's car takes the original's handling for the surface under it (track,
+slippy, grass, sand, ...: turning, acceleration, braking, top speed). `brr.SurfaceHandling 0` uses
+the track's everywhere.
+
 Palette check: `python Tools/palette_check.py <screenshot.png> <palette.png>` reports pixels that are
 not the level's palette colours (export `T_<LEVEL>_Palette` from the import as the palette).
 

@@ -98,6 +98,9 @@ public:
 	// accelerator down and ignores the brake, and adds its own thrust - tapering to nothing at the
 	// vehicle's boost cap - which this gives as an acceleration along the car, cm/s/s.
 	bool IsPlayerBoosting() const;
+	// The surface under the player this tick (0-7, FBRRHandlingMetrics::SurfaceName), as the
+	// original's ground sampling reads it.
+	int32 PlayerSurface() const;
 	double PlayerBoostAccel() const;
 
 	// The original's chase camera on the player, stepped with each tick; Alpha (0..1) blends the

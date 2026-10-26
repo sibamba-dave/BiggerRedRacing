@@ -34,6 +34,9 @@ namespace
 		TEXT("How far the world is drawn, in terrain cells of view depth: the original's view distance, which it ")
 		TEXT("retuned between 10 and 22 against the frame rate. 0 draws the whole map."));
 
+	TAutoConsoleVariable<bool> CVarSurfaceHandling(TEXT("brr.SurfaceHandling"), true,
+		TEXT("The player's car handles as the surface under it does in the original (off: the track's everywhere)."));
+
 	// The original's 4:3 screen; any other window shape is letterboxed.
 	constexpr float ClassicAspect = 4.f / 3.f;
 	// The original's vertical field of view, solved from a capture of the original (WATER1 grid,
@@ -188,6 +191,7 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 		{
 			PlayerCar = GetWorld()->SpawnActor<ABRRVehiclePawn>(ABRRVehiclePawn::StaticClass(), Start);
 			PlayerCar->Setup(*Data, Body, Wheels, Handling.Surfaces[0], Start);
+			PlayerCar->SetSurfaces(Handling);
 		}
 		else if (Race->IsGhost(R))
 		{
@@ -215,6 +219,7 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 		Race->Tick(PlayerCar->GetBodyOriginTransform(), PlayerCar->GetVelocity(), PlayerCar->IsBoostKeyDown());
 		PlayerCar->bBoosting = Race->IsPlayerBoosting();
 		PlayerCar->BoostAccel = Race->PlayerBoostAccel();
+		PlayerCar->SetSurface(CVarSurfaceHandling.GetValueOnGameThread() ? Race->PlayerSurface() : 0);
 		FVector2D Bounce;
 		if (Race->ConsumePlayerBounce(Bounce))
 		{

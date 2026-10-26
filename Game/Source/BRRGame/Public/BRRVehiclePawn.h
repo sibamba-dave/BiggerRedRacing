@@ -20,6 +20,7 @@ class USpringArmComponent;
 class UStaticMesh;
 class UStaticMeshComponent;
 struct FBRRSurfaceMetrics;
+struct FBRRHandlingMetrics;
 struct FBRRVehicleMesh;
 
 UCLASS()
@@ -53,6 +54,12 @@ public:
 	// Builds the car. BodyOrigin is where the original puts the vehicle (its mesh origin).
 	void Setup(const FBRRVehicleMesh& Vehicle, UStaticMesh* Body, const TArray<UStaticMesh*>& WheelMeshes,
 		const FBRRSurfaceMetrics& Reference, const FTransform& BodyOrigin);
+
+	// The original's handling differs by surface (FBRRHandlingMetrics::SurfaceName). Given all
+	// eight, the car follows the one under it (SetSurface, each tick): its turning, its share of
+	// the track's acceleration and braking, and its top speed.
+	void SetSurfaces(const FBRRHandlingMetrics& Handling);
+	void SetSurface(int32 Surface);
 
 	// The original's notion of the car's position: the body mesh origin.
 	FTransform GetBodyOriginTransform() const;
@@ -106,6 +113,16 @@ private:
 	TArray<FVector2D> CoastYawCurve; // ...and coasting
 	double TurnScrubSpeed = 0;    // the original's steady full-lock speed, cm/s
 	double YawResponse = 4.0;     // 1/s: the original's yaw build-up
+
+	struct FSurfaceHandling
+	{
+		TArray<FVector2D> Yaw, CoastYaw;
+		double YawResponse = 4.0, ScrubSpeed = 0, TopSpeed = 0, Throttle = 1, Brake = 1;
+	};
+	TArray<FSurfaceHandling> Surfaces;
+	int32 CurrentSurface = -1;
+	double SurfaceTopSpeed = 0;   // cm/s, 0 = the engine's own
+	double ThrottleScale = 1, BrakeScale = 1;
 	double Steer = 0;             // smoothed steering, -1..1
 
 	static double FullLockYawRate(const TArray<FVector2D>& Curve, double Speed);
