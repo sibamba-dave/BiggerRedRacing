@@ -44,6 +44,9 @@ private:
 
 	FBRRTopMap TopMap;
 	FIntPoint MapInset = FIntPoint::ZeroValue; // the map image's first opaque column and row
+	TArray<FIntPoint> GameInset;               // the same, per GAMESVGA glyph
+	FVector2D FillTexel = FVector2D::ZeroVector;  // UV of the boost pip's brightest red
+	FVector2D FrameTexel = FVector2D::ZeroVector; // UV of the darkest colour of GAMESVGA glyph 39
 	int32 FinalLapShownAt = -1; // race time (s) the final lap began, for the banner
 	double FinalLapStart = 0;
 };

@@ -55,6 +55,17 @@ struct FBRRRacerStatus
 	TArray<double> LapTimes;   // seconds, one per completed lap
 };
 
+// The player's boost reserve, as the HUD shows it. The vehicle's mode (its `nitro` tuning):
+// 1 = a count of fixed bursts, drawn as pips; 2 = a holdable stock of ticks, drawn as a bar;
+// 0 = none (aircraft, or the level has no `nitros` line).
+struct FBRRBoost
+{
+	int32 Mode = 0;
+	int32 Count = 0;        // bursts the race starts with (mode 1)
+	int32 Left = 0;         // bursts still unused (mode 1)
+	double Fraction = 1.0;  // stock left, 0..1 (mode 2)
+};
+
 class BRRFORMATS_API FBRRRace
 {
 public:
@@ -106,6 +117,8 @@ public:
 	int32 Laps() const;
 	double RaceTime() const;           // seconds since the start
 	FBRRRacerStatus Status(int32 Racer) const;
+	// The race does not spend boost yet (the Chaos car has none), so the reserve reads full.
+	FBRRBoost PlayerBoost() const;
 
 private:
 	FBRRRace();

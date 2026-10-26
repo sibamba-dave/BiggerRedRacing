@@ -248,6 +248,7 @@ struct FBRRRace::FImpl
 	bigred::ChaseCamera Camera;
 	bigred::CameraState CameraPrev;
 	bigred::SceneryState Scenery;
+	bigred::NitroReserve Nitros;
 	TOptional<FVector2D> PlayerBounce; // UE ground velocity, cm/s, from a destructible's push-back
 	int32 GhostRate = 0x200;
 	uint32 BandClock = 0;
@@ -316,6 +317,7 @@ TUniquePtr<FBRRRace> FBRRRace::Create(const FString& DataDir, const FString& Lev
 		const bigred::StartingGrid Grid = bigred::parse_grid(Script);
 		const bigred::StartPlaces Places = bigred::parse_start_places(Script);
 		const bigred::NitroReserve Nitros = bigred::parse_nitros(Script);
+		I.Nitros = Nitros;
 		I.Rates = bigred::parse_replay_rates(Script);
 		// The original draws the player's block as rand() % 6 unless the level fixes it (`spos`).
 		I.Player = Places.present ? FMath::Clamp(int32(Places.single), 0, GridRacers - 1) : FMath::RandRange(0, GridRacers - 1);
@@ -532,6 +534,26 @@ double FBRRRace::WreckSeconds(int32 Instance) const
 void FBRRRace::KnockOver(int32 Instance) { Impl->Scenery.wreck(Instance, Impl->Cars[Impl->Player].tick); }
 
 uint32 FBRRRace::WreckRevision() const { return Impl->Scenery.revision; }
+
+FBRRBoost FBRRRace::PlayerBoost() const
+{
+	const FImpl& I = *Impl;
+	FBRRBoost Out;
+	const bigred::VehicleSim& Car = I.Cars[I.Player];
+	if (!Car.tune || I.Nitros.count <= 0) return Out;
+	const int32 Mode = Car.tune->nitro[0];
+	if (Mode == 1)
+	{
+		Out.Mode = 1;
+		Out.Count = I.Nitros.count;
+		Out.Left = I.Nitros.count;
+	}
+	else if (Mode == 2 && I.Nitros.full_scale_ticks > 0)
+	{
+		Out.Mode = 2;
+	}
+	return Out;
+}
 
 bool FBRRRace::ConsumePlayerBounce(FVector2D& OutVelocityXY)
 {
