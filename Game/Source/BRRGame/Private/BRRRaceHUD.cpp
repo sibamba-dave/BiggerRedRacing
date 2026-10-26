@@ -123,7 +123,7 @@ float ABRRRaceHUD::Sprite(const TArray<TObjectPtr<UTexture2D>>& Sheet, int32 Ind
 float ABRRRaceHUD::TextWidth(const FString& S, float Scale) const
 {
 	float W = 0;
-	for (const TCHAR C : S) W += (SpriteWidth(Alphabet, BRR::InterfaceGlyph(C)) + 1.f) * Scale;
+	for (const TCHAR C : S) W += SpriteWidth(Alphabet, BRR::InterfaceGlyph(C)) * Scale;
 	return W;
 }
 
@@ -138,7 +138,7 @@ float ABRRRaceHUD::Text(const FString& S, float X, float Y, float Scale, const F
 			FVector2D(T->GetSizeX() * Scale, T->GetSizeY() * Scale), Tint);
 		Tile.BlendMode = SE_BLEND_Masked;
 		Canvas->DrawItem(Tile);
-		X += (T->GetSizeX() + 1.f) * Scale;
+		X += T->GetSizeX() * Scale; // the 8-pixel cell, no gap: as the original sets it
 	}
 	return X;
 }
@@ -184,8 +184,9 @@ void ABRRRaceHUD::DrawHUD()
 	}
 
 	// Top right: the placing (large digit and ordinal, right edge at 610, top at 24), the boost
-	// reserve under it, and the laps completed over the laps, in the interface alphabet at twice
-	// its size, right edge at 592, top at 110. No clock and no speed: the original shows neither.
+	// reserve under it, and the laps completed over the laps in the interface alphabet at twice
+	// its size from (550, 108) (its cells end at 598). No clock and no speed: the original shows
+	// neither.
 	{
 		const int32 Place = FMath::Clamp(Me.Place, 1, 9);
 		const int32 Ordinal = OrdinalSt + (Place == 1 ? 0 : Place == 2 ? 1 : Place == 3 ? 2 : 3);
@@ -217,7 +218,7 @@ void ABRRRaceHUD::DrawHUD()
 			Rect(Pip, FillTexel, 528.f, 76.f, 72.f * float(FMath::Clamp(Boost.Fraction, 0.0, 1.0)), 10.f);
 		}
 		const FString Laps = FString::Printf(TEXT("%d/%d"), FMath::Min(Me.Lap, Race->Laps()), Race->Laps());
-		Text(Laps, 592.f * K - TextWidth(Laps, 2.f * K), 110.f * K, 2.f * K);
+		Text(Laps, 598.f * K - TextWidth(Laps, 2.f * K), 108.f * K, 2.f * K);
 	}
 
 	// Centre: the banners the game has artwork for.

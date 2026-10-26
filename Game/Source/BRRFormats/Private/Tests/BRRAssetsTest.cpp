@@ -3,6 +3,7 @@
 
 #include "HAL/FileManager.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -54,6 +55,41 @@ bool FBRRAssetsTest::RunTest(const FString& Parameters)
 	}
 
 	TestFalse(TEXT("missing member reports an error"), BRR::LoadScreen(DataDir, TEXT("DIRT1.LEV"), TEXT("NOPE.RAW"), Screen, Error));
+	return true;
+}
+
+// Writes every glyph of the interface sprite sheets to Saved/BRRSheets/<sheet>_<n>.ppm (through
+// WATER1's palette, transparency as magenta) for comparing with captures of the original.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBRRSheetDumpTest, "BRR.Formats.SheetDump",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBRRSheetDumpTest::RunTest(const FString& Parameters)
+{
+	const FString DataDir = BRR::GetDataDir();
+	if (DataDir.IsEmpty()) return true;
+	FString Error;
+	TArray<FColor> Palette;
+	if (!BRR::LoadPalette(DataDir, TEXT("WATER1.LEV"), TEXT("MAP.COL"), Palette, Error) && !BRR::LoadPalette(DataDir, TEXT("WATER1.LEV"), TEXT("1.COL"), Palette, Error)) return false;
+	const FString Out = FPaths::ProjectSavedDir() / TEXT("BRRSheets");
+	for (const TPair<const TCHAR*, const TCHAR*>& Sheet : { TPair<const TCHAR*, const TCHAR*>(TEXT("ALWAYS.WAP"), TEXT("GAME.SPR")),
+		TPair<const TCHAR*, const TCHAR*>(TEXT("ALWAYS.WAP"), TEXT("ALWAYS.SPR")), TPair<const TCHAR*, const TCHAR*>(TEXT("INGAME.WAP"), TEXT("GAMEVGA.SPR")),
+		TPair<const TCHAR*, const TCHAR*>(TEXT("ALWAYS.WAP"), TEXT("SML_ALPH.SPR")), TPair<const TCHAR*, const TCHAR*>(TEXT("ALWAYS.WAP"), TEXT("MICRO.FNT")) })
+	{
+		TArray<FBRRImage> Glyphs;
+		if (!BRR::LoadSprites(DataDir, Sheet.Key, Sheet.Value, Palette, Glyphs, Error)) continue;
+		FString Sizes;
+		for (int32 G = 0; G < Glyphs.Num(); ++G)
+		{
+			const FBRRImage& I = Glyphs[G];
+			Sizes += FString::Printf(TEXT(" %d:%dx%d"), G, I.Width, I.Height);
+			TArray<uint8> Ppm;
+			const FTCHARToUTF8 Head(*FString::Printf(TEXT("P6\n%d %d\n255\n"), I.Width, I.Height));
+			Ppm.Append(reinterpret_cast<const uint8*>(Head.Get()), Head.Length());
+			for (const FColor& C : I.Pixels) Ppm.Append(C.A ? TArray<uint8>{ C.R, C.G, C.B } : TArray<uint8>{ 255, 0, 255 });
+			FFileHelper::SaveArrayToFile(Ppm, *(Out / FString::Printf(TEXT("%s_%03d.ppm"), *FPaths::GetBaseFilename(Sheet.Value), G)));
+		}
+		AddInfo(FString::Printf(TEXT("SHEET %s:%s"), Sheet.Value, *Sizes));
+	}
 	return true;
 }
 
