@@ -446,6 +446,19 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 	TArray<FVehicleAssets> VehicleAssets;
 	for (const FBRRVehicleMesh& Vehicle : World.Vehicles) VehicleAssets.Add(MakeVehicle(Assets, Vehicle));
 
+	// Team colours: the original ships six repaints of every body (<BASE>1..6.3DW), the same
+	// geometry naming a different palette block (ORR scene/vehicle_render.h). SM_<V>_Body_C<n> is
+	// repaint n; the race picks each racer's (ABRRRaceGameMode::LoadVehicleMeshes).
+	for (int32 Colour = 1; Colour <= 6; ++Colour)
+	{
+		FBRRWorld Painted;
+		if (!FBRRWorld::Load(DataDir, Level, Vehicles, Colour, Painted, OutError)) return false;
+		for (const FBRRVehicleMesh& Vehicle : Painted.Vehicles)
+		{
+			MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Body_C%d"), *Vehicle.Name, Colour), Vehicle.Body, false);
+		}
+	}
+
 	// The map.
 	OutMapPackage = Assets.Dir / FString::Printf(TEXT("L_%s"), *Level);
 	UPackage* MapPackage = MakePackage(OutMapPackage);

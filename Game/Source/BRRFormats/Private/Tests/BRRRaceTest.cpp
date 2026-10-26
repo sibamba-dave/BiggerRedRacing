@@ -94,6 +94,36 @@ bool FBRRRaceDirt1Test::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Every level's field: which vehicle and team colour each grid block races in.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBRRRaceFieldsTest, "BRR.Formats.Race.Fields",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBRRRaceFieldsTest::RunTest(const FString& Parameters)
+{
+	const FString DataDir = BRR::GetDataDir();
+	if (DataDir.IsEmpty())
+	{
+		AddWarning(TEXT("BRR data dir not found (set BRR_DATA_DIR); skipping."));
+		return true;
+	}
+	for (const TCHAR* Level : { TEXT("DIRT1"), TEXT("WATER1"), TEXT("CITY1"), TEXT("MOON1") })
+	{
+		FString Error;
+		FBRRWorld Probe;
+		if (!TestTrue(FString::Printf(TEXT("%s loads"), Level), FBRRWorld::Load(DataDir, Level, {}, 1, Probe, Error))) continue;
+		TUniquePtr<FBRRRace> Race = FBRRRace::Create(DataDir, Level, Probe.CarList[0], Error);
+		if (!TestTrue(FString::Printf(TEXT("%s race %s"), Level, *Error), Race.IsValid())) continue;
+		FString Field;
+		for (int32 R = 0; R < Race->NumRacers(); ++R)
+		{
+			Field += FString::Printf(TEXT(" %d:%s/c%d%s"), R, *Race->VehicleOf(R), Race->ColourOf(R),
+				R == Race->PlayerIndex() ? TEXT("(player)") : Race->IsGhost(R) ? TEXT("") : TEXT("(empty)"));
+		}
+		AddInfo(FString::Printf(TEXT("FIELD %s cars [%s]:%s"), Level, *FString::Join(Probe.CarList, TEXT(",")), *Field));
+	}
+	return true;
+}
+
 // DIRT1's destructible decor: the player's body set down on a piece knocks it over through the
 // original's blocker probe, a UE knock does the same, and nothing else goes down.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBRRRaceWrecksTest, "BRR.Formats.Race.Dirt1Wrecks",

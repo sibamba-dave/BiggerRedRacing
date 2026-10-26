@@ -366,6 +366,14 @@ TUniquePtr<FBRRRace> FBRRRace::Create(const FString& DataDir, const FString& Lev
 			I.VehicleNames.Add(FromUtf8(Vehicle));
 			I.Colours.Add(Colour + 1);
 		}
+		// The player races in red (team colour 1), and the ghost whose tape says red takes the
+		// player's block colour instead, so each colour is on the grid once: what captures of the
+		// original show (WATER1: a red player against yellow, blue, orange, green and magenta).
+		for (int32 R = 0; R < I.Colours.Num(); ++R)
+		{
+			if (R != I.Player && I.Colours[R] == 1) I.Colours[R] = I.Colours[I.Player];
+		}
+		I.Colours[I.Player] = 1;
 		I.Scenery.resize(I.Scene.instances.size());
 		I.LinkField();
 		I.StartCars = I.Cars;

@@ -41,7 +41,7 @@ public:
 
 private:
 	bool BuildRace(FString& OutError);
-	bool LoadVehicleMeshes(const FString& Vehicle, UStaticMesh*& OutBody, TArray<UStaticMesh*>& OutWheels) const;
+	bool LoadVehicleMeshes(const FString& Vehicle, int32 Colour, UStaticMesh*& OutBody, TArray<UStaticMesh*>& OutWheels) const;
 	void RunDriveTest();
 
 	FString LevelName;

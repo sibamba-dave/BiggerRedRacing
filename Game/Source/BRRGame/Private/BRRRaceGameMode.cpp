@@ -105,10 +105,12 @@ void ABRRRaceGameMode::StartPlay()
 	}
 }
 
-bool ABRRRaceGameMode::LoadVehicleMeshes(const FString& Vehicle, UStaticMesh*& OutBody, TArray<UStaticMesh*>& OutWheels) const
+bool ABRRRaceGameMode::LoadVehicleMeshes(const FString& Vehicle, int32 Colour, UStaticMesh*& OutBody, TArray<UStaticMesh*>& OutWheels) const
 {
 	const FString Dir = FString::Printf(TEXT("/Game/BRR/%s/Meshes/"), *LevelName);
-	OutBody = LoadObject<UStaticMesh>(nullptr, *(Dir + FString::Printf(TEXT("SM_%s_Body"), *Vehicle)));
+	// The body in the racer's team colour (the import's repaint), else the import's own.
+	OutBody = LoadObject<UStaticMesh>(nullptr, *(Dir + FString::Printf(TEXT("SM_%s_Body_C%d"), *Vehicle, Colour)), nullptr, LOAD_NoWarn | LOAD_Quiet);
+	if (!OutBody) OutBody = LoadObject<UStaticMesh>(nullptr, *(Dir + FString::Printf(TEXT("SM_%s_Body"), *Vehicle)));
 	OutWheels.Reset();
 	const FBRRVehicleMesh* Data = VehicleData.Find(Vehicle);
 	for (int32 I = 0; Data && I < Data->Wheels.Num(); ++I)
@@ -174,7 +176,7 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 		const FBRRVehicleMesh* Data = VehicleData.Find(Vehicle);
 		UStaticMesh* Body = nullptr;
 		TArray<UStaticMesh*> Wheels;
-		if (!Data || !LoadVehicleMeshes(Vehicle, Body, Wheels))
+		if (!Data || !LoadVehicleMeshes(Vehicle, Race->ColourOf(R), Body, Wheels))
 		{
 			OutError = FString::Printf(TEXT("%s meshes missing: import %s first (Tools > Big Red Racing)"), *Vehicle, *LevelName);
 			return false;
@@ -300,7 +302,7 @@ void ABRRRaceGameMode::RunDriveTest()
 	VehicleData.Add(Vehicle, World.Vehicles[0]);
 	UStaticMesh* Body = nullptr;
 	TArray<UStaticMesh*> Wheels;
-	LoadVehicleMeshes(Vehicle, Body, Wheels);
+	LoadVehicleMeshes(Vehicle, 1, Body, Wheels);
 	ABRRDriveTest* Test = GetWorld()->SpawnActor<ABRRDriveTest>();
 	Test->Start(DataDir, World.Vehicles[0], Body, Wheels);
 }
