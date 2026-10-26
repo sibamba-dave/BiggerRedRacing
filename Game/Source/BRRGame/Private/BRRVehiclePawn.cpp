@@ -251,6 +251,7 @@ FBRRDriveInput ABRRVehiclePawn::ReadPlayerInput() const
 	In.bLeft = Down(EKeys::Left) || Down(EKeys::A) || StickX < -0.35f;
 	In.bRight = Down(EKeys::Right) || Down(EKeys::D) || StickX > 0.35f;
 	In.bHandbrake = Down(EKeys::SpaceBar) || Down(EKeys::Gamepad_FaceButton_Left);
+	In.bBoost = Down(EKeys::LeftShift) || Down(EKeys::RightShift) || Down(EKeys::Gamepad_FaceButton_Bottom);
 	return In;
 }
 
@@ -260,6 +261,13 @@ void ABRRVehiclePawn::Tick(float DeltaSeconds)
 
 	FBRRDriveInput In = ScriptedInput.IsSet() ? *ScriptedInput : ReadPlayerInput();
 	if (bControlsLocked) In = FBRRDriveInput{ false, false, false, false, true };
+	bBoostKey = In.bBoost;
+	if (bBoosting)
+	{
+		In.bAccel = true;
+		In.bBrake = false;
+		Chassis->AddForce(GetActorForwardVector() * BoostAccel, NAME_None, /*bAccelChange=*/true);
+	}
 	Movement->SetThrottleInput(In.bAccel ? 1.f : 0.f);
 	Movement->SetBrakeInput(In.bBrake ? 1.f : 0.f);
 	Movement->SetSteeringInput((In.bRight ? 1.f : 0.f) - (In.bLeft ? 1.f : 0.f));

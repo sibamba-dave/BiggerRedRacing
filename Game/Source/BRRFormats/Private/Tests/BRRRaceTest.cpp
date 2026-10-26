@@ -94,6 +94,58 @@ bool FBRRRaceDirt1Test::RunTest(const FString& Parameters)
 	return true;
 }
 
+// The player's boost by the original's rules: DIRT1's Jeep fires one burst per press (mode 1),
+// WATER1's inflatable burns its stock while the key is held (mode 2).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBRRRaceBoostTest, "BRR.Formats.Race.Boost",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBRRRaceBoostTest::RunTest(const FString& Parameters)
+{
+	const FString DataDir = BRR::GetDataDir();
+	if (DataDir.IsEmpty())
+	{
+		AddWarning(TEXT("BRR data dir not found (set BRR_DATA_DIR); skipping."));
+		return true;
+	}
+	FString Error;
+	{
+		TUniquePtr<FBRRRace> Race = FBRRRace::Create(DataDir, TEXT("DIRT1"), TEXT("JEEP"), Error);
+		if (!TestTrue(FString::Printf(TEXT("DIRT1 %s"), *Error), Race.IsValid())) return false;
+		const FTransform Parked = Race->RacerTransform(Race->PlayerIndex());
+		const FBRRBoost Full = Race->PlayerBoost();
+		TestEqual(TEXT("the Jeep's boost is pulses"), Full.Mode, 1);
+		TestTrue(TEXT("with bursts to spend"), Full.Count > 0 && Full.Left == Full.Count);
+		Race->Tick(Parked, FVector::ZeroVector, true);
+		TestTrue(TEXT("a press fires a burst"), Race->IsPlayerBoosting());
+		TestEqual(TEXT("and spends one"), Race->PlayerBoost().Left, Full.Count - 1);
+		const double Push = Race->PlayerBoostAccel();
+		TestTrue(TEXT("which pushes a car at rest forward"), Push > 0);
+		int32 Ticks = 1;
+		while (Race->IsPlayerBoosting() && Ticks < 1000)
+		{
+			// Pressing again does nothing while a burst runs (not past it: that fires the next).
+			Race->Tick(Parked, FVector::ZeroVector, Ticks < 100 && Ticks % 2 == 0);
+			++Ticks;
+		}
+		AddInfo(FString::Printf(TEXT("a burst lasts %d ticks (%.2f s), %.0f cm/s/s at rest"), Ticks, Ticks * FBRRRace::TickSeconds, Push));
+		TestEqual(TEXT("presses during a burst spend nothing"), Race->PlayerBoost().Left, Full.Count - 1);
+		TestFalse(TEXT("the burst ends"), Race->IsPlayerBoosting());
+	}
+	{
+		TUniquePtr<FBRRRace> Race = FBRRRace::Create(DataDir, TEXT("WATER1"), TEXT("INFLATE"), Error);
+		if (!TestTrue(FString::Printf(TEXT("WATER1 %s"), *Error), Race.IsValid())) return false;
+		const FTransform Parked = Race->RacerTransform(Race->PlayerIndex());
+		TestEqual(TEXT("the inflatable's boost is held"), Race->PlayerBoost().Mode, 2);
+		for (int32 T = 0; T < 50; ++T) Race->Tick(Parked, FVector::ZeroVector, true);
+		const double Held = Race->PlayerBoost().Fraction;
+		for (int32 T = 0; T < 50; ++T) Race->Tick(Parked, FVector::ZeroVector, false);
+		AddInfo(FString::Printf(TEXT("50 ticks held leave %.3f of the stock"), Held));
+		TestTrue(TEXT("holding burns the stock"), Held < 1.0 && Held > 0.0);
+		TestEqual(TEXT("letting go stops burning it"), Race->PlayerBoost().Fraction, Held);
+	}
+	return true;
+}
+
 // Every level's field: which vehicle and team colour each grid block races in.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBRRRaceFieldsTest, "BRR.Formats.Race.Fields",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

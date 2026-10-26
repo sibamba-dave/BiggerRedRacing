@@ -212,7 +212,9 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 	while (Accumulator >= FBRRRace::TickSeconds)
 	{
 		Accumulator -= FBRRRace::TickSeconds;
-		Race->Tick(PlayerCar->GetBodyOriginTransform(), PlayerCar->GetVelocity());
+		Race->Tick(PlayerCar->GetBodyOriginTransform(), PlayerCar->GetVelocity(), PlayerCar->IsBoostKeyDown());
+		PlayerCar->bBoosting = Race->IsPlayerBoosting();
+		PlayerCar->BoostAccel = Race->PlayerBoostAccel();
 		FVector2D Bounce;
 		if (Race->ConsumePlayerBounce(Bounce))
 		{

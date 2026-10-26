@@ -249,6 +249,7 @@ struct FBRRRace::FImpl
 	bigred::CameraState CameraPrev;
 	bigred::SceneryState Scenery;
 	bigred::NitroReserve Nitros;
+	double BoostAccel = 0; // cm/s/s along the player's car this tick
 	TOptional<FVector2D> PlayerBounce; // UE ground velocity, cm/s, from a destructible's push-back
 	int32 GhostRate = 0x200;
 	uint32 BandClock = 0;
@@ -422,7 +423,7 @@ TArray<FVector> FBRRRace::GhostPath(int32 Racer) const
 	return Path;
 }
 
-void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity)
+void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity, bool bBoostKey)
 {
 	FImpl& I = *Impl;
 	try
@@ -440,6 +441,32 @@ void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity)
 		P.speed = int32(FMath::Clamp(FMath::Sqrt(V.X * V.X + V.Z * V.Z), 0.0, double(0xFFFA)));
 		P.travel = int32(FMath::RoundToInt64(FMath::Atan2(V.X, V.Z) * 65536.0 / (2.0 * PI))) & 0xFFFF;
 		P.dress_replayed();
+
+		// The boost, in VehicleSim::step's order: read_input counts a running burst down,
+		// update_nitro fires one off the reserve (mode 1 on the key's edge, mode 2 while held),
+		// and run_engine adds its thrust - all of `push` well under the cap, tapering to nothing
+		// over the last `cap - nitro[3]`, pulling back past it.
+		I.BoostAccel = 0;
+		if (P.tune && (P.tune->nitro[0] == 1 || P.tune->nitro[0] == 2))
+		{
+			const int32_t* N = P.tune->nitro;
+			if (P.boost_timer > 0) --P.boost_timer;
+			const bool bFire = bBoostKey && (N[0] == 2 || !P.prev_nitro_key);
+			if (bFire && P.nitro_fuel > 0 && P.boost_timer <= 0)
+			{
+				--P.nitro_fuel;
+				P.boost_timer = N[1];
+			}
+			P.prev_nitro_key = bBoostKey;
+			if (P.boost_timer > 0)
+			{
+				const int32 Cap = N[4], Span = N[4] - N[3], Push = N[2];
+				const int32 Gap = Cap - P.vfwd;
+				const int32 Boost = Gap <= 0 ? Gap : Gap > Span ? Push : int32(int64(Gap) * Push / FMath::Max(Span, 1));
+				// vfwd is 1/512 world units per tick; Boost is added to it once a tick.
+				I.BoostAccel = double(Boost) / 512.0 * BRR::CmPerUnit / (TickSeconds * TickSeconds);
+			}
+		}
 
 		// The destructible half of VehicleSim::hit_scenery: whatever prop the body's box touches
 		// goes down, for good, and on the tick it goes down it throws the car off as any blocker
@@ -546,14 +573,19 @@ FBRRBoost FBRRRace::PlayerBoost() const
 	{
 		Out.Mode = 1;
 		Out.Count = I.Nitros.count;
-		Out.Left = I.Nitros.count;
+		Out.Left = Car.nitro_fuel;
 	}
 	else if (Mode == 2 && I.Nitros.full_scale_ticks > 0)
 	{
 		Out.Mode = 2;
+		Out.Fraction = double(Car.nitro_fuel) / I.Nitros.full_scale_ticks;
 	}
 	return Out;
 }
+
+bool FBRRRace::IsPlayerBoosting() const { return Impl->Cars[Impl->Player].boost_timer > 0; }
+
+double FBRRRace::PlayerBoostAccel() const { return Impl->BoostAccel; }
 
 bool FBRRRace::ConsumePlayerBounce(FVector2D& OutVelocityXY)
 {

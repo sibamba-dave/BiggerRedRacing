@@ -45,7 +45,7 @@ against the level's ghost laps, under the original's rules: countdown, CHECKP li
 wrong way, rubber-banded ghosts.
 
 Controls: W/Up accelerate, S/Down brake and reverse, A/D or Left/Right steer, Space handbrake,
-R recover. Gamepad: triggers, left stick, X handbrake, Y recover.
+R recover, Shift boost. Gamepad: triggers, left stick, X handbrake, Y recover, A boost.
 
 Dev switches: `-BRRDriveTest` (handling comparison, see `Docs/Handling.md`), `-BRRAutopilot` (drives
 the player's car along a ghost's racing line, recovering when stuck).

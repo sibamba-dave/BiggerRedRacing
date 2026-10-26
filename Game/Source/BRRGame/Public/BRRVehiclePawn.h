@@ -39,6 +39,7 @@ struct FBRRDriveInput
 	bool bLeft = false;
 	bool bRight = false;
 	bool bHandbrake = false;
+	bool bBoost = false;
 };
 
 UCLASS()
@@ -64,10 +65,18 @@ public:
 	bool bControlsLocked = true;          // until the lights go out
 	TOptional<FBRRDriveInput> ScriptedInput; // drive-test / autopilot override
 
+	// The boost key as last read (false while the controls are locked); the race runs the boost.
+	bool IsBoostKeyDown() const { return bBoostKey; }
+	// Set by the race each tick: while a boost burns, the accelerator is held down, the brake
+	// ignored, and BoostAccel (cm/s/s) pushes the car along its heading - the original's rules.
+	bool bBoosting = false;
+	double BoostAccel = 0;
+
 	virtual void Tick(float DeltaSeconds) override;
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UBoxComponent> Chassis;
+
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UStaticMeshComponent> BodyMesh;
@@ -82,6 +91,7 @@ public:
 	TObjectPtr<UChaosWheeledVehicleMovementComponent> Movement;
 
 private:
+	bool bBoostKey = false;
 	struct FWheelVisual
 	{
 		TObjectPtr<UStaticMeshComponent> Mesh;

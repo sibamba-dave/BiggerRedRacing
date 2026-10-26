@@ -89,8 +89,16 @@ public:
 	// racing line for autopilots and tests. Empty for a racer without a tape.
 	TArray<FVector> GhostPath(int32 Racer) const;
 
-	// Advances one 28 ms tick. PlayerPose is the player's body-origin transform, PlayerVelocity cm/s.
-	void Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity);
+	// Advances one 28 ms tick. PlayerPose is the player's body-origin transform, PlayerVelocity cm/s,
+	// bBoostKey the player's boost key this tick.
+	void Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity, bool bBoostKey = false);
+
+	// The player's boost, run by the original's rules (VehicleSim::update_nitro): mode 1 fires one
+	// burst per press, mode 2 burns the stock while held. While it runs the original holds the
+	// accelerator down and ignores the brake, and adds its own thrust - tapering to nothing at the
+	// vehicle's boost cap - which this gives as an acceleration along the car, cm/s/s.
+	bool IsPlayerBoosting() const;
+	double PlayerBoostAccel() const;
 
 	// The original's chase camera on the player, stepped with each tick; Alpha (0..1) blends the
 	// last two ticks. Returns the eye and its orientation in UE space.
@@ -117,7 +125,6 @@ public:
 	int32 Laps() const;
 	double RaceTime() const;           // seconds since the start
 	FBRRRacerStatus Status(int32 Racer) const;
-	// The race does not spend boost yet (the Chaos car has none), so the reserve reads full.
 	FBRRBoost PlayerBoost() const;
 
 private:
