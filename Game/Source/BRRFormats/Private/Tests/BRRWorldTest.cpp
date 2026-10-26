@@ -197,4 +197,28 @@ bool FBRRWorldLiquidsTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// Decor laid on the ground (the starting grid) is lifted clear of the terrain so the two do not
+// z-fight (FBRRWorld::GroundDecalTriangles): every level with a grid has some.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBRRWorldGroundDecalsTest, "BRR.Formats.World.GroundDecals",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBRRWorldGroundDecalsTest::RunTest(const FString& Parameters)
+{
+	const FString DataDir = BRR::GetDataDir();
+	if (DataDir.IsEmpty())
+	{
+		AddWarning(TEXT("BRR data dir not found (set BRR_DATA_DIR); skipping."));
+		return true;
+	}
+	for (const TCHAR* Level : { TEXT("DIRT1"), TEXT("WATER1"), TEXT("CITY1"), TEXT("SNOW1"), TEXT("MOON1") })
+	{
+		FBRRWorld World;
+		FString Error;
+		if (!TestTrue(FString::Printf(TEXT("%s loads: %s"), Level, *Error), FBRRWorld::Load(DataDir, Level, {}, 1, World, Error))) continue;
+		AddInfo(FString::Printf(TEXT("%s: %d of %d decor triangles lifted off the ground"), Level, World.GroundDecalTriangles, World.Decor.NumTriangles()));
+		TestTrue(FString::Printf(TEXT("%s: the grid is lifted"), Level), World.GroundDecalTriangles >= 4);
+	}
+	return true;
+}
+
 #endif

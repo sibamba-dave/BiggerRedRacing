@@ -506,7 +506,7 @@ namespace
 	};
 
 	UStaticMesh* MakeMesh(FLevelAssets& Assets, const FString& Name, const FBRRMesh& Source, bool bComplexCollision,
-		ESurface Surface = ESurface::Ground)
+		ESurface Surface = ESurface::Ground, bool bNanite = false)
 	{
 		if (Source.NumTriangles() == 0) return nullptr;
 
@@ -567,6 +567,16 @@ namespace
 		Model.BuildSettings.bUseFullPrecisionUVs = true;
 		Mesh->CreateMeshDescription(0, MoveTemp(Desc));
 		Mesh->CommitMeshDescription(0);
+		if (bNanite)
+		{
+			// The terrain and the decor cover the whole map: as plain meshes they overflow the
+			// virtual shadow maps' marking queue (and are drawn into every shadow page whole).
+			// Nanite clusters them. The fallback - what ray tracing, Lumen and the collision use -
+			// keeps every triangle, so those see the original's geometry exactly.
+			Mesh->NaniteSettings.bEnabled = true;
+			Mesh->NaniteSettings.FallbackTarget = ENaniteFallbackTarget::PercentTriangles;
+			Mesh->NaniteSettings.FallbackPercentTriangles = 1.f;
+		}
 		Mesh->CreateBodySetup();
 		Mesh->GetBodySetup()->CollisionTraceFlag = bComplexCollision ? CTF_UseComplexAsSimple : CTF_UseDefault;
 		Mesh->Build(/*bInSilent=*/true);
@@ -672,8 +682,8 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 		if (Section.Atlas != INDEX_NONE) Assets.TerrainAtlases.Add(Section.Atlas);
 	}
 
-	UStaticMesh* Terrain = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Terrain"), *Level), World.Terrain, true);
-	UStaticMesh* Decor = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Decor"), *Level), World.Decor, true);
+	UStaticMesh* Terrain = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Terrain"), *Level), World.Terrain, true, ESurface::Ground, true);
+	UStaticMesh* Decor = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Decor"), *Level), World.Decor, true, ESurface::Ground, true);
 	TArray<FVehicleAssets> VehicleAssets;
 	for (const FBRRVehicleMesh& Vehicle : World.Vehicles) VehicleAssets.Add(MakeVehicle(Assets, Vehicle));
 

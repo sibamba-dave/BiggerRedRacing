@@ -196,6 +196,42 @@ bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<
 					for (int32 K = 0; K < 3; ++K) Section.Vertices[T + K].Land = Type;
 				}
 			}
+
+			// Decor laid on the ground - the starting grid's slab, start lines, pads - is conformed
+			// to the heightmap, so it is exactly coplanar with the terrain under it. The original
+			// draws back to front with no depth buffer and the later face simply wins; with one, the
+			// two z-fight, and the remastered look's jittered upscaler turns that into flicker. So
+			// lift each such triangle clear: above the terrain wherever it is sampled (the cell's
+			// own triangulation can bulge over a slab's long edge) by GroundDecalClearance. ORR
+			// separates the decals stacked on the slab itself (kDecalLayerLift, 2 units apart).
+			auto GroundZ = [&](const FVector3f& P)
+			{
+				return -double(Ter.height_fx(int32(P.Y * ToFixed), int32(P.X * ToFixed))) / 512.0 * BRR::CmPerUnit;
+			};
+			constexpr double OnGround = 1.0, StackedLayers = 3 * 2 * BRR::CmPerUnit, GroundDecalClearance = 2.0; // cm
+			for (FBRRMeshSection& Section : Out.Decor.Sections)
+			{
+				for (int32 T = 0; T + 2 < Section.Vertices.Num(); T += 3)
+				{
+					FBRRVertex* V = &Section.Vertices[T];
+					const FVector3f A = V[0].Position, B = V[1].Position, C = V[2].Position;
+					// On the ground, or one of ORR's stacked layers just over it: all three corners.
+					auto Laid = [&](const FVector3f& P) { const double H = P.Z - GroundZ(P); return H > -OnGround && H < StackedLayers; };
+					if (!Laid(A) || !Laid(B) || !Laid(C)) continue;
+					double Above = 0;
+					for (int32 S = 0; S <= 4; ++S)
+					{
+						for (int32 U = 0; U + S <= 4; ++U)
+						{
+							const FVector3f P = (A * float(4 - S - U) + B * float(S) + C * float(U)) / 4.f;
+							Above = FMath::Max(Above, GroundZ(P) - P.Z);
+						}
+					}
+					const float Lift = float(Above + GroundDecalClearance);
+					for (int32 K = 0; K < 3; ++K) V[K].Position.Z += Lift;
+					++Out.GroundDecalTriangles;
+				}
+			}
 		}
 		if (!Scene.start_lights.empty())
 		{

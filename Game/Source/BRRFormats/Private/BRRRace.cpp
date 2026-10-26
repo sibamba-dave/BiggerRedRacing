@@ -646,7 +646,10 @@ FTransform FBRRRace::PlayerCameraTransform(double Alpha, double Distance, double
 	const FVector Original = BRR::GameToUE(Mirror - V.eye[0], -V.eye[1], V.eye[2]);
 	const FVector Pull = (Original - Aim) * FVector(1, 1, 0) * (1.0 - FMath::Lerp(1.0, Distance, Open));
 	const FVector Behind = Original - Pull;
-	const FVector Eye = Behind + FVector(0, 0, Lift * Open * FVector::Dist2D(Behind, Aim));
+	// The lift is over the aim point when that is higher: driving at a hill, the original's eye is
+	// still down in the dip behind the car, and lifted from there it would stare into the slope.
+	const double Base = Lift > 0.0 ? FMath::Max(Behind.Z, Aim.Z) : Behind.Z;
+	const FVector Eye(Behind.X, Behind.Y, Behind.Z + Open * (Base - Behind.Z + Lift * FVector::Dist2D(Behind, Aim)));
 	const FVector ToAim = Aim - Eye;
 	const double Pitch = FMath::Atan2(ToAim.Z, ToAim.Size2D());
 	const FVector Forward = Ahead * FMath::Cos(Pitch) + FVector::UpVector * FMath::Sin(Pitch);

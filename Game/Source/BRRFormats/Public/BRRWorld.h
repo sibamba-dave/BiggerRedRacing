@@ -188,6 +188,7 @@ struct BRRFORMATS_API FBRRWorld
 	TArray<uint8> HeightMap;         // MAP.MPH, raw
 	FBRRMesh Terrain;                // UE world space
 	FBRRMesh Decor;                  // every static scenery instance, baked in UE world space
+	int32 GroundDecalTriangles = 0;  // decor triangles laid on the ground, lifted clear of it (Load)
 	// The start gantry's lamps (S_LIGHTS, category 0x35) in each countdown state - red, red+amber,
 	// amber, green - in UE world space. Not in Decor; empty if the level has none.
 	TArray<FBRRMesh> StartLights;
