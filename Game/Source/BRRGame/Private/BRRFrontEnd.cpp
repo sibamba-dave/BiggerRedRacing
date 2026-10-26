@@ -226,8 +226,10 @@ void ABRRFrontEndGameMode::UpdateWalk()
 	WalkAt = Clock + 1.5;
 	if (TSharedPtr<FBRRMenuScreen> S = Top())
 	{
-		if (Id == -1) S->OnBack();
+		if (Id == 99) {} // a wait
+		else if (Id == -1) S->OnBack();
 		else if (Id == -3) BRRMenu::ShowSampleResults(*this);
+		else if (Id == -4 || Id == -5) BRRMenu::ShowVideo(*this, Id == -5);
 		else if (Id == -2) S->OnLeftRight(1);
 		else S->OnBox(Id);
 	}
@@ -292,6 +294,29 @@ void ABRRFrontEndGameMode::ShowPicture(const FBRRImage& Picture)
 	UTexture2D* T = MakeTexture(Picture);
 	BackdropMaterial->SetTextureParameterValue(TEXT("Atlas"), T);
 	BackdropMaterial->SetTextureParameterValue(TEXT("AtlasHD"), T);
+}
+
+void ABRRFrontEndGameMode::ShowFrame(const FBRRImage& Frame)
+{
+	if (!BackdropMaterial || Frame.Width <= 0) return;
+	if (!FrameTexture || FrameTexture->GetSizeX() != Frame.Width || FrameTexture->GetSizeY() != Frame.Height)
+	{
+		FrameTexture = MakeTexture(Frame);
+		BackdropMaterial->SetTextureParameterValue(TEXT("Atlas"), FrameTexture);
+		BackdropMaterial->SetTextureParameterValue(TEXT("AtlasHD"), FrameTexture);
+		return;
+	}
+	FColor* Copy = new FColor[Frame.Pixels.Num()];
+	FMemory::Memcpy(Copy, Frame.Pixels.GetData(), Frame.Pixels.Num() * sizeof(FColor));
+	FUpdateTextureRegion2D* Region = new FUpdateTextureRegion2D(0, 0, 0, 0, Frame.Width, Frame.Height);
+	FrameTexture->UpdateTextureRegions(0, 1, Region, Frame.Width * sizeof(FColor), sizeof(FColor), reinterpret_cast<uint8*>(Copy),
+		[](uint8* Data, const FUpdateTextureRegion2D* Regions)
+		{
+			delete[] reinterpret_cast<FColor*>(Data);
+			delete Regions;
+		});
+	BackdropMaterial->SetTextureParameterValue(TEXT("Atlas"), FrameTexture);
+	BackdropMaterial->SetTextureParameterValue(TEXT("AtlasHD"), FrameTexture);
 }
 
 FVector ABRRFrontEndGameMode::StagePoint() const { return FVector(BackdropDistance * 0.45, 0, 0); }

@@ -32,6 +32,10 @@ namespace BRRAudio
 	// `hnd fx` prefix: "front" (SAMPLES), "" (GEN), or a folder name.
 	BRRFORMATS_API void PlayOnce(const FString& DataDir, const FString& Dir, const FString& Name, float Volume = 1.f);
 
+	// A whole sound track (a video's), mono 16-bit at Rate, on its own voice; Stop ends it.
+	BRRFORMATS_API void PlayTrack(const TArray<int16>& Pcm, int32 Rate);
+	BRRFORMATS_API void StopTrack();
+
 	// The CD music (README, Tools/brr_cd.py: the rip's Music/TrackNN.wav). The original's model:
 	// each context asks for a CD track - `Intro` once, then `Loop` for as long as it lasts (TOURN.TXT
 	// gives both per circuit; the front end plays track 2). A track the folder lacks plays another

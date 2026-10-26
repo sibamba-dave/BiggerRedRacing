@@ -3,7 +3,9 @@
 #include "BRRAudio.h"
 #include "BRRFrontEnd.h"
 #include "BRRGameInstance.h"
+#include "BRRVideo.h"
 #include "BRRWorld.h"
+#include "Misc/Paths.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
@@ -46,6 +48,67 @@ namespace
 	TSharedRef<FBRRMenuScreen> MakeGlobe(bool bChampionship, const FString& Select = FString());
 	TSharedRef<FBRRMenuScreen> MakeTrack(const FString& Level);
 	TSharedRef<FBRRMenuScreen> MakeOptions();
+
+	// --- a video: the intro (VIDEO/INTROSND.RPL, when the game starts) and VICTORY.MVI (the
+	// championship won). Its sound is its clock; any key or click skips it.
+	class FVideoScreen : public FBRRMenuScreen
+	{
+	public:
+		FString Path;
+		TFunction<void(ABRRFrontEndGameMode&)> Then;
+		FBRRVideo Video;
+		double Elapsed = 0;
+
+		virtual bool Load() override
+		{
+			FString Error;
+			if (!Video.Open(Path, Error))
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Front end: %s"), *Error);
+				return false;
+			}
+			Scn.Boxes.Add({ 0, 0, 0, 320, 200 }); // anywhere: skip
+			return true;
+		}
+		virtual void Enter() override
+		{
+			Elapsed = 0;
+			GMusicLoop = -1;
+			BRRAudio::StopMusic();
+			BRRAudio::PlayTrack(Video.Sound(), Video.SoundRate());
+			if (Video.Advance()) Menu->ShowFrame(Video.Picture());
+		}
+		virtual void Tick(float DeltaSeconds) override
+		{
+			Elapsed += DeltaSeconds;
+			const int32 Want = int32(Elapsed * Video.FramesPerSecond());
+			bool bShown = false;
+			while (Video.FrameIndex() < Want)
+			{
+				if (!Video.Advance()) { Finish(); return; }
+				bShown = true;
+			}
+			if (bShown) Menu->ShowFrame(Video.Picture());
+		}
+		void Finish()
+		{
+			BRRAudio::StopTrack();
+			ABRRFrontEndGameMode& M = *Menu;
+			TFunction<void(ABRRFrontEndGameMode&)> Next = MoveTemp(Then);
+			M.Pop();
+			if (Next) Next(M);
+		}
+		virtual void OnBox(int32) override { Finish(); }
+		virtual void OnBack() override { Finish(); }
+	};
+
+	TSharedRef<FBRRMenuScreen> MakeVideo(const FString& Path, TFunction<void(ABRRFrontEndGameMode&)> Then = nullptr)
+	{
+		TSharedRef<FVideoScreen> S = MakeShared<FVideoScreen>();
+		S->Path = Path;
+		S->Then = MoveTemp(Then);
+		return S;
+	}
 
 	// --- CONFSCN: the main menu ------------------------------------------------------------
 	// mbox 0..4 at y 40/70/100/140/170: single race, championship, multi player, load recording,
@@ -386,6 +449,12 @@ namespace
 			using EOutcome = FBRRChampionship::EOutcome;
 			if (!bChampionship) Menu->Replace(MakeTrack(G->LastResult.Level));
 			else if (Outcome == EOutcome::Racing || Outcome == EOutcome::NextRound) Menu->Replace(MakeGlobe(true));
+			else if (Outcome == EOutcome::Champion)
+			{
+				// The championship won: the victory video, then the title.
+				Menu->PopToRoot();
+				Menu->Push(MakeVideo(Menu->DataDir() / TEXT("VICTORY.MVI")));
+			}
 			else Menu->PopToRoot();
 		}
 		virtual void OnBack() override { OnBox(1); }
@@ -523,6 +592,13 @@ namespace
 	}
 }
 
+void BRRMenu::ShowVideo(ABRRFrontEndGameMode& Menu, bool bVictory)
+{
+	FString Path = bVictory ? Menu.DataDir() / TEXT("VICTORY.MVI") : Menu.DataDir() / TEXT("../VIDEO/INTROSND.RPL");
+	FPaths::CollapseRelativeDirectories(Path);
+	Menu.Push(MakeVideo(Path));
+}
+
 void BRRMenu::ShowSampleResults(ABRRFrontEndGameMode& Menu)
 {
 	UBRRGameInstance* G = Menu.Game();
@@ -543,7 +619,19 @@ void BRRMenu::Open(ABRRFrontEndGameMode& Menu)
 	GMusicLoop = -1;
 	Menu.Push(MakeShared<FMainScreen>());
 	UBRRGameInstance* G = Menu.Game();
-	if (!G || !G->bRaceFromMenu) return;
+	if (!G) return;
+	// The intro, once, as the original's VIDTHUMP played it before the game (-nointro skips it).
+	if (!G->bIntroShown && !G->bRaceFromMenu)
+	{
+		G->bIntroShown = true;
+		if (!FParse::Param(FCommandLine::Get(), TEXT("nointro")) && !FParse::Param(FCommandLine::Get(), TEXT("BRRMenuWalk")))
+		{
+			FString Intro = Menu.DataDir() / TEXT("../VIDEO/INTROSND.RPL");
+			FPaths::CollapseRelativeDirectories(Intro);
+			Menu.Push(MakeVideo(Intro));
+		}
+	}
+	if (!G->bRaceFromMenu) return;
 	G->bRaceFromMenu = false;
 	if (G->LastResult.bValid && !G->bPreview)
 	{

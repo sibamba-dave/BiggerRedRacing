@@ -62,6 +62,7 @@ public:
 	FString Level, Vehicle;
 	bool bPreview = false;
 	bool bRaceFromMenu = false;  // a race started here goes back here; one started directly does not
+	bool bIntroShown = false;
 	FBRRRaceResult LastResult;   // set by the race, read by RESULSCN
 
 	// --- the championship

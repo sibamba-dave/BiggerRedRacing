@@ -410,6 +410,29 @@ namespace BRRAudio
 		M->play(*S, P, false, 0, -1, false);
 	}
 
+	bigred::Sample GTrack;      // PlayTrack's, kept while its voice plays
+	bigred::VoiceId GTrackVoice;
+
+	void StopTrack()
+	{
+		if (GMixer && GTrackVoice.valid()) GMixer->stop(GTrackVoice);
+		GTrackVoice = bigred::VoiceId();
+	}
+
+	void PlayTrack(const TArray<int16>& Pcm, int32 Rate)
+	{
+		bigred::Mixer* M = GetMixer();
+		StopTrack();
+		if (!M || Pcm.IsEmpty()) return;
+		GTrack.pcm.assign(Pcm.GetData(), Pcm.GetData() + Pcm.Num());
+		GTrack.rate = Rate;
+		bigred::VoiceParams P;
+		P.rate = Rate;
+		P.volume = 256;
+		P.speech = true; // full scale, as a spoken line
+		GTrackVoice = M->play(GTrack, P, false, 0, -1, false);
+	}
+
 	void PlayMusic(int32 Intro, int32 Loop)
 	{
 		TSharedPtr<FTrack> I = Intro > 0 && Intro != Loop ? LoadTrack(Intro) : nullptr;

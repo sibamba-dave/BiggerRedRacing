@@ -98,6 +98,8 @@ public:
 
 	// The picture behind everything (the 3D backdrop), and textures made from the original's images.
 	void ShowPicture(const FBRRImage& Picture);
+	// A video's frame on the backdrop, through one texture updated in place.
+	void ShowFrame(const FBRRImage& Frame);
 	UTexture2D* MakeTexture(const FBRRImage& Image);
 	const FBRRMenuFont& Font(int32 Index) const; // 0/1 SML_ALPH, 2..6 WIBS1..5
 	double Seconds() const { return Clock; }
@@ -133,6 +135,8 @@ private:
 	TObjectPtr<class UBRRSoundOutput> SoundOutput;
 	UPROPERTY()
 	TObjectPtr<UTexture2D> PointerTexture;
+	UPROPERTY()
+	TObjectPtr<UTexture2D> FrameTexture;
 
 	void LoadFonts();
 	// -BRRMenuWalk="0,3,..." presses those boxes a second apart and shoots each screen

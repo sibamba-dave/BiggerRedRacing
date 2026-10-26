@@ -49,10 +49,13 @@ circuit's music starts here), CARSCN (the vehicle turning in front of its pictur
 the race, RESULSCN. The championship is TOURN.TXT's seven rounds: win the round's `need` of its
 circuits to go on (ORR's rules; for the session only, as in the original). Options: sound
 (music and effects volumes, commentary) and display (the classic view distance, and the look).
-Escape leaves a race for the menus; a preview lap is driven by the autopilot. Settings are saved
+The intro (`VIDEO/INTROSND.RPL`, beside `RACING`) plays first, the victory video (`VICTORY.MVI`)
+after a championship won; any key skips them, `-nointro` leaves the intro out. Both are decoded as
+they play (`FBRRVideo`, from `Tools/brr_video.py`), the intro at the 15 frames a second its sound
+keeps. Escape leaves a race for the menus; a preview lap is driven by the autopilot. Settings are saved
 in `GameUserSettings.ini` `[BRR]`. `-BRRMenuWalk=0,0,3` presses those boxes a second and a half
-apart, shooting each screen (`Menu_<n>.png`), then quits; `-1` is Escape, `-2` right, `-3` a sample
-results screen.
+apart, shooting each screen (`Menu_<n>.png`), then quits; `99` waits, `-1` is Escape, `-2` right, `-3` a sample
+results screen, `-4`/`-5` the intro/victory video.
 
 ## Racing
 Import a level, open `/Game/BRR/<LEVEL>/L_<LEVEL>` and press Play (or run with `-game`). You drive
