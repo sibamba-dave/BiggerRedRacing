@@ -1,0 +1,3 @@
+[submodule "ThirdParty/OpenRedRacing"]
+	path = ThirdParty/OpenRedRacing
+	url = https://github.com/nynjardin/OpenRedRacing.git

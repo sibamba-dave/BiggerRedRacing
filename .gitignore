@@ -1,0 +1,26 @@
+# Original game data — never commit (copyrighted). Point BRR_DATA_DIR at your own copy.
+/Big Red Racing - RIP/
+
+# Remember plugin scratch
+/.remember/
+
+# Unreal
+Game/Binaries/
+Game/Intermediate/
+Game/Saved/
+Game/DerivedDataCache/
+Game/Plugins/*/Binaries/
+Game/Plugins/*/Intermediate/
+Game/.vs/
+Game/*.sln
+Game/*.slnx
+Game/*.VC.db
+Game/*.opensdf
+Game/*.sdf
+Game/.vsconfig
+
+# BRR-derived baked assets: local dev cache only, not distributable
+Game/Content/BRR/
+
+# Tools
+Tools/**/build/
