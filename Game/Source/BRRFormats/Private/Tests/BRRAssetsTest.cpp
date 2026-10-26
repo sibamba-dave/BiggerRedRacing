@@ -1,7 +1,9 @@
 #include "BRRArchive.h"
 #include "BRRAssets.h"
 
+#include "HAL/FileManager.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/Paths.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -52,6 +54,61 @@ bool FBRRAssetsTest::RunTest(const FString& Parameters)
 	}
 
 	TestFalse(TEXT("missing member reports an error"), BRR::LoadScreen(DataDir, TEXT("DIRT1.LEV"), TEXT("NOPE.RAW"), Screen, Error));
+	return true;
+}
+
+// The in-race HUD artwork (GAMESVGA.SPR, SML_ALPH.SPR) carries palette indices. On the original's
+// 8-bit screen only the level's palette is loaded during a race, so the question is how far the
+// level palettes stray from DEFAULT.COL at the indices that artwork uses.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBRRHudPaletteTest, "BRR.Formats.HudPalette",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBRRHudPaletteTest::RunTest(const FString& Parameters)
+{
+	const FString DataDir = BRR::GetDataDir();
+	if (DataDir.IsEmpty())
+	{
+		AddWarning(TEXT("BRR data dir not found (set BRR_DATA_DIR); skipping."));
+		return true;
+	}
+	FString Error;
+	TArray<FColor> Default;
+	if (!TestTrue(TEXT("DEFAULT.COL"), BRR::LoadPalette(DataDir, TEXT("ALWAYS.WAP"), TEXT("DEFAULT.COL"), Default, Error))) return false;
+	TArray<FString> Levels;
+	IFileManager::Get().FindFiles(Levels, *FPaths::Combine(DataDir, TEXT("*.LEV")), true, false);
+	Levels.Sort();
+	for (const FString& Lev : Levels)
+	{
+		TArray<FColor> Level;
+		if (!BRR::LoadPalette(DataDir, Lev, TEXT("MAP.COL"), Level, Error) && !BRR::LoadPalette(DataDir, Lev, TEXT("1.COL"), Level, Error)) continue;
+		for (const TPair<const TCHAR*, const TCHAR*>& Sheet : { TPair<const TCHAR*, const TCHAR*>(TEXT("INGAME.WAP"), TEXT("GAMESVGA.SPR")),
+			TPair<const TCHAR*, const TCHAR*>(TEXT("ALWAYS.WAP"), TEXT("SML_ALPH.SPR")) })
+		{
+			TArray<FBRRImage> A, B;
+			if (!BRR::LoadSprites(DataDir, Sheet.Key, Sheet.Value, Default, A, Error) || !BRR::LoadSprites(DataDir, Sheet.Key, Sheet.Value, Level, B, Error)) continue;
+			int64 Opaque = 0, Same = 0, Close = 0;
+			int32 Worst = 0;
+			for (int32 S = 0; S < A.Num() && S < B.Num(); ++S)
+			{
+				// Only what the race HUD draws (ABRRRaceHUD): digits, ordinals, racer dots, the
+				// banners, the small digits.
+				const bool bRaceHud = FCString::Strcmp(Sheet.Value, TEXT("SML_ALPH.SPR")) == 0 || S <= 21 || (S >= 27 && S <= 36) || S == 40;
+				if (!bRaceHud) continue;
+				for (int32 P = 0; P < A[S].Pixels.Num(); ++P)
+				{
+					const FColor X = A[S].Pixels[P], Y = B[S].Pixels[P];
+					if (X.A == 0) continue;
+					++Opaque;
+					const int32 D = FMath::Max3(FMath::Abs(X.R - Y.R), FMath::Abs(X.G - Y.G), FMath::Abs(X.B - Y.B));
+					Same += D == 0;
+					Close += D <= 8;
+					Worst = FMath::Max(Worst, D);
+				}
+			}
+			AddInfo(FString::Printf(TEXT("%s %s: %lld px, %.1f%% same colour, %.1f%% within 8, worst %d"), *FPaths::GetBaseFilename(Lev),
+				Sheet.Value, Opaque, 100.0 * Same / FMath::Max<int64>(Opaque, 1), 100.0 * Close / FMath::Max<int64>(Opaque, 1), Worst));
+		}
+	}
 	return true;
 }
 
