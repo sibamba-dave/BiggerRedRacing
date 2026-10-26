@@ -23,6 +23,7 @@
 #include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialExpressionCustom.h"
 #include "Materials/MaterialExpressionSceneTexture.h"
+#include "Materials/MaterialExpressionScalarParameter.h"
 #include "Engine/PostProcessVolume.h"
 #include "Engine/CollisionProfile.h"
 #include "Materials/MaterialInstanceConstant.h"
@@ -191,15 +192,27 @@ namespace
 		UMaterialExpression* Vertex = Make(UMaterialExpressionVertexColor::StaticClass(), -800, 700);
 		UMaterialExpressionCustom* Kind = MakeCustomOutputs(Mat, TEXT("return R > 0.5 ? round((1 - saturate(A)) * 3) : 0;"), CMOT_Float1,
 			{ MakeTuple(FName(TEXT("A")), Vertex, 4), MakeTuple(FName(TEXT("R")), Remaster, 0) }, 700);
+		// What the remastered surface is made of where it is not a liquid (ESurface: the scenery's
+		// matte default, a vehicle's paint, its tyres).
+		auto Scalar = [&](const TCHAR* Name, float Default, int32 Y)
+		{
+			auto* P = Cast<UMaterialExpressionScalarParameter>(Make(UMaterialExpressionScalarParameter::StaticClass(), -800, Y));
+			P->ParameterName = Name;
+			P->DefaultValue = Default;
+			return P;
+		};
+		UMaterialExpression* Rough = Scalar(TEXT("Roughness"), 0.75f, 1000);
+		UMaterialExpression* Shine = Scalar(TEXT("Specular"), 0.35f, 1100);
 		auto Part = [&](const TCHAR* Code, ECustomMaterialOutputType Type, int32 Y)
 		{
 			return MakeCustomOutputs(Mat, FString::Printf(TEXT("int k = (int)K;\n%s"), Code), Type,
-				{ MakeTuple(FName(TEXT("C")), Colour, ColourOutput), MakeTuple(FName(TEXT("R")), Remaster, 0), MakeTuple(FName(TEXT("K")), (UMaterialExpression*)Kind, 0) }, Y);
+				{ MakeTuple(FName(TEXT("C")), Colour, ColourOutput), MakeTuple(FName(TEXT("R")), Remaster, 0), MakeTuple(FName(TEXT("K")), (UMaterialExpression*)Kind, 0),
+				  MakeTuple(FName(TEXT("Rough")), Rough, 0), MakeTuple(FName(TEXT("Shine")), Shine, 0) }, Y);
 		};
 		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return C.rgb * (1 - R) + (k == 3 ? C.rgb * 16.0 : 0);"), CMOT_Float3, 0), TEXT(""), MP_EmissiveColor);
 		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return C.rgb * R * (k == 1 ? 0.35 : k == 3 ? 0.02 : 1.0);"), CMOT_Float3, 100), TEXT(""), MP_BaseColor);
-		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return R * (k == 1 || k == 2 ? 0.5 : 0.35);"), CMOT_Float1, 200), TEXT(""), MP_Specular);
-		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return k == 1 ? 0.03 : k == 2 ? 0.1 : k == 3 ? 0.55 : 0.75;"), CMOT_Float1, 300), TEXT(""), MP_Roughness);
+		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return R * (k == 1 || k == 2 ? 0.5 : Shine);"), CMOT_Float1, 200), TEXT(""), MP_Specular);
+		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return k == 1 ? 0.03 : k == 2 ? 0.1 : k == 3 ? 0.55 : Rough;"), CMOT_Float1, 300), TEXT(""), MP_Roughness);
 
 		// The ripples: four travelling waves, a few metres long, summed into a world-space slope
 		// and handed to the material in tangent space (the atlas tiles turn and mirror from cell to
@@ -341,8 +354,12 @@ namespace
 		return M;
 	}
 
+	// What a mesh is made of, for the remastered look: the scenery's matte ground and decor, a
+	// vehicle's glossy paint (the whole body: the original paints it all one way), its rubber tyres.
+	enum class ESurface : uint8 { Ground, Paint, Rubber };
+
 	// Per-level asset state shared by every mesh: one texture per used atlas page, one material
-	// instance per (atlas, sidedness).
+	// instance per (atlas, sidedness, surface).
 	struct FLevelAssets
 	{
 		const FBRRWorld* World = nullptr;
@@ -350,14 +367,15 @@ namespace
 		FString Prefix;   // <LEVEL>
 		FMasters Masters;
 		TMap<int32, UTexture2D*> Textures;
-		TMap<TPair<int32, bool>, UMaterialInstanceConstant*> Materials;
+		TMap<TTuple<int32, bool, ESurface>, UMaterialInstanceConstant*> Materials;
 
-		UMaterialInstanceConstant* MaterialFor(int32 Atlas, bool bTwoSided)
+		UMaterialInstanceConstant* MaterialFor(int32 Atlas, bool bTwoSided, ESurface Surface = ESurface::Ground)
 		{
-			if (UMaterialInstanceConstant** Found = Materials.Find({ Atlas, bTwoSided })) return *Found;
+			if (UMaterialInstanceConstant** Found = Materials.Find({ Atlas, bTwoSided, Surface })) return *Found;
 
-			const FString Name = FString::Printf(TEXT("MI_%s_%s%s"), *Prefix,
-				Atlas == INDEX_NONE ? TEXT("Flat") : *FString::Printf(TEXT("Atlas%02d"), Atlas), bTwoSided ? TEXT("_2S") : TEXT(""));
+			const FString Name = FString::Printf(TEXT("MI_%s_%s%s%s"), *Prefix,
+				Atlas == INDEX_NONE ? TEXT("Flat") : *FString::Printf(TEXT("Atlas%02d"), Atlas), bTwoSided ? TEXT("_2S") : TEXT(""),
+				Surface == ESurface::Paint ? TEXT("_Paint") : Surface == ESurface::Rubber ? TEXT("_Rubber") : TEXT(""));
 			UMaterialInstanceConstant* MI = NewAsset<UMaterialInstanceConstant>(Dir / TEXT("Materials") / Name);
 			MI->SetParentEditorOnly(Atlas == INDEX_NONE ? Masters.Flat : Masters.Textured);
 			if (Atlas != INDEX_NONE)
@@ -374,14 +392,26 @@ namespace
 				MI->BasePropertyOverrides.bOverride_TwoSided = true;
 				MI->BasePropertyOverrides.TwoSided = true;
 			}
+			// Paint: a fresh, glossy finish that Lumen's reflections show the world in. Rubber: dull.
+			if (Surface == ESurface::Paint)
+			{
+				MI->SetScalarParameterValueEditorOnly(FMaterialParameterInfo(TEXT("Roughness")), 0.3f);
+				MI->SetScalarParameterValueEditorOnly(FMaterialParameterInfo(TEXT("Specular")), 0.5f);
+			}
+			else if (Surface == ESurface::Rubber)
+			{
+				MI->SetScalarParameterValueEditorOnly(FMaterialParameterInfo(TEXT("Roughness")), 0.9f);
+				MI->SetScalarParameterValueEditorOnly(FMaterialParameterInfo(TEXT("Specular")), 0.2f);
+			}
 			MI->PostEditChange();
 			SaveAsset(MI);
-			Materials.Add({ Atlas, bTwoSided }, MI);
+			Materials.Add({ Atlas, bTwoSided, Surface }, MI);
 			return MI;
 		}
 	};
 
-	UStaticMesh* MakeMesh(FLevelAssets& Assets, const FString& Name, const FBRRMesh& Source, bool bComplexCollision)
+	UStaticMesh* MakeMesh(FLevelAssets& Assets, const FString& Name, const FBRRMesh& Source, bool bComplexCollision,
+		ESurface Surface = ESurface::Ground)
 	{
 		if (Source.NumTriangles() == 0) return nullptr;
 
@@ -403,7 +433,7 @@ namespace
 		UStaticMesh* Mesh = NewAsset<UStaticMesh>(Assets.Dir / TEXT("Meshes") / Name);
 		for (const FBRRMeshSection& Section : Source.Sections)
 		{
-			UMaterialInstanceConstant* Material = Assets.MaterialFor(Section.Atlas, Section.bTwoSided);
+			UMaterialInstanceConstant* Material = Assets.MaterialFor(Section.Atlas, Section.bTwoSided, Surface);
 			const FName Slot = Material->GetFName();
 			Mesh->GetStaticMaterials().Add(FStaticMaterial(Material, Slot, Slot));
 			const FPolygonGroupID Group = Desc.CreatePolygonGroup();
@@ -460,12 +490,12 @@ namespace
 	FVehicleAssets MakeVehicle(FLevelAssets& Assets, const FBRRVehicleMesh& Vehicle)
 	{
 		FVehicleAssets Out;
-		Out.Body = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Body"), *Vehicle.Name), Vehicle.Body, false);
+		Out.Body = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Body"), *Vehicle.Name), Vehicle.Body, false, ESurface::Paint);
 		double Lowest = Vehicle.Body.GetBounds().Min.Z;
 		for (int32 I = 0; I < Vehicle.Wheels.Num(); ++I)
 		{
 			const FBRRWheel& Wheel = Vehicle.Wheels[I];
-			if (UStaticMesh* Mesh = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Wheel%d"), *Vehicle.Name, I), Wheel.Mesh, false))
+			if (UStaticMesh* Mesh = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Wheel%d"), *Vehicle.Name, I), Wheel.Mesh, false, ESurface::Rubber))
 			{
 				Out.Wheels.Add({ Mesh, Wheel.Socket });
 				Lowest = FMath::Min(Lowest, Wheel.Socket.Z + Wheel.Mesh.GetBounds().Min.Z);
@@ -557,7 +587,7 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 		if (!FBRRWorld::Load(DataDir, Level, Vehicles, Colour, Painted, OutError)) return false;
 		for (const FBRRVehicleMesh& Vehicle : Painted.Vehicles)
 		{
-			MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Body_C%d"), *Vehicle.Name, Colour), Vehicle.Body, false);
+			MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Body_C%d"), *Vehicle.Name, Colour), Vehicle.Body, false, ESurface::Paint);
 		}
 	}
 

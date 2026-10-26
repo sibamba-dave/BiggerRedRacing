@@ -81,7 +81,7 @@ not the level's palette colours (export `T_<LEVEL>_Palette` from the import as t
   moving ripples, reflecting the sky and the banks; ice smooth and shining; lava glowing. The
   original has no such notion, so `FBRRWorld::LiquidOf` reads it off each level's surface types:
   the WATER circuits' river is TRACK, the lakes and the sea elsewhere are SLIPPY, which is ice on
-  SNOW and lava on MOON.
+  SNOW and lava on MOON. The vehicles are glossy paint (bodies) and dull rubber (wheels).
 
 NVIDIA's DLSS 4.5 plugins for UE 5.8 (DLSS, Streamline and its parts) go in the engine, e.g.
 `Engine/Plugins/Marketplace/NVIDIA/`; the project enables `DLSS` and `Streamline`. They are not part

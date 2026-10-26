@@ -120,7 +120,12 @@ void ABRRLook::Apply(bool bInRemastered, bool bInPathTracing, bool bInFrameGener
 			if (USceneComponent* S = Cast<USceneComponent>(C)) S->SetVisibility(bRemastered);
 		}
 	}
-	if (Post) Post->BlendWeight = bRemastered ? 1.f : 0.f;
+	if (Post)
+	{
+		Post->BlendWeight = bRemastered ? 1.f : 0.f;
+		// A still has no motion to blur: paused, the post process would smear the last frame's camera move.
+		Post->Settings.MotionBlurAmount = bPathTracing ? 0.f : 0.35f;
+	}
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
 		if (It->ActorHasTag(TEXT("BRRClassicSky"))) It->SetActorHiddenInGame(bRemastered);
