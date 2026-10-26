@@ -467,6 +467,23 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 			for (const FBRRMeshSection& Section : Step.Sections) Assets.MaterialFor(Section.Atlas, Section.bTwoSided);
 		}
 	}
+	// The `anim` decor is the race's too (ABRRAnimDecor); the editor gets each slot's first pose.
+	FBRRMesh AnimPreview;
+	for (const TArray<FBRRMesh>& Slot : World.AnimSteps)
+	{
+		for (int32 K = 0; K < Slot.Num(); ++K)
+		{
+			if (K == 0) AnimPreview.Sections.Append(Slot[K].Sections);
+			for (const FBRRMeshSection& Section : Slot[K].Sections) Assets.MaterialFor(Section.Atlas, Section.bTwoSided);
+		}
+	}
+	if (AStaticMeshActor* Preview = SpawnMeshActor(Map, MakeMesh(Assets, FString::Printf(TEXT("SM_%s_AnimPreview"), *Level), AnimPreview, false),
+		FTransform::Identity, TEXT("AnimPreview")))
+	{
+		Preview->Tags.Add(TEXT("BRRPreview"));
+		Preview->GetStaticMeshComponent()->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+	}
+
 	// Billboards are built by the race too (ABRRSprites), drawn two-sided.
 	for (const FBRRSprite& Sprite : World.Sprites)
 	{

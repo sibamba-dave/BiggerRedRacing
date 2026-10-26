@@ -69,6 +69,16 @@ bool FBRRWorldDirt1Test::RunTest(const FString& Parameters)
 		AddInfo(FString::Printf(TEXT("billboards: %d, %d of destructibles, %d animated; %d anim slots"), World.Sprites.Num(), OfWrecks,
 			Animated, World.AnimStepSeconds.Num()));
 	}
+	if (TestEqual(TEXT("one pose list per anim slot"), World.AnimSteps.Num(), World.AnimStepSeconds.Num()))
+	{
+		for (int32 S = 0; S < World.AnimSteps.Num(); ++S)
+		{
+			FString Tris;
+			for (const FBRRMesh& Step : World.AnimSteps[S]) Tris += FString::Printf(TEXT(" %d"), Step.NumTriangles());
+			TestTrue(TEXT("anim slot has steps"), World.AnimSteps[S].Num() > 0);
+			AddInfo(FString::Printf(TEXT("anim slot %d: %.3f s a step, triangles per step:%s"), S, World.AnimStepSeconds[S], *Tris));
+		}
+	}
 	if (TestEqual(TEXT("start light states"), World.StartLights.Num(), 4))
 	{
 		for (int32 K = 0; K < 4; ++K)

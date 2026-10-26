@@ -28,37 +28,7 @@ UProceduralMeshComponent* ABRRWrecks::MakeComponent(const FBRRMesh& Mesh, bool b
 	Comp->SetupAttachment(GetRootComponent());
 	Comp->bUseAsyncCooking = true;
 	Comp->bUseComplexAsSimpleCollision = true;
-	for (int32 S = 0; S < Mesh.Sections.Num(); ++S)
-	{
-		const FBRRMeshSection& Section = Mesh.Sections[S];
-		TArray<FVector> Positions;
-		TArray<FVector> Normals;
-		TArray<FVector2D> UVs;
-		TArray<FColor> Colors;
-		TArray<int32> Triangles;
-		const int32 N = Section.Vertices.Num() / 3 * 3;
-		Positions.Reserve(N);
-		Normals.Reserve(N);
-		UVs.Reserve(N);
-		Colors.Reserve(N);
-		Triangles.Reserve(N);
-		for (int32 T = 0; T < N; T += 3)
-		{
-			// Flat-shaded, as the importer builds it.
-			const FVector3f A = Section.Vertices[T].Position;
-			const FVector Normal(((Section.Vertices[T + 2].Position - A) ^ (Section.Vertices[T + 1].Position - A)).GetSafeNormal());
-			for (int32 K = 0; K < 3; ++K)
-			{
-				const FBRRVertex& V = Section.Vertices[T + K];
-				Triangles.Add(Positions.Add(FVector(V.Position)));
-				Normals.Add(Normal);
-				UVs.Add(FVector2D(V.UV));
-				Colors.Add(V.Color);
-			}
-		}
-		Comp->CreateMeshSection(S, Positions, Triangles, Normals, UVs, Colors, {}, bSolid);
-		Comp->SetMaterial(S, MaterialFor(Section.Atlas, Section.bTwoSided));
-	}
+	BRR::FillLevelMesh(Comp, Mesh, bSolid, [this](int32 Atlas, bool bTwoSided) { return MaterialFor(Atlas, bTwoSided); });
 	if (bSolid)
 	{
 		Comp->SetCollisionProfileName(TEXT("BlockAll"));

@@ -16,6 +16,7 @@
 class ACameraActor;
 class ABRRGhostCar;
 class ABRRVehiclePawn;
+class ABRRAnimDecor;
 class ABRRSprites;
 class UMaterialParameterCollection;
 class ABRRWrecks;
@@ -74,6 +75,10 @@ private:
 	// The billboards, turned to the camera every frame.
 	UPROPERTY()
 	TObjectPtr<ABRRSprites> Sprites;
+
+	// The `anim` decor (flags and the like), stepped on the race clock.
+	UPROPERTY()
+	TObjectPtr<ABRRAnimDecor> AnimDecor;
 
 	void UpdateAutopilot();
 	void UpdateStartLights();

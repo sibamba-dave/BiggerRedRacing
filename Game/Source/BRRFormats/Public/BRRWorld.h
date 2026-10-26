@@ -189,6 +189,9 @@ struct BRRFORMATS_API FBRRWorld
 	// Per level-script `anim` slot, how long each step is held. Every instance on a slot is in
 	// phase: the step showing T seconds after the start is floor(T / AnimStepSeconds) mod count.
 	TArray<double> AnimStepSeconds;
+	// Per slot, per step, what that step of the decor animation adds (a flag's pose), UE world
+	// space; the faces every step shares are already in Decor (ORR LevelScene::anim_step_bufs).
+	TArray<TArray<FBRRMesh>> AnimSteps;
 	TArray<FBRRPlacement> Placements;
 	TArray<FBRRGate> Gates;
 	TArray<FBRRStart> Grid;          // retail six-car grid

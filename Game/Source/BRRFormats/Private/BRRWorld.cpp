@@ -164,6 +164,11 @@ bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<
 				Out.StartLights.Add(ConvertTriangles(Scene.lights_buf, size_t(Range.first), size_t(Range.second), WorldRenderToUE));
 		}
 		for (const bigred::LevelAnim& Anim : Scene.anims) Out.AnimStepSeconds.Add(Anim.step_ms() / 1000.0);
+		for (const std::vector<std::vector<TerrainVertex>>& Slot : Scene.anim_step_bufs)
+		{
+			TArray<FBRRMesh>& Steps = Out.AnimSteps.AddDefaulted_GetRef();
+			for (const std::vector<TerrainVertex>& Step : Slot) Steps.Add(ConvertTriangles(Step, 0, Step.size(), WorldRenderToUE));
+		}
 		const double RenderToCm = InvScale * BRR::CmPerUnit;
 		for (const bigred::SpritePlacement& S : Scene.sprites)
 		{

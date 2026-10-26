@@ -5,6 +5,7 @@
 #include "BRRGhostCar.h"
 #include "BRRRaceHUD.h"
 #include "BRRVehiclePawn.h"
+#include "BRRAnimDecor.h"
 #include "BRRSprites.h"
 #include "BRRWrecks.h"
 #include "Camera/PlayerCameraManager.h"
@@ -147,6 +148,8 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 	DrawRange = LoadObject<UMaterialParameterCollection>(nullptr, TEXT("/Game/BRR/Materials/MPC_BRR.MPC_BRR"));
 	Sprites = GetWorld()->SpawnActor<ABRRSprites>();
 	Sprites->Build(World, LevelName);
+	AnimDecor = GetWorld()->SpawnActor<ABRRAnimDecor>();
+	AnimDecor->Build(World, LevelName);
 	StartLights.Init(nullptr, 4);
 	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
 	{
@@ -259,6 +262,7 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 			: RaceCamera ? RaceCamera->GetActorRotation() : FRotator::ZeroRotator;
 		Sprites->Update(*Race, Facing, GetWorld()->GetTimeSeconds());
 	}
+	if (AnimDecor) AnimDecor->Update(GetWorld()->GetTimeSeconds());
 	for (int32 R = 0; R < Ghosts.Num(); ++R)
 	{
 		if (!Ghosts[R]) continue;
