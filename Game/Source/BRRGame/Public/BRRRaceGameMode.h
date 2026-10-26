@@ -103,6 +103,11 @@ private:
 	int32 LoggedLaps = 0;
 	TArray<double> GhostSpin;
 	double Accumulator = 0;
+	// The player's car at the end of the last frame: each race tick reads it where it was at the
+	// tick's own moment, between this and now, not wherever the frame happened to end.
+	FTransform LastPlayerPose;
+	FVector LastPlayerVelocity = FVector::ZeroVector;
+	bool bHaveLastPlayer = false;
 	// brr.LogPerf: frames and race ticks over the current window, against the wall clock.
 	double PerfSince = -1;
 	int32 PerfFrames = 0, PerfTicks = 0;

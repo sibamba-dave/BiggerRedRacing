@@ -318,6 +318,7 @@ namespace
 		}
 		{
 			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Textured"));
+			Mat->bUsedWithNanite = true; // the terrain and the decor are Nanite (MakeMesh)
 			Mat->SetShadingModel(MSM_DefaultLit);
 			Mat->BlendMode = BLEND_Masked;
 			// Classic samples the top mip with the texture's own nearest filter; remastered with
@@ -411,6 +412,7 @@ namespace
 			// as a texture sample would be. Read as linear, every flat face came out too bright:
 			// (32, 32, 32) showed as (99, 99, 99).
 			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Flat"));
+			Mat->bUsedWithNanite = true; // the terrain and the decor are Nanite (MakeMesh)
 			Mat->SetShadingModel(MSM_DefaultLit);
 			UMaterialExpression* Colour = UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionVertexColor::StaticClass(), -500, 0);
 			UMaterialExpressionCustom* Decode = MakeCustom(Mat, TEXT(

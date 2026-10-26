@@ -265,12 +265,22 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 	if (!Race || !PlayerCar) return;
 
 	// The original's rules and opponents advance in whole 28 ms ticks.
+	const FTransform PlayerPose = PlayerCar->GetBodyOriginTransform();
+	const FVector PlayerVelocity = PlayerCar->GetVelocity();
+	if (!bHaveLastPlayer) LastPlayerPose = PlayerPose, LastPlayerVelocity = PlayerVelocity, bHaveLastPlayer = true;
+	double TickAt = -Accumulator; // seconds into this frame of the next tick, less one tick
 	Accumulator = FMath::Min(Accumulator + DeltaSeconds, MaxTicksPerFrame * FBRRRace::TickSeconds);
 	while (Accumulator >= FBRRRace::TickSeconds)
 	{
 		Accumulator -= FBRRRace::TickSeconds;
 		++PerfTicks;
-		Race->Tick(PlayerCar->GetBodyOriginTransform(), PlayerCar->GetVelocity(), PlayerCar->IsBoostKeyDown());
+		// Two ticks in one frame must not both see the frame's end: the camera's rope would be
+		// dragged in uneven steps and the car judder in the picture.
+		TickAt += FBRRRace::TickSeconds;
+		const double F = DeltaSeconds > 0 ? FMath::Clamp(TickAt / DeltaSeconds, 0.0, 1.0) : 1.0;
+		const FTransform AtTick(FQuat::Slerp(LastPlayerPose.GetRotation(), PlayerPose.GetRotation(), F),
+			FMath::Lerp(LastPlayerPose.GetLocation(), PlayerPose.GetLocation(), F));
+		Race->Tick(AtTick, FMath::Lerp(LastPlayerVelocity, PlayerVelocity, F), PlayerCar->IsBoostKeyDown());
 		PlayerCar->bBoosting = Race->IsPlayerBoosting();
 		PlayerCar->BoostAccel = Race->PlayerBoostAccel();
 		PlayerCar->SetSurface(CVarSurfaceHandling.GetValueOnGameThread() ? Race->PlayerSurface() : 0);
@@ -300,6 +310,8 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 			CurrPose[R] = Race->RacerTransform(R);
 		}
 	}
+	LastPlayerPose = PlayerCar->GetBodyOriginTransform();
+	LastPlayerVelocity = PlayerCar->GetVelocity();
 
 	if (CVarLogPerf.GetValueOnGameThread())
 	{

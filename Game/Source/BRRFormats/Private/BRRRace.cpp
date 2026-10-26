@@ -279,7 +279,16 @@ struct FBRRRace::FImpl
 	int32 Player = 0;
 	bigred::ChaseCamera Camera;
 	bigred::CameraState CameraPrev;
+	FVector CameraAim = FVector::ZeroVector, CameraAimPrev = FVector::ZeroVector; // UE, the view's target at the last two ticks
 	double CameraOpen = 1.0, CameraOpenPrev = 1.0; // 1 with open sky over the camera, 0 under a roof
+
+	// Where the view looks: the controller's aim point - the car lifted by the preset's aim
+	// height, or the tunnel one.
+	FVector AimOf(const bigred::VehicleSim& Car) const
+	{
+		const int32 AimHeight = Car.in_tunnel ? bigred::kTunnelAimHeight : bigred::kCameraPresets[Camera.preset].aim_height;
+		return BRR::GameToUE(Car.world_x(), Car.world_y() - AimHeight, Car.world_z());
+	}
 	bigred::SceneryState Scenery;
 	bigred::NitroReserve Nitros;
 	double BoostAccel = 0; // cm/s/s along the player's car this tick
@@ -418,6 +427,7 @@ TUniquePtr<FBRRRace> FBRRRace::Create(const FString& DataDir, const FString& Lev
 		I.StartCars = I.Cars;
 		I.Camera.reset(I.Cars[I.Player], I.Terrain);
 		I.CameraPrev = I.Camera.now;
+		I.CameraAim = I.CameraAimPrev = I.AimOf(I.Cars[I.Player]);
 		return Race;
 	}
 	catch (const std::exception& E)
@@ -603,6 +613,8 @@ void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity,
 
 		I.CameraPrev = I.Camera.now;
 		I.Camera.step(P, I.Terrain);
+		I.CameraAimPrev = I.CameraAim;
+		I.CameraAim = I.AimOf(P);
 		I.CameraOpenPrev = I.CameraOpen;
 		I.CameraOpen += ((P.in_tunnel || I.Camera.under_roof() ? 0.0 : 1.0) - I.CameraOpen) * 0.15;
 
@@ -640,9 +652,9 @@ FTransform FBRRRace::PlayerCameraTransform(double Alpha, double Distance, double
 	// or the tunnel one - not at the car, which ORR's bearing pitches to. Measured on captures of
 	// the original (WATER1 and DIRT1 grids, Tools/dosbox-x): the car sits ~16 degrees below the
 	// view centre in both, which this reproduces; ORR's port kept it dead centre.
-	const bigred::VehicleSim& Car = I.Cars[I.Player];
-	const int32 AimHeight = Car.in_tunnel ? bigred::kTunnelAimHeight : bigred::kCameraPresets[I.Camera.preset].aim_height;
-	const FVector Aim = BRR::GameToUE(Car.world_x(), Car.world_y() - AimHeight, Car.world_z());
+	// Blended between the last two ticks like the eye: aiming at the latest tick's while the eye
+	// is a tick behind it would nod the view at the tick rate.
+	const FVector Aim = FMath::Lerp(I.CameraAimPrev, I.CameraAim, Alpha);
 	const FVector Original = BRR::GameToUE(Mirror - V.eye[0], -V.eye[1], V.eye[2]);
 	const FVector Pull = (Original - Aim) * FVector(1, 1, 0) * (1.0 - FMath::Lerp(1.0, Distance, Open));
 	const FVector Behind = Original - Pull;
