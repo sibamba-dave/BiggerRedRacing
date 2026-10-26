@@ -17,6 +17,7 @@
 #include "Materials/MaterialExpressionCollectionParameter.h"
 #include "Materials/MaterialExpressionConstant3Vector.h"
 #include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionTime.h"
 #include "Materials/MaterialExpressionTransform.h"
 #include "Materials/MaterialExpressionWorldPosition.h"
 #include "Materials/MaterialParameterCollection.h"
@@ -178,17 +179,50 @@ namespace
 	// The two looks off one material, switched at runtime by MPC_BRR.Remaster (ABRRRaceGameMode):
 	// classic (0) is the original's colour as emissive on a black, unshining surface - unlit, the
 	// palette exact; remastered (1) is the same colour as a lit base colour.
+	//
+	// The remastered look also shades the terrain's liquids (EBRRLiquid, carried in the vertex
+	// alpha by MakeMesh: 1 ground, 2/3 water, 1/3 ice, 0 lava): water as a dark, glassy surface
+	// under moving ripples, which Lumen's reflections show the sky and the banks in; ice as a
+	// smooth, shining one; lava glowing. The classic look ignores it.
 	void ConnectLook(UMaterial* Mat, UMaterialParameterCollection* Collection, UMaterialExpression* Colour, int32 ColourOutput)
 	{
+		auto Make = [Mat](UClass* Class, int32 X, int32 Y) { return UMaterialEditingLibrary::CreateMaterialExpression(Mat, Class, X, Y); };
 		UMaterialExpression* Remaster = MakeCollectionValue(Mat, Collection, TEXT("Remaster"), -500, 400);
+		UMaterialExpression* Vertex = Make(UMaterialExpressionVertexColor::StaticClass(), -800, 700);
+		UMaterialExpressionCustom* Kind = MakeCustomOutputs(Mat, TEXT("return R > 0.5 ? round((1 - saturate(A)) * 3) : 0;"), CMOT_Float1,
+			{ MakeTuple(FName(TEXT("A")), Vertex, 4), MakeTuple(FName(TEXT("R")), Remaster, 0) }, 700);
 		auto Part = [&](const TCHAR* Code, ECustomMaterialOutputType Type, int32 Y)
 		{
-			return MakeCustomOutputs(Mat, Code, Type, { MakeTuple(FName(TEXT("C")), Colour, ColourOutput), MakeTuple(FName(TEXT("R")), Remaster, 0) }, Y);
+			return MakeCustomOutputs(Mat, FString::Printf(TEXT("int k = (int)K;\n%s"), Code), Type,
+				{ MakeTuple(FName(TEXT("C")), Colour, ColourOutput), MakeTuple(FName(TEXT("R")), Remaster, 0), MakeTuple(FName(TEXT("K")), (UMaterialExpression*)Kind, 0) }, Y);
 		};
-		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return C.rgb * (1 - R);"), CMOT_Float3, 0), TEXT(""), MP_EmissiveColor);
-		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return C.rgb * R;"), CMOT_Float3, 100), TEXT(""), MP_BaseColor);
-		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return 0.35 * R;"), CMOT_Float1, 200), TEXT(""), MP_Specular);
-		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return 0.75;"), CMOT_Float1, 300), TEXT(""), MP_Roughness);
+		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return C.rgb * (1 - R) + (k == 3 ? C.rgb * 16.0 : 0);"), CMOT_Float3, 0), TEXT(""), MP_EmissiveColor);
+		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return C.rgb * R * (k == 1 ? 0.35 : k == 3 ? 0.02 : 1.0);"), CMOT_Float3, 100), TEXT(""), MP_BaseColor);
+		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return R * (k == 1 || k == 2 ? 0.5 : 0.35);"), CMOT_Float1, 200), TEXT(""), MP_Specular);
+		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return k == 1 ? 0.03 : k == 2 ? 0.1 : k == 3 ? 0.55 : 0.75;"), CMOT_Float1, 300), TEXT(""), MP_Roughness);
+
+		// The ripples: four travelling waves, a few metres long, summed into a world-space slope
+		// and handed to the material in tangent space (the atlas tiles turn and mirror from cell to
+		// cell, so the waves are laid out in the world, not in UV).
+		UMaterialExpression* WorldPos = Make(UMaterialExpressionWorldPosition::StaticClass(), -1100, 800);
+		UMaterialExpression* Time = Make(UMaterialExpressionTime::StaticClass(), -1100, 900);
+		UMaterialExpressionCustom* Ripples = MakeCustomOutputs(Mat, TEXT(
+			"const float4 W[4] = { float4(0.8, 0.6, 520, 0.9), float4(-0.5, 0.87, 310, 1.3), float4(0.2, -0.98, 190, 1.7), float4(-0.93, -0.36, 110, 2.3) };\n"
+			"float2 g = 0;\n"
+			"for (int i = 0; i < 4; i++)\n"
+			"{\n"
+			"  float k = 6.2831853 / W[i].z;\n"
+			"  g += W[i].xy * (0.045 * cos(dot(W[i].xy, P.xy) * k - T * W[i].w));\n"
+			"}\n"
+			"return normalize(float3(-g, 1));"), CMOT_Float3,
+			{ MakeTuple(FName(TEXT("P")), WorldPos, 0), MakeTuple(FName(TEXT("T")), Time, 0) }, 800);
+		auto* ToTangent = Cast<UMaterialExpressionTransform>(Make(UMaterialExpressionTransform::StaticClass(), -500, 800));
+		ToTangent->Input.Connect(0, Ripples);
+		ToTangent->TransformSourceType = TRANSFORMSOURCE_World;
+		ToTangent->TransformType = TRANSFORM_Tangent;
+		UMaterialExpressionCustom* Normal = MakeCustomOutputs(Mat, TEXT("return K == 1 ? normalize(N) : float3(0, 0, 1);"), CMOT_Float3,
+			{ MakeTuple(FName(TEXT("N")), (UMaterialExpression*)ToTangent, 0), MakeTuple(FName(TEXT("K")), (UMaterialExpression*)Kind, 0) }, 900);
+		UMaterialEditingLibrary::ConnectMaterialProperty(Normal, TEXT(""), MP_Normal);
 	}
 
 	FMasters MakeMasters(const FString& Root)
@@ -388,7 +422,12 @@ namespace
 					const FVertexInstanceID Instance = Desc.CreateVertexInstance(Vertex);
 					Normals[Instance] = Normal;
 					UVs.Set(Instance, 0, V.UV);
-					Colors[Instance] = FVector4f(FLinearColor(V.Color)); // the build sRGB-encodes it back to the palette bytes (M_BRR_Flat)
+					// The build sRGB-encodes the colour back to the palette bytes (M_BRR_Flat); the
+					// alpha carries the liquid (ConnectLook).
+					FLinearColor Colour(V.Color);
+					const EBRRLiquid Liquid = V.Land <= 7 ? Assets.World->LiquidOf(V.Land) : EBRRLiquid::None;
+					Colour.A = Liquid == EBRRLiquid::Water ? 2.f / 3.f : Liquid == EBRRLiquid::Ice ? 1.f / 3.f : Liquid == EBRRLiquid::Lava ? 0.f : 1.f;
+					Colors[Instance] = FVector4f(Colour);
 					Corners[K] = Instance;
 				}
 				Desc.CreateTriangle(Group, Corners);

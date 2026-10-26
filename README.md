@@ -42,7 +42,12 @@ writes `Game/Saved/Screenshots/WindowsEditor/DIRT1.png` and quits.
 Import a level, open `/Game/BRR/<LEVEL>/L_<LEVEL>` and press Play (or run with `-game`). You drive
 the level's first car (`?Vehicle=ATV` to change) from a grid block chosen as the original does,
 against the level's ghost laps, under the original's rules: countdown, CHECKP lines, laps, placing,
-wrong way, rubber-banded ghosts.
+wrong way, rubber-banded ghosts. Every car stays where the grid put it until the lights go out.
+The ghosts are not solid to the player's physics: running into one (or being run into) is the
+original's car-to-car contact - pushed out, half the closing speed back, a small spin.
+
+The game runs in a borderless window over the whole desktop (Alt+Enter for a window; `-windowed` or
+`-ResX=`/`-ResY=` to start in one).
 
 Controls: W/Up accelerate, S/Down brake and reverse, A/D or Left/Right steer, Space handbrake,
 R recover, Shift boost. Gamepad: triggers, left stick, X handbrake, Y recover, A boost.
@@ -71,8 +76,13 @@ not the level's palette colours (export `T_<LEVEL>_Palette` from the import as t
   mipmapped textures, widescreen, everything in view, rendered at two thirds and upscaled: by DLSS
   Super Resolution with Ray Reconstruction (denoising Lumen's rays), plus DLSS Frame Generation and
   Reflex, when NVIDIA's plugins are installed (`brr.FrameGeneration 0` turns frame generation off),
-  else by TSR. `brr.PathTracing 1` renders through the path tracer (with the engine's denoiser)
-  for stills.
+  else by TSR. `brr.DLAA 1` renders at full resolution instead: DLAA (TSR as plain anti-aliasing
+  without DLSS). `brr.PathTracing 1` renders through the path tracer (with the engine's denoiser)
+  for stills. The terrain's liquids are shaded as what they are: water dark and glassy under
+  moving ripples, reflecting the sky and the banks; ice smooth and shining; lava glowing. The
+  original has no such notion, so `FBRRWorld::LiquidOf` reads it off each level's surface types:
+  the WATER circuits' river is TRACK, the lakes and the sea elsewhere are SLIPPY, which is ice on
+  SNOW and lava on MOON.
 
 NVIDIA's DLSS 4.5 plugins for UE 5.8 (DLSS, Streamline and its parts) go in the engine, e.g.
 `Engine/Plugins/Marketplace/NVIDIA/`; the project enables `DLSS` and `Streamline`. They are not part

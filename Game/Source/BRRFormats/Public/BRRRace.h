@@ -120,6 +120,11 @@ public:
 	// The player's new ground velocity (UE X/Y, cm/s) after knocking a piece over: the original's
 	// push-back. True once per bounce; apply it to the car and keep its vertical speed.
 	bool ConsumePlayerBounce(FVector2D& OutVelocityXY);
+	// The player ran into another car (or was run into): the original's push out of it (UE X/Y,
+	// cm) and the spin the contact gave (UE yaw rate, degrees/s). The new speed comes through
+	// ConsumePlayerBounce. True once per contact. The opponents' bodies are not solid to the
+	// player's physics; this is the contact between them, as in the original.
+	bool ConsumePlayerCarContact(FVector2D& OutShoveXY, double& OutYawDegreesPerSecond);
 
 	bool HasStarted() const;           // the lights are out
 	int32 CountdownNumber() const;     // 3, 2, 1 while counting, 0 at "go", -1 otherwise

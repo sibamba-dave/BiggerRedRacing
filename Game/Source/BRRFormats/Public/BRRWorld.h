@@ -51,11 +51,16 @@ struct FBRRImage
 	TArray<FColor> Pixels; // row-major, top row first; alpha 0 = transparent (palette index 0)
 };
 
+// What a terrain surface is where it is not ground (FBRRWorld::LiquidOf). The classic look draws
+// them all as the original's palette art; the remastered look shades each as what it is.
+enum class EBRRLiquid : uint8 { None, Water, Ice, Lava };
+
 struct FBRRVertex
 {
 	FVector3f Position; // UE cm
 	FVector2f UV;       // 0..1 within the section's atlas
 	FColor Color;       // flat palette colour (used when the section has no atlas)
+	uint8 Land = 0xFF;  // terrain only: the surface type under the triangle (0-7, FBRRHandlingMetrics::SurfaceName)
 };
 
 // Triangle list sharing one atlas page (or none) and one sidedness.
@@ -211,6 +216,13 @@ struct BRRFORMATS_API FBRRWorld
 
 	// Terrain height (UE Z, cm) under a UE X/Y location, bilinear over MAP.MPH.
 	double GroundHeightAt(double UEX, double UEY) const;
+
+	// What a terrain surface type (FBRRVertex::Land) is on this level. The original has no such
+	// notion - water is a surface the boats race on, or the slippery one the cars slide into - so
+	// it is read off the data (every level's surfaces against their colours and heights): the
+	// WATER circuits race on their river as TRACK; elsewhere SLIPPY is the lakes and the sea,
+	// except on SNOW, where it is ice, and on MOON, lava.
+	EBRRLiquid LiquidOf(uint8 Land) const;
 
 	// Loads <Level>.LEV from DataDir (the folder holding ALWAYS.WAP) plus each named vehicle in
 	// team colour `Colour`. Returns false with OutError on any failure.

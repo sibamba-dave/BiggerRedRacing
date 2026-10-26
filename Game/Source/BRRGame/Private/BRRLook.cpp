@@ -96,13 +96,15 @@ void ABRRLook::Build(const FVector& SunDirection, UMaterialParameterCollection* 
 	P.VignetteIntensity = 0.25f;
 }
 
-void ABRRLook::Apply(bool bInRemastered, bool bInPathTracing, bool bInFrameGeneration)
+void ABRRLook::Apply(bool bInRemastered, bool bInPathTracing, bool bInFrameGeneration, bool bInNativeResolution)
 {
 	bInPathTracing = bInRemastered && bInPathTracing;
 	bInFrameGeneration = bInRemastered && bInFrameGeneration;
-	if (bApplied && bInRemastered == bRemastered && bInPathTracing == bPathTracing && bInFrameGeneration == bFrameGeneration) return;
+	if (bApplied && bInRemastered == bRemastered && bInPathTracing == bPathTracing && bInFrameGeneration == bFrameGeneration
+		&& bInNativeResolution == bNativeResolution) return;
 	bApplied = true;
 	bFrameGeneration = bInFrameGeneration;
+	bNativeResolution = bInNativeResolution;
 	bRemastered = bInRemastered;
 	bPathTracing = bInPathTracing;
 	UWorld* World = GetWorld();
@@ -137,10 +139,11 @@ void ABRRLook::Apply(bool bInRemastered, bool bInPathTracing, bool bInFrameGener
 	SetCVar(TEXT("r.Shadow.Virtual.Enable"), bRemastered ? 1 : 0);
 	SetCVar(TEXT("r.AntiAliasingMethod"), bRemastered ? 4 : 0);
 	SetCVar(TEXT("r.AmbientOcclusionLevels"), bRemastered ? -1 : 0); // classic: SSAO darkened the emissive palette around every object
-	// Upscaling from two thirds of the resolution (DLSS / TSR "quality"). With NVIDIA's plugins: DLSS
-	// Super Resolution with Ray Reconstruction denoising Lumen's rays, Frame Generation, and Reflex
-	// to win back the latency it costs.
-	SetCVar(TEXT("r.ScreenPercentage"), bRemastered ? 67 : 100);
+	// Upscaling from two thirds of the resolution (DLSS / TSR "quality"), or none (brr.DLAA: DLSS at
+	// 100% is DLAA - the plugin has no switch of its own for it). With NVIDIA's plugins: DLSS Super
+	// Resolution with Ray Reconstruction denoising Lumen's rays, Frame Generation, and Reflex to win
+	// back the latency it costs.
+	SetCVar(TEXT("r.ScreenPercentage"), bRemastered && !bNativeResolution ? 67 : 100);
 	if (HasDlss())
 	{
 		SetCVar(TEXT("r.NGX.DLSS.Enable"), bRemastered ? 1 : 0);

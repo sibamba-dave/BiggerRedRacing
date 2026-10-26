@@ -14,6 +14,7 @@
 #include "scene/vehicle_render.h"
 #include "sim/race.h"
 #include "sim/replay.h"
+#include "sim/vehicle.h"
 
 namespace
 {
@@ -91,6 +92,16 @@ FBox3f FBRRMesh::GetBounds() const
 	return Box;
 }
 
+EBRRLiquid FBRRWorld::LiquidOf(uint8 Land) const
+{
+	constexpr uint8 Track = 0, Slippy = 2;
+	if (LevelName.StartsWith(TEXT("WATER"), ESearchCase::IgnoreCase)) return Land == Track ? EBRRLiquid::Water : EBRRLiquid::None;
+	if (Land != Slippy) return EBRRLiquid::None;
+	if (LevelName.StartsWith(TEXT("SNOW"), ESearchCase::IgnoreCase)) return EBRRLiquid::Ice;
+	if (LevelName.StartsWith(TEXT("MOON"), ESearchCase::IgnoreCase)) return EBRRLiquid::Lava;
+	return EBRRLiquid::Water;
+}
+
 double FBRRWorld::GroundHeightAt(double UEX, double UEY) const
 {
 	if (MapWidth <= 0 || MapHeight <= 0 || HeightMap.Num() != MapWidth * MapHeight) return 0.0;
@@ -165,6 +176,27 @@ bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<
 		};
 		Out.Terrain = ConvertTriangles(World, 0, TerrainVerts, WorldRenderToUE);
 		Out.Decor = ConvertTriangles(World, TerrainVerts, World.size() - TerrainVerts, WorldRenderToUE);
+		{
+			// Each terrain triangle's surface type, as the physics reads it at its centre.
+			bigred::SimTerrain Ter;
+			Ter.mph = Scene.mph_data;
+			Ter.mpc = Scene.mpc_data;
+			Ter.cht = Scene.cht_size >= 512 ? Scene.cht_data : nullptr;
+			Ter.w = Scene.map_w;
+			Ter.h = Scene.map_h;
+			const std::vector<uint8_t> Land = bigred::parse_land_table(Script);
+			for (size_t I = 0; I < 16 && I < Land.size(); ++I) Ter.land[I] = Land[I];
+			const double ToFixed = 512.0 / BRR::CmPerUnit;
+			for (FBRRMeshSection& Section : Out.Terrain.Sections)
+			{
+				for (int32 T = 0; T + 2 < Section.Vertices.Num(); T += 3)
+				{
+					const FVector3f C = (Section.Vertices[T].Position + Section.Vertices[T + 1].Position + Section.Vertices[T + 2].Position) / 3.f;
+					const uint8 Type = uint8(Ter.land_type(int32(C.Y * ToFixed), int32(C.X * ToFixed)));
+					for (int32 K = 0; K < 3; ++K) Section.Vertices[T + K].Land = Type;
+				}
+			}
+		}
 		if (!Scene.start_lights.empty())
 		{
 			for (const std::pair<int, int>& Range : Scene.lights_ranges)

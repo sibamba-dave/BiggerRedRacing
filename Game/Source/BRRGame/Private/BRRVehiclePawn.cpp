@@ -299,7 +299,20 @@ void ABRRVehiclePawn::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	FBRRDriveInput In = ScriptedInput.IsSet() ? *ScriptedInput : ReadPlayerInput();
-	if (bControlsLocked) In = FBRRDriveInput{ false, false, false, false, true };
+	if (bControlsLocked)
+	{
+		// The original holds every car where the grid put it until the lights go out. Chaos left
+		// alone lets a boat on the water slide and turn into the barrier, so here the car may only
+		// settle on its suspension.
+		In = FBRRDriveInput{ false, false, false, false, true };
+		if (Chassis->IsAnyRigidBodyAwake())
+		{
+			Chassis->SetPhysicsLinearVelocity(FVector(0, 0, Chassis->GetPhysicsLinearVelocity().Z));
+			FVector Angular = Chassis->GetPhysicsAngularVelocityInDegrees();
+			Angular.Z = 0;
+			Chassis->SetPhysicsAngularVelocityInDegrees(Angular);
+		}
+	}
 	bBoostKey = In.bBoost;
 	if (bBoosting)
 	{

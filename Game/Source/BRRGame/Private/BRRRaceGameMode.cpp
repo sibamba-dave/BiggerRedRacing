@@ -22,6 +22,7 @@
 #include "HAL/IConsoleManager.h"
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
+#include "GameFramework/GameUserSettings.h"
 #include "Kismet/KismetMaterialLibrary.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "Misc/CommandLine.h"
@@ -44,6 +45,9 @@ namespace
 
 	TAutoConsoleVariable<int32> CVarFrameGeneration(TEXT("brr.FrameGeneration"), 1,
 		TEXT("1: DLSS Frame Generation in the remastered look, where NVIDIA's Streamline plugin is installed."));
+
+	TAutoConsoleVariable<int32> CVarDlaa(TEXT("brr.DLAA"), 0,
+		TEXT("1: the remastered look at full resolution, DLSS anti-aliasing it (DLAA) instead of upscaling from two thirds (TSR: TAA at 100%)."));
 
 	TAutoConsoleVariable<bool> CVarSurfaceHandling(TEXT("brr.SurfaceHandling"), true,
 		TEXT("The player's car handles as the surface under it does in the original (off: the track's everywhere)."));
@@ -89,6 +93,21 @@ void ABRRRaceGameMode::StartPlay()
 	Super::StartPlay();
 	LevelName = LevelFromMap(GetWorld());
 	if (LevelName.IsEmpty()) return;
+
+	// A borderless window over the whole desktop (Alt+Enter swaps it for a window). Left alone in
+	// the editor, off screen, and when a window is asked for (-windowed, -ResX/-ResY).
+	const TCHAR* Cmd = FCommandLine::Get();
+	int32 ResX = 0;
+	if (!GetWorld()->IsPlayInEditor() && !FParse::Param(Cmd, TEXT("windowed")) && !FParse::Param(Cmd, TEXT("RenderOffScreen"))
+		&& !FParse::Value(Cmd, TEXT("ResX="), ResX))
+	{
+		if (UGameUserSettings* Settings = GEngine ? GEngine->GetGameUserSettings() : nullptr)
+		{
+			Settings->SetFullscreenMode(EWindowMode::WindowedFullscreen);
+			Settings->SetScreenResolution(Settings->GetDesktopResolution());
+			Settings->ApplyResolutionSettings(false);
+		}
+	}
 
 	if (FParse::Param(FCommandLine::Get(), TEXT("BRRDriveTest")))
 	{
@@ -241,6 +260,18 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 				Body->SetPhysicsLinearVelocity(FVector(Bounce.X, Bounce.Y, Body->GetPhysicsLinearVelocity().Z));
 			}
 		}
+		FVector2D Shove;
+		double Spin = 0;
+		if (Race->ConsumePlayerCarContact(Shove, Spin))
+		{
+			if (UPrimitiveComponent* Body = Cast<UPrimitiveComponent>(PlayerCar->GetRootComponent()))
+			{
+				PlayerCar->AddActorWorldOffset(FVector(Shove, 0), /*bSweep=*/false, nullptr, ETeleportType::TeleportPhysics);
+				FVector Angular = Body->GetPhysicsAngularVelocityInDegrees();
+				Angular.Z = Spin;
+				Body->SetPhysicsAngularVelocityInDegrees(Angular);
+			}
+		}
 		for (int32 R = 0; R < Race->NumRacers(); ++R)
 		{
 			PrevPose[R] = CurrPose[R];
@@ -281,7 +312,8 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 		{
 			if (PC->WasInputKeyJustPressed(EKeys::F5)) CVarLook->Set(Look->IsRemastered() ? 0 : 1, ECVF_SetByConsole);
 		}
-		Look->Apply(CVarLook.GetValueOnGameThread() != 0, CVarPathTracing.GetValueOnGameThread() != 0, CVarFrameGeneration.GetValueOnGameThread() != 0);
+		Look->Apply(CVarLook.GetValueOnGameThread() != 0, CVarPathTracing.GetValueOnGameThread() != 0, CVarFrameGeneration.GetValueOnGameThread() != 0,
+			CVarDlaa.GetValueOnGameThread() != 0);
 		if (RaceCamera)
 		{
 			// Classic: the original's 4:3, letterboxed. Remastered: the window's own shape, with the

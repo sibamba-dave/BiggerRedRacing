@@ -37,7 +37,8 @@ public:
 	void Build(const FVector& SunDirection, UMaterialParameterCollection* Collection);
 
 	// bFrameGeneration: DLSS Frame Generation, when NVIDIA's Streamline plugin is installed.
-	void Apply(bool bRemastered, bool bPathTracing, bool bFrameGeneration);
+	// bNativeResolution: render at full resolution - DLAA with DLSS - rather than upscale.
+	void Apply(bool bRemastered, bool bPathTracing, bool bFrameGeneration, bool bNativeResolution);
 	bool IsRemastered() const { return bRemastered; }
 
 	// Which upscaler the remastered look runs ("DLSS" or "TSR").
@@ -47,6 +48,7 @@ private:
 	bool bRemastered = false;
 	bool bPathTracing = false;
 	bool bFrameGeneration = false;
+	bool bNativeResolution = false;
 	bool bApplied = false;
 
 	UPROPERTY()

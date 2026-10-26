@@ -8,6 +8,10 @@ ABRRGhostCar::ABRRGhostCar()
 {
 	Collision = CreateDefaultSubobject<UBoxComponent>(TEXT("Collision"));
 	Collision->SetCollisionProfileName(TEXT("BlockAll"));
+	// Not solid to the player's car: a replay is teleported tick to tick, and Chaos shoves out
+	// whatever it lands in. The race runs the original's car-to-car contact instead
+	// (FBRRRace::ConsumePlayerCarContact).
+	Collision->SetCollisionResponseToChannel(ECC_Vehicle, ECR_Ignore);
 	Collision->SetMobility(EComponentMobility::Movable);
 	SetRootComponent(Collision);
 

@@ -56,6 +56,38 @@ namespace
 		Ter.blockers = bigred::build_sim_blockers(Scene.instances, Scene.shape_names_by_slot, FtLookup);
 		Ter.build_blocker_grid();
 	}
+
+	// The original's silhouette test (VehicleSim::hit_vehicles' narrow phase, private to the
+	// vendored sim): two 32-sector silhouettes facing `Bearing` (A -> B) at `Dist`, the centre
+	// pair first, then the neighbouring pairs i = 1..6 on either side, each against Dist / cos(i).
+	bool SilhouetteContact(const int32_t* ReachA, int32 YawA, const int32_t* ReachB, int32 YawB, int32 Bearing, int32 Dist,
+		int32& OutDepth, int32& OutSectorB)
+	{
+		static constexpr int32 Secant[8] = { 65536, 66820, 70936, 78819, 92682, 117962, 171254, 335926 };
+		auto SectorOf = [](int32 B, int32 Y) { return int32(((B + 0x400 - Y) >> 11) & 0x1f); };
+		const int32 SA = SectorOf(Bearing, YawA), SB = SectorOf(Bearing + 0x8000, YawB);
+		if (ReachA[SA] + ReachB[SB] > Dist)
+		{
+			OutDepth = ReachA[SA] + ReachB[SB] - Dist;
+			OutSectorB = SB;
+			return true;
+		}
+		for (int32 K = 1; K < 7; ++K)
+		{
+			const int32 Far = int32((int64(Dist) * Secant[K]) >> 16);
+			for (int32 Side = 0; Side < 2; ++Side)
+			{
+				const int32 IA = (Side == 0 ? SA + K : SA - K) & 0x1f;
+				const int32 IB = (Side == 0 ? SB - K : SB + K) & 0x1f;
+				const int32 Sum = ReachA[IA] + ReachB[IB];
+				if (Sum <= Far) continue;
+				OutDepth = int32((int64(Sum - Far) << 16) / Secant[K]);
+				OutSectorB = IB;
+				return true;
+			}
+		}
+		return false;
+	}
 }
 
 const TCHAR* FBRRHandlingMetrics::SurfaceName(int32 Surface)
@@ -251,6 +283,9 @@ struct FBRRRace::FImpl
 	bigred::NitroReserve Nitros;
 	double BoostAccel = 0; // cm/s/s along the player's car this tick
 	TOptional<FVector2D> PlayerBounce; // UE ground velocity, cm/s, from a destructible's push-back
+	FVector2D PlayerShove = FVector2D::ZeroVector; // UE cm, out of another car (PlayerContact)
+	double PlayerSpin = 0;             // UE yaw rate, degrees/s, from another car
+	bool bPlayerContact = false;
 	int32 GhostRate = 0x200;
 	uint32 BandClock = 0;
 
@@ -423,6 +458,67 @@ TArray<FVector> FBRRRace::GhostPath(int32 Racer) const
 	return Path;
 }
 
+// The player's half of VehicleSim::hit_vehicles against every other car, on the proxy: the
+// opponents are replays, obstacles that are never pushed, so this is all the contact there is -
+// and it is the original's, where Chaos left alone teleports a solid box into the player and
+// shoves it out (a boat rammed off the grid spun ~140 degrees). Side on, the speed into the
+// other car comes back at half restitution and the other's sideways speed gives a small spin;
+// then the body is pushed out by the depth plus the original's 4-unit margin. Returns whether
+// the velocity changed; the push and the spin are left in PlayerShove / PlayerSpin.
+template <typename FRaceImpl> // FBRRRace::FImpl, which is private
+static bool ContactCars(FRaceImpl& I, bigred::VehicleSim& P)
+{
+	namespace fx = bigred::fx;
+	bool bVelocity = false;
+	const int32 X0 = P.px, Z0 = P.pz;
+	int32 YawRate = 0;
+	for (size_t J = 0; J < I.Cars.size(); ++J)
+	{
+		const bigred::VehicleSim& O = I.Cars[J];
+		if (int32(J) == I.Player || !O.active || !O.tune) continue;
+		const int32 X = P.px >> 9, Y = P.py >> 9, Z = P.pz >> 9;
+		const int32 DX = (O.px >> 9) - X, DZ = (O.pz >> 9) - Z;
+		if (DX > 0x1000 || DX < -0x1000 || DZ > 0x1000 || DZ < -0x1000) continue;
+		const bigred::VehicleBox& SB = P.tune->box;
+		const bigred::VehicleBox& OB = O.tune->box;
+		const int64 RR = int64(SB.radius) + OB.radius;
+		if (int64(DX) * DX + int64(DZ) * DZ > RR * RR) continue;
+		const int32 Dist = fx::hypot32(DX, DZ);
+		const int32 Bearing = fx::atan2_bam16(DX, DZ) & 0xFFFF;
+		int32 Depth = 0, OS = 0;
+		if (!SilhouetteContact(SB.sector_reach.data(), P.yaw >> 8, OB.sector_reach.data(), O.yaw >> 8, Bearing, Dist, Depth, OS)) continue;
+		const int32 OY = O.py >> 9; // +Y is down
+		if (Y + SB.ytop > OY + OB.ybottom || OY + OB.ytop > Y + SB.ybottom) continue; // under or over it
+
+		const int32 NB = FMath::Clamp(int32(OB.sector_normal[size_t(OS)]), 0x10, 0xf0);
+		const int32 N0 = ((O.yaw >> 8) - (NB << 8)) & 0xFFFF; // the other car's outward normal
+		const int32 N = (N0 - 0x8000) & 0xFFFF;
+		const int32 ASelf = (N - P.travel) & 0xFFFF, AOther = (N - O.travel) & 0xFFFF;
+		const int32 SSin = fx::mul15(P.speed, fx::sin16(ASelf)), SCos = fx::mul15(P.speed, fx::cos16(ASelf));
+		const int32 OCos = fx::mul15(O.speed, fx::cos16(AOther)), OSin = fx::mul15(O.speed, fx::sin16(AOther));
+		const int32 Closing = SCos - OCos;
+		if (Closing >= 0)
+		{
+			const int32 Back = (Closing * 3) / 2 - SCos;
+			P.travel = (N0 + fx::atan2_bam16(SSin, Back)) & 0xFFFF;
+			P.speed = fx::hypot32(Back, SSin);
+			YawRate = -OSin / 400;
+			bVelocity = true;
+		}
+		const int32 Out = Depth + 4;
+		P.px += fx::mul15(Out, fx::sin16(N0)) << 9;
+		P.pz += fx::mul15(Out, fx::cos16(N0)) << 9;
+		I.bPlayerContact = true;
+	}
+	if (I.bPlayerContact)
+	{
+		// Game (x, z) is UE (Y, X); yaw is BAM16 << 8 per tick either way round.
+		I.PlayerShove = FVector2D(double(P.pz - Z0), double(P.px - X0)) / 512.0 * BRR::CmPerUnit;
+		I.PlayerSpin = double(YawRate) / 256.0 * 360.0 / 65536.0 / FBRRRace::TickSeconds;
+	}
+	return bVelocity;
+}
+
 void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity, bool bBoostKey)
 {
 	FImpl& I = *Impl;
@@ -495,6 +591,7 @@ void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity,
 				bBounced = true;
 			}
 		}
+		bBounced |= ContactCars(I, P);
 		if (bBounced)
 		{
 			// Back to UE: the game's (x, z) ground velocity in 1/512 units per tick.
@@ -594,6 +691,15 @@ bool FBRRRace::ConsumePlayerBounce(FVector2D& OutVelocityXY)
 	if (!Impl->PlayerBounce.IsSet()) return false;
 	OutVelocityXY = *Impl->PlayerBounce;
 	Impl->PlayerBounce.Reset();
+	return true;
+}
+
+bool FBRRRace::ConsumePlayerCarContact(FVector2D& OutShoveXY, double& OutYawDegreesPerSecond)
+{
+	if (!Impl->bPlayerContact) return false;
+	OutShoveXY = Impl->PlayerShove;
+	OutYawDegreesPerSecond = Impl->PlayerSpin;
+	Impl->bPlayerContact = false;
 	return true;
 }
 

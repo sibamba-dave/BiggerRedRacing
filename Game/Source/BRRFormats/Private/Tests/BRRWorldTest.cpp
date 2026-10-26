@@ -159,4 +159,42 @@ bool FBRRWorldAllContentTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// The remastered look shades water, ice and lava as such (FBRRWorld::LiquidOf): each level's
+// liquid comes out where its art and height say it is - a sea-level surface in the liquid's colour.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBRRWorldLiquidsTest, "BRR.Formats.World.Liquids",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBRRWorldLiquidsTest::RunTest(const FString& Parameters)
+{
+	const FString DataDir = BRR::GetDataDir();
+	if (DataDir.IsEmpty())
+	{
+		AddWarning(TEXT("BRR data dir not found (set BRR_DATA_DIR); skipping."));
+		return true;
+	}
+	struct FCase { const TCHAR* Level; EBRRLiquid Liquid; int32 MinTriangles; };
+	for (const FCase& Case : { FCase{ TEXT("WATER1"), EBRRLiquid::Water, 3000 }, FCase{ TEXT("DIRT1"), EBRRLiquid::Water, 60000 },
+		FCase{ TEXT("SNOW2"), EBRRLiquid::Ice, 100000 }, FCase{ TEXT("MOON2"), EBRRLiquid::Lava, 100000 } })
+	{
+		FBRRWorld World;
+		FString Error;
+		if (!TestTrue(FString::Printf(TEXT("%s loads: %s"), Case.Level, *Error), FBRRWorld::Load(DataDir, Case.Level, {}, 1, World, Error))) continue;
+		int32 Count = 0, Unclassified = 0, Other = 0;
+		for (const FBRRMeshSection& S : World.Terrain.Sections)
+		{
+			for (const FBRRVertex& V : S.Vertices)
+			{
+				if (V.Land > 7) { ++Unclassified; continue; }
+				const EBRRLiquid L = World.LiquidOf(V.Land);
+				Count += L == Case.Liquid;
+				Other += L != Case.Liquid && L != EBRRLiquid::None;
+			}
+		}
+		TestEqual(FString::Printf(TEXT("%s: every terrain triangle has a surface"), Case.Level), Unclassified, 0);
+		TestEqual(FString::Printf(TEXT("%s: one kind of liquid"), Case.Level), Other, 0);
+		TestTrue(FString::Printf(TEXT("%s: %d liquid triangles"), Case.Level, Count / 3), Count / 3 >= Case.MinTriangles);
+	}
+	return true;
+}
+
 #endif
