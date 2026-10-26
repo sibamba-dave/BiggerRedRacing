@@ -33,8 +33,25 @@ struct FBRRTournament
 	TArray<FBRRTournamentRound> Rounds;
 };
 
+// A level's mini-map (TOPMAP.SPR glyph 0) and the original's projection onto it.
+struct BRRFORMATS_API FBRRTopMap
+{
+	FBRRImage Image;
+	int32 A = 0, B = 0, Scale = 0;
+
+	// Pixel of Image a UE world location falls on (the dot centre, as the original places it).
+	FVector2D ToPixel(const FVector& Location) const;
+};
+
 namespace BRR
 {
+	// TOPMAP.SPR of <Level>.LEV through the level's palette (FBRRWorld::Palette).
+	BRRFORMATS_API bool LoadTopMap(const FString& DataDir, const FString& Level, const TArray<FColor>& Palette,
+		FBRRTopMap& Out, FString& OutError);
+
+	// Glyph of SML_ALPH.SPR (the interface alphabet) that draws C, or -1.
+	BRRFORMATS_API int32 InterfaceGlyph(TCHAR C);
+
 	// Raw bytes of one archive member.
 	BRRFORMATS_API bool LoadMember(const FString& DataDir, const FString& Archive, const FString& Member,
 		TArray<uint8>& OutBytes, FString& OutError);

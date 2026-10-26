@@ -1,3 +1,3 @@
 OpenRedRacing 61c09dd37d4371395ec0dd3b33843ae59f35cc95
 https://github.com/nynjardin/OpenRedRacing
-Vendored: src/formats, src/sim, src/scene/{level_scene.h,level_scene.cpp,vehicle_render.h,vehicle_render.cpp} (MIT, Copyright (c) 2026 PaPe)
+Vendored: src/formats, src/sim, src/scene/{level_scene.h,level_scene.cpp,vehicle_render.h,vehicle_render.cpp,chase_camera.h,chase_camera.cpp,camera_sample.h} (MIT, Copyright (c) 2026 PaPe)

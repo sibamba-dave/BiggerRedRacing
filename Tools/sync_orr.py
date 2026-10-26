@@ -17,7 +17,8 @@ SRC = ROOT / "ThirdParty" / "OpenRedRacing" / "src"
 DST = ROOT / "Game" / "Source" / "BRRFormats" / "Private" / "ORR"
 DIRS = ["formats", "sim"]
 # Mesh builders only: no GL/SDL. They turn the original data into the triangle lists ORR draws.
-SCENE_FILES = ["level_scene.h", "level_scene.cpp", "vehicle_render.h", "vehicle_render.cpp"]
+SCENE_FILES = ["level_scene.h", "level_scene.cpp", "vehicle_render.h", "vehicle_render.cpp",
+               "chase_camera.h", "chase_camera.cpp", "camera_sample.h"]
 
 
 def main() -> None:

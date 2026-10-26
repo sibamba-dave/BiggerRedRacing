@@ -12,6 +12,11 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
 #include "Materials/MaterialExpressionVertexColor.h"
+#include "Materials/MaterialExpressionCameraVectorWS.h"
+#include "Materials/MaterialExpressionCustom.h"
+#include "Materials/MaterialExpressionSceneTexture.h"
+#include "Engine/PostProcessVolume.h"
+#include "Engine/CollisionProfile.h"
 #include "Materials/MaterialInstanceConstant.h"
 #include "Misc/PackageName.h"
 #include "PhysicsEngine/BodySetup.h"
@@ -83,7 +88,26 @@ namespace
 	{
 		UMaterial* Textured = nullptr;
 		UMaterial* Flat = nullptr;
+		UMaterial* Sky = nullptr;      // the original's banded sky, from an 18x1 palette strip
+		UMaterial* Display = nullptr;  // replaces the tonemapper: scene colour out as sRGB, untouched
 	};
+
+	UMaterialExpressionCustom* MakeCustom(UMaterial* Mat, const FString& Code, ECustomMaterialOutputType Output,
+		TArray<TPair<FName, UMaterialExpression*>> Inputs)
+	{
+		auto* Custom = Cast<UMaterialExpressionCustom>(
+			UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionCustom::StaticClass(), -500, 0));
+		Custom->Code = Code;
+		Custom->OutputType = Output;
+		Custom->Inputs.Reset();
+		for (const TPair<FName, UMaterialExpression*>& In : Inputs)
+		{
+			FCustomInput& Input = Custom->Inputs.AddDefaulted_GetRef();
+			Input.InputName = In.Key;
+			Input.Input.Connect(0, In.Value);
+		}
+		return Custom;
+	}
 
 	FMasters MakeMasters(const FString& Root)
 	{
@@ -101,6 +125,52 @@ namespace
 			UMaterialEditingLibrary::RecompileMaterial(Mat);
 			SaveAsset(Mat);
 			M.Textured = Mat;
+		}
+		{
+			// Band index from the view direction's elevation, as ORR's sky shader picks it.
+			FString Bands;
+			for (int32 B = 0; B < 16; ++B) Bands += FString::Printf(TEXT("%s%.2f"), B ? TEXT(",") : TEXT(""), BRR::SkyBandDegrees[B]);
+			const FString Code = FString::Printf(TEXT(
+				"const float B[16] = {%s};\n"
+				"float e = degrees(asin(clamp(-View.z, -1.0, 1.0)));\n"
+				"float i = 15.0;\n"
+				"if (e < 0.0) { i = (-e >= %.2f) ? 17.0 : 16.0; }\n"
+				"else { for (int k = 0; k < 16; k++) { if (e >= B[k]) { i = k; break; } } }\n"
+				"return float2((i + 0.5) / 18.0, 0.5);"), *Bands, BRR::SkyGroundBandDegrees);
+			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Sky"));
+			Mat->SetShadingModel(MSM_Unlit);
+			Mat->TwoSided = true;
+			Mat->bIsSky = true;
+			UMaterialExpression* View = UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionCameraVectorWS::StaticClass(), -700, 0);
+			UMaterialExpressionCustom* Uv = MakeCustom(Mat, Code, CMOT_Float2, { { TEXT("View"), View } });
+			auto* Tex = Cast<UMaterialExpressionTextureSampleParameter2D>(
+				UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionTextureSampleParameter2D::StaticClass(), -300, 0));
+			Tex->ParameterName = TEXT("Sky");
+			Tex->Texture = LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/DefaultTexture.DefaultTexture"));
+			Tex->Coordinates.Connect(0, Uv);
+			UMaterialEditingLibrary::ConnectMaterialProperty(Tex, TEXT("RGB"), MP_EmissiveColor);
+			UMaterialEditingLibrary::RecompileMaterial(Mat);
+			SaveAsset(Mat);
+			M.Sky = Mat;
+		}
+		{
+			// Unlit palette colours reach here exactly as authored; encode them for the display
+			// with no tone curve, so a pixel on screen is the original's palette entry.
+			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Display"));
+			Mat->MaterialDomain = MD_PostProcess;
+			Mat->BlendableLocation = BL_ReplacingTonemapper;
+			auto* Scene = Cast<UMaterialExpressionSceneTexture>(
+				UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionSceneTexture::StaticClass(), -700, 0));
+			Scene->SceneTextureId = PPI_PostProcessInput0;
+			UMaterialExpressionCustom* Encode = MakeCustom(Mat, TEXT(
+				"float3 c = saturate(Linear.rgb);\n"
+				"float3 lo = c * 12.92;\n"
+				"float3 hi = 1.055 * pow(c, 1.0 / 2.4) - 0.055;\n"
+				"return lerp(hi, lo, step(c, 0.0031308));"), CMOT_Float3, { { TEXT("Linear"), Scene } });
+			UMaterialEditingLibrary::ConnectMaterialProperty(Encode, TEXT(""), MP_EmissiveColor);
+			UMaterialEditingLibrary::RecompileMaterial(Mat);
+			SaveAsset(Mat);
+			M.Display = Mat;
 		}
 		{
 			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Flat"));
@@ -324,6 +394,50 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 
 	SpawnMeshActor(Map, Terrain, FTransform::Identity, TEXT("Terrain"));
 	SpawnMeshActor(Map, Decor, FTransform::Identity, TEXT("Decor"));
+
+	// The classic look: the original's sky, and palette colours shown exactly.
+	if (World.SkyStrip.Num() == 18)
+	{
+		FBRRImage Strip;
+		Strip.Width = 18;
+		Strip.Height = 1;
+		Strip.Pixels = World.SkyStrip;
+		UTexture2D* SkyTexture = MakeTexture(Assets.Dir / TEXT("Textures") / FString::Printf(TEXT("T_%s_Sky"), *Level), Strip);
+		UMaterialInstanceConstant* SkyMaterial = NewAsset<UMaterialInstanceConstant>(Assets.Dir / TEXT("Materials") / FString::Printf(TEXT("MI_%s_Sky"), *Level));
+		SkyMaterial->SetParentEditorOnly(Assets.Masters.Sky);
+		SkyMaterial->SetTextureParameterValueEditorOnly(FMaterialParameterInfo(TEXT("Sky")), SkyTexture);
+		SkyMaterial->PostEditChange();
+		SaveAsset(SkyMaterial);
+
+		const FVector Centre(World.Terrain.GetBounds().GetCenter());
+		AStaticMeshActor* Sky = SpawnMeshActor(Map, LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere")),
+			FTransform(FRotator::ZeroRotator, FVector(Centre.X, Centre.Y, 0), FVector(50000.0)), TEXT("Sky"));
+		UStaticMeshComponent* SkyMesh = Sky->GetStaticMeshComponent();
+		SkyMesh->SetMaterial(0, SkyMaterial);
+		SkyMesh->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName); // a profile survives loading; a bare flag does not
+		SkyMesh->SetCastShadow(false);
+	}
+	{
+		APostProcessVolume* Look = Map->SpawnActor<APostProcessVolume>();
+		Look->SetActorLabel(TEXT("ClassicLook"));
+		Look->bUnbound = true;
+		FPostProcessSettings& P = Look->Settings;
+		P.WeightedBlendables.Array.Add(FWeightedBlendable(1.f, Assets.Masters.Display));
+		P.bOverride_AutoExposureMethod = true;
+		P.AutoExposureMethod = AEM_Manual;
+		P.bOverride_AutoExposureBias = true;
+		P.AutoExposureBias = 0.f;
+		P.bOverride_AutoExposureApplyPhysicalCameraExposure = true;
+		P.AutoExposureApplyPhysicalCameraExposure = false;
+		P.bOverride_BloomIntensity = true;
+		P.BloomIntensity = 0.f;
+		P.bOverride_MotionBlurAmount = true;
+		P.MotionBlurAmount = 0.f;
+		P.bOverride_VignetteIntensity = true;
+		P.VignetteIntensity = 0.f;
+		P.bOverride_LensFlareIntensity = true;
+		P.LensFlareIntensity = 0.f;
+	}
 	for (int32 Slot = 0; Slot < World.Grid.Num() && !VehicleAssets.IsEmpty(); ++Slot)
 	{
 		const int32 V = Slot % VehicleAssets.Num();

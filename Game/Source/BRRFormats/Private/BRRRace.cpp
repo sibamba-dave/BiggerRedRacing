@@ -13,6 +13,7 @@
 #include "formats/game_files.h"
 #include "formats/level_script.h"
 #include "formats/vehicle_script.h"
+#include "scene/chase_camera.h"
 #include "scene/level_scene.h"
 #include "scene/vehicle_render.h"
 #include "sim/race.h"
@@ -244,6 +245,8 @@ struct FBRRRace::FImpl
 	TArray<FString> VehicleNames;
 	TArray<int32> Colours;
 	int32 Player = 0;
+	bigred::ChaseCamera Camera;
+	bigred::CameraState CameraPrev;
 	int32 GhostRate = 0x200;
 	uint32 BandClock = 0;
 
@@ -362,6 +365,8 @@ TUniquePtr<FBRRRace> FBRRRace::Create(const FString& DataDir, const FString& Lev
 		}
 		I.LinkField();
 		I.StartCars = I.Cars;
+		I.Camera.reset(I.Cars[I.Player], I.Terrain);
+		I.CameraPrev = I.Camera.now;
 		return Race;
 	}
 	catch (const std::exception& E)
@@ -422,6 +427,9 @@ void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity)
 		P.travel = int32(FMath::RoundToInt64(FMath::Atan2(V.X, V.Z) * 65536.0 / (2.0 * PI))) & 0xFFFF;
 		P.dress_replayed();
 
+		I.CameraPrev = I.Camera.now;
+		I.Camera.step(P, I.Terrain);
+
 		I.LinkField();
 		I.Race.tick(I.Field.data(), int(I.Field.size()));
 		if (I.Race.started())
@@ -441,6 +449,22 @@ void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity)
 		UE_LOG(LogTemp, Error, TEXT("FBRRRace::Tick: %s"), UTF8_TO_TCHAR(E.what()));
 	}
 }
+
+FTransform FBRRRace::PlayerCameraTransform(double Alpha) const
+{
+	// camera_view works in ORR's render space (X mirrored about the map, +Y up); at scale 1 that
+	// is game units, so map it back to the game frame and on to UE.
+	const FImpl& I = *Impl;
+	const bigred::CameraView V = bigred::camera_view(I.CameraPrev, I.Camera.now, float(Alpha), I.Scene.map_w, 1.0f);
+	const double Mirror = double(I.Scene.map_w - 1) * bigred::kTerrainTexelWorldSize;
+	const FVector Eye = BRR::GameToUE(Mirror - V.eye[0], -V.eye[1], V.eye[2]);
+	auto Dir = [](const float D[3]) { return FVector(D[2], -D[0], D[1]); }; // render dir -> UE
+	const FVector Forward = Dir(V.forward).GetSafeNormal();
+	const FVector Up = Dir(V.up).GetSafeNormal();
+	return FTransform(FRotationMatrix::MakeFromXZ(Forward, Up).ToQuat(), Eye);
+}
+
+void FBRRRace::CyclePlayerCamera() { Impl->Camera.cycle_preset(); }
 
 bool FBRRRace::HasStarted() const { return Impl->Race.started(); }
 int32 FBRRRace::CountdownNumber() const { return Impl->Race.countdown_number(); }

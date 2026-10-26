@@ -13,6 +13,7 @@
 
 #include "BRRRaceGameMode.generated.h"
 
+class ACameraActor;
 class ABRRGhostCar;
 class ABRRVehiclePawn;
 class UStaticMesh;
@@ -49,6 +50,10 @@ private:
 
 	UPROPERTY()
 	TArray<TObjectPtr<ABRRGhostCar>> Ghosts; // indexed by racer, null for the player
+
+	// The original's chase camera (FBRRRace::PlayerCameraTransform); C cycles its presets.
+	UPROPERTY()
+	TObjectPtr<ACameraActor> RaceCamera;
 
 	void UpdateAutopilot();
 

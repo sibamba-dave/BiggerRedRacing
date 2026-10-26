@@ -81,6 +81,11 @@ public:
 	// Advances one 28 ms tick. PlayerPose is the player's body-origin transform, PlayerVelocity cm/s.
 	void Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity);
 
+	// The original's chase camera on the player, stepped with each tick; Alpha (0..1) blends the
+	// last two ticks. Returns the eye and its orientation in UE space.
+	FTransform PlayerCameraTransform(double Alpha) const;
+	void CyclePlayerCamera();          // the three distance presets
+
 	bool HasStarted() const;           // the lights are out
 	int32 CountdownNumber() const;     // 3, 2, 1 while counting, 0 at "go", -1 otherwise
 	bool CountdownBeeped() const;      // a countdown beep fell in the last tick

@@ -1,9 +1,12 @@
 #include "BRRAssets.h"
 
+#include "BRRConvert.h"
+
 #include <exception>
 #include <string>
 
 #include "formats/game_files.h"
+#include "formats/localised_text.h"
 #include "formats/sprite.h"
 #include "formats/texture.h"
 #include "formats/threedw.h"
@@ -163,4 +166,42 @@ bool BRR::LoadTournament(const FString& DataDir, FBRRTournament& Out, FString& O
 		}
 		return !Out.Tracks.IsEmpty();
 	});
+}
+
+FVector2D FBRRTopMap::ToPixel(const FVector& Location) const
+{
+	const FVector Game = BRR::Private::UEToGame(Location);
+	bigred::TopmapProjection P;
+	P.a = A;
+	P.b = B;
+	P.scale = Scale;
+	int Px = 0, Py = 0;
+	bigred::topmap_pixel(P, int32(Game.X), int32(Game.Z), Px, Py);
+	return FVector2D(Px, Py);
+}
+
+bool BRR::LoadTopMap(const FString& DataDir, const FString& Level, const TArray<FColor>& Palette, FBRRTopMap& Out, FString& OutError)
+{
+	return Guard(Level, OutError, [&]
+	{
+		const bigred::Blob* Blob = FindMember(DataDir, Level + TEXT(".LEV"), TEXT("TOPMAP.SPR"), OutError);
+		if (!Blob) return false;
+		const std::vector<bigred::SpriteGlyph> Glyphs = bigred::decode_spr(Blob->data(), Blob->size());
+		if (Glyphs.empty() || !Glyphs[0].valid())
+		{
+			OutError = TEXT("TOPMAP.SPR has no map glyph");
+			return false;
+		}
+		const bigred::TopmapProjection P = bigred::topmap_projection(Glyphs[0]);
+		Out.A = P.a;
+		Out.B = P.b;
+		Out.Scale = P.scale;
+		Out.Image = FromRgba(bigred::sprite_glyph_rgba(Glyphs[0], ToRgb(Palette)), Glyphs[0].width, Glyphs[0].height);
+		return true;
+	});
+}
+
+int32 BRR::InterfaceGlyph(TCHAR C)
+{
+	return bigred::interface_glyph(char32_t(C), false);
 }

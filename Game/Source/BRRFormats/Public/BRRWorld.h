@@ -24,6 +24,13 @@ namespace BRR
 
 	// BAM16 (65536 per turn) heading to UE yaw degrees.
 	inline double Bam16ToDegrees(int32 Bam) { return double(Bam) * 360.0 / 65536.0; }
+
+	// The original's sky: 16 bands of palette 239..224 above the horizon, from the top down, each
+	// starting at this elevation (degrees); below the horizon 223 down to SkyGroundBandDegrees,
+	// then 222. From ORR render/sky.h.
+	inline constexpr float SkyBandDegrees[16] = { 38.45f, 19.91f, 14.42f, 11.12f, 8.65f, 6.73f, 5.08f, 3.71f,
+		2.61f, 1.79f, 1.24f, 0.82f, 0.55f, 0.27f, 0.14f, 0.0f };
+	inline constexpr float SkyGroundBandDegrees = 7.14f;
 }
 
 struct FBRRImage
@@ -123,6 +130,9 @@ struct BRRFORMATS_API FBRRWorld
 
 	// Texture pages shared by every mesh below (terrain atlases, scenery pages, vehicle sheets).
 	TArray<FBRRImage> Atlases;
+
+	TArray<FColor> Palette;          // the level's 256 colours (MAP.COL)
+	TArray<FColor> SkyStrip;         // 18 sky colours: SkyBandDegrees order, then ground near, ground far
 
 	int32 MapWidth = 0;              // terrain cells
 	int32 MapHeight = 0;

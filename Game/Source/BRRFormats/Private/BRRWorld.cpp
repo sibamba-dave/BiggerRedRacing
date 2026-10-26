@@ -123,6 +123,14 @@ bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<
 			return false;
 		}
 
+		for (const bigred::RGB& C : Scene.palette) Out.Palette.Add(FColor(C.r, C.g, C.b, 255));
+		if (Out.Palette.Num() == 256)
+		{
+			for (int32 Band = 0; Band < 16; ++Band) Out.SkyStrip.Add(Out.Palette[239 - Band]);
+			Out.SkyStrip.Add(Out.Palette[223]);
+			Out.SkyStrip.Add(Out.Palette[222]);
+		}
+
 		Out.MapWidth = Scene.map_w;
 		Out.MapHeight = Scene.map_h;
 		Out.HeightMap = TArray<uint8>(Scene.mph_data, Scene.map_w * Scene.map_h);

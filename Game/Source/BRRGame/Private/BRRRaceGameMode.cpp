@@ -5,6 +5,8 @@
 #include "BRRGhostCar.h"
 #include "BRRRaceHUD.h"
 #include "BRRVehiclePawn.h"
+#include "Camera/CameraActor.h"
+#include "Camera/CameraComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -18,6 +20,10 @@ DEFINE_LOG_CATEGORY_STATIC(LogBRRRace, Log, All);
 namespace
 {
 	constexpr int32 MaxTicksPerFrame = 10;
+
+	// The original's 4:3 screen and 60-degree vertical field; any other window shape is letterboxed.
+	constexpr float ClassicAspect = 4.f / 3.f;
+	const float ClassicHorizontalFov = float(FMath::RadiansToDegrees(2.0 * FMath::Atan(FMath::Tan(FMath::DegreesToRadians(30.0)) * ClassicAspect)));
 
 	// "L_DIRT1" (or a PIE "UEDPIE_0_L_DIRT1") -> "DIRT1"; empty for any other map.
 	FString LevelFromMap(const UWorld* World)
@@ -43,6 +49,7 @@ void ABRRRaceGameMode::HandleStartingNewPlayer_Implementation(APlayerController*
 	else if (PlayerCar)
 	{
 		NewPlayer->Possess(PlayerCar);
+		if (RaceCamera) NewPlayer->SetViewTarget(RaceCamera);
 	}
 }
 
@@ -69,9 +76,15 @@ void ABRRRaceGameMode::StartPlay()
 	{
 		if (Race->IsGhost(R)) AutopilotLine = Race->GhostPath(R);
 	}
+	RaceCamera = GetWorld()->SpawnActor<ACameraActor>(ACameraActor::StaticClass(), Race->PlayerCameraTransform(0.0));
+	UCameraComponent* Lens = RaceCamera->GetCameraComponent();
+	Lens->bConstrainAspectRatio = true;
+	Lens->SetAspectRatio(ClassicAspect);
+	Lens->SetFieldOfView(ClassicHorizontalFov);
 	if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
 	{
 		PC->Possess(PlayerCar);
+		PC->SetViewTarget(RaceCamera);
 	}
 }
 
@@ -182,8 +195,20 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 			Me.bFinished ? TEXT(" - FINISHED") : TEXT(""));
 	}
 
-	// Ghosts drawn between their last two ticks.
+	// Ghosts and the camera drawn between their last two ticks.
 	const double Alpha = Accumulator / FBRRRace::TickSeconds;
+	if (RaceCamera)
+	{
+		RaceCamera->SetActorTransform(Race->PlayerCameraTransform(Alpha));
+		UE_LOG(LogBRRRace, VeryVerbose, TEXT("camera %s rot %s | car %s rot %s"), *RaceCamera->GetActorLocation().ToCompactString(),
+			*RaceCamera->GetActorRotation().ToCompactString(), *PlayerCar->GetBodyOriginTransform().GetLocation().ToCompactString(),
+			*PlayerCar->GetActorRotation().ToCompactString());
+		if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+		{
+			if (PC->WasInputKeyJustPressed(EKeys::C) || PC->WasInputKeyJustPressed(EKeys::Gamepad_RightShoulder)) Race->CyclePlayerCamera();
+			if (PC->GetViewTarget() != RaceCamera) PC->SetViewTarget(RaceCamera);
+		}
+	}
 	for (int32 R = 0; R < Ghosts.Num(); ++R)
 	{
 		if (!Ghosts[R]) continue;
