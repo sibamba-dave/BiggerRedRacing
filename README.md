@@ -50,5 +50,12 @@ R recover. Gamepad: triggers, left stick, X handbrake, Y recover.
 Dev switches: `-BRRDriveTest` (handling comparison, see `Docs/Handling.md`), `-BRRAutopilot` (drives
 the player's car along a ghost's racing line, recovering when stuck).
 
+View distance: `brr.ViewCells` (console or `-ExecCmds="brr.ViewCells N"`) draws the world N terrain
+cells deep, as the original did; it retuned this between 10 and 22 against the frame rate, and the
+default is 16. 0 draws the whole map.
+
+Palette check: `python Tools/palette_check.py <screenshot.png> <palette.png>` reports pixels that are
+not the level's palette colours (export `T_<LEVEL>_Palette` from the import as the palette).
+
 ## Credits
 Format parsers are adapted from [OpenRedRacing](https://github.com/nynjardin/OpenRedRacing) (MIT, Copyright (c) 2026 PaPe), which in turn credits jacobgelling/red-archive and red-image. Big Red Racing and its data are the property of their respective owners.

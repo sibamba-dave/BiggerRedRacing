@@ -17,6 +17,7 @@ class ACameraActor;
 class ABRRGhostCar;
 class ABRRVehiclePawn;
 class ABRRSprites;
+class UMaterialParameterCollection;
 class ABRRWrecks;
 class UStaticMesh;
 struct FBRRVehicleMesh;
@@ -65,6 +66,10 @@ private:
 	// The destructible decor, built from the level at race start.
 	UPROPERTY()
 	TObjectPtr<ABRRWrecks> Wrecks;
+
+	// The import's MPC_BRR: its DrawDistance is the view distance (brr.ViewCells).
+	UPROPERTY()
+	TObjectPtr<UMaterialParameterCollection> DrawRange;
 
 	// The billboards, turned to the camera every frame.
 	UPROPERTY()

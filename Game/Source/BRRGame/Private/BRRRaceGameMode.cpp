@@ -17,6 +17,9 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Kismet/GameplayStatics.h"
+#include "HAL/IConsoleManager.h"
+#include "Kismet/KismetMaterialLibrary.h"
+#include "Materials/MaterialParameterCollection.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 
@@ -25,6 +28,10 @@ DEFINE_LOG_CATEGORY_STATIC(LogBRRRace, Log, All);
 namespace
 {
 	constexpr int32 MaxTicksPerFrame = 10;
+
+	TAutoConsoleVariable<int32> CVarViewCells(TEXT("brr.ViewCells"), BRR::ViewCellsDefault,
+		TEXT("How far the world is drawn, in terrain cells of view depth: the original's view distance, which it ")
+		TEXT("retuned between 10 and 22 against the frame rate. 0 draws the whole map."));
 
 	// The original's 4:3 screen and 60-degree vertical field; any other window shape is letterboxed.
 	constexpr float ClassicAspect = 4.f / 3.f;
@@ -137,6 +144,7 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 	}
 	Wrecks = GetWorld()->SpawnActor<ABRRWrecks>();
 	Wrecks->Build(World.Wrecks, LevelName);
+	DrawRange = LoadObject<UMaterialParameterCollection>(nullptr, TEXT("/Game/BRR/Materials/MPC_BRR.MPC_BRR"));
 	Sprites = GetWorld()->SpawnActor<ABRRSprites>();
 	Sprites->Build(World, LevelName);
 	StartLights.Init(nullptr, 4);
@@ -237,6 +245,12 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 			if (PC->WasInputKeyJustPressed(EKeys::C) || PC->WasInputKeyJustPressed(EKeys::Gamepad_RightShoulder)) Race->CyclePlayerCamera();
 			if (PC->GetViewTarget() != RaceCamera) PC->SetViewTarget(RaceCamera);
 		}
+	}
+	if (DrawRange)
+	{
+		const int32 Cells = CVarViewCells.GetValueOnGameThread();
+		UKismetMaterialLibrary::SetScalarParameterValue(GetWorld(), DrawRange, TEXT("DrawDistance"),
+			Cells > 0 ? float(Cells * BRR::TerrainCellCm) : 0.f);
 	}
 	if (Sprites)
 	{

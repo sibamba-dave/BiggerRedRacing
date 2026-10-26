@@ -13,6 +13,13 @@
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
 #include "Materials/MaterialExpressionVertexColor.h"
 #include "Materials/MaterialExpressionCameraVectorWS.h"
+#include "Materials/MaterialExpressionCameraPositionWS.h"
+#include "Materials/MaterialExpressionCollectionParameter.h"
+#include "Materials/MaterialExpressionConstant3Vector.h"
+#include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionTransform.h"
+#include "Materials/MaterialExpressionWorldPosition.h"
+#include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialExpressionCustom.h"
 #include "Materials/MaterialExpressionSceneTexture.h"
 #include "Engine/PostProcessVolume.h"
@@ -109,9 +116,45 @@ namespace
 		return Custom;
 	}
 
+	// The original's view distance: a terrain cell is drawn while its centre is nearer than
+	// MPC_BRR.DrawDistance (cm, 0 = everything) in view depth, so the far edge comes and goes a whole
+	// cell at a time. 1 inside, 0 beyond. The race sets the distance (brr.ViewCells).
+	UMaterialExpression* MakeDrawRange(UMaterial* Mat, UMaterialParameterCollection* Collection)
+	{
+		auto Make = [Mat](UClass* Class, int32 X, int32 Y) { return UMaterialEditingLibrary::CreateMaterialExpression(Mat, Class, X, Y); };
+		UMaterialExpression* WorldPos = Make(UMaterialExpressionWorldPosition::StaticClass(), -1100, 300);
+		UMaterialExpression* Camera = Make(UMaterialExpressionCameraPositionWS::StaticClass(), -1100, 400);
+		auto* Ahead = Cast<UMaterialExpressionConstant3Vector>(Make(UMaterialExpressionConstant3Vector::StaticClass(), -1300, 500));
+		Ahead->Constant = FLinearColor(0, 0, 1); // view space looks down +Z
+		auto* Forward = Cast<UMaterialExpressionTransform>(Make(UMaterialExpressionTransform::StaticClass(), -1100, 500));
+		Forward->Input.Connect(0, Ahead);
+		Forward->TransformSourceType = TRANSFORMSOURCE_View;
+		Forward->TransformType = TRANSFORM_World;
+		auto* Range = Cast<UMaterialExpressionCollectionParameter>(Make(UMaterialExpressionCollectionParameter::StaticClass(), -1100, 600));
+		Range->Collection = Collection;
+		Range->ParameterName = TEXT("DrawDistance");
+		Range->ParameterId = Collection->GetParameterId(Range->ParameterName);
+		const double Cell = BRR::TerrainCellCm;
+		return MakeCustom(Mat, FString::Printf(TEXT(
+			"if (Range <= 0) return 1;\n"
+			"float2 c = (floor(WorldPos.xy / %.1f) + 0.5) * %.1f;\n"
+			"float d = dot(float3(c, WorldPos.z) - Camera, normalize(Forward));\n"
+			"return d < Range ? 1 : 0;"), Cell, Cell), CMOT_Float1,
+			{ { TEXT("WorldPos"), WorldPos }, { TEXT("Camera"), Camera }, { TEXT("Forward"), Forward }, { TEXT("Range"), Range } });
+	}
+
 	FMasters MakeMasters(const FString& Root)
 	{
 		FMasters M;
+		UMaterialParameterCollection* Collection = NewAsset<UMaterialParameterCollection>(Root / TEXT("Materials/MPC_BRR"));
+		{
+			FCollectionScalarParameter Distance;
+			Distance.ParameterName = TEXT("DrawDistance");
+			Distance.DefaultValue = 0.f; // the editor shows the whole map
+			Collection->ScalarParameters.Add(Distance);
+			Collection->PostEditChange();
+			SaveAsset(Collection);
+		}
 		{
 			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Textured"));
 			Mat->SetShadingModel(MSM_Unlit);
@@ -121,7 +164,11 @@ namespace
 			Tex->ParameterName = TEXT("Atlas");
 			Tex->Texture = LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/DefaultTexture.DefaultTexture"));
 			UMaterialEditingLibrary::ConnectMaterialProperty(Tex, TEXT("RGB"), MP_EmissiveColor);
-			UMaterialEditingLibrary::ConnectMaterialProperty(Tex, TEXT("A"), MP_OpacityMask);
+			auto* Mask = Cast<UMaterialExpressionMultiply>(
+				UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionMultiply::StaticClass(), -150, 200));
+			Mask->A.Connect(4, Tex); // alpha
+			Mask->B.Connect(0, MakeDrawRange(Mat, Collection));
+			UMaterialEditingLibrary::ConnectMaterialProperty(Mask, TEXT(""), MP_OpacityMask);
 			UMaterialEditingLibrary::RecompileMaterial(Mat);
 			SaveAsset(Mat);
 			M.Textured = Mat;
@@ -188,6 +235,8 @@ namespace
 				"float3 c = saturate(Srgb.rgb);\n"
 				"return lerp(pow((c + 0.055) / 1.055, 2.4), c / 12.92, step(c, 0.04045));"), CMOT_Float3, { { TEXT("Srgb"), Colour } });
 			UMaterialEditingLibrary::ConnectMaterialProperty(Decode, TEXT(""), MP_EmissiveColor);
+			Mat->BlendMode = BLEND_Masked;
+			UMaterialEditingLibrary::ConnectMaterialProperty(MakeDrawRange(Mat, Collection), TEXT(""), MP_OpacityMask);
 			UMaterialEditingLibrary::RecompileMaterial(Mat);
 			SaveAsset(Mat);
 			M.Flat = Mat;

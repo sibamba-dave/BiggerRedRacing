@@ -32,6 +32,13 @@ namespace BRR
 		2.61f, 1.79f, 1.24f, 0.82f, 0.55f, 0.27f, 0.14f, 0.0f };
 	inline constexpr float SkyGroundBandDegrees = 7.14f;
 
+	// One terrain cell (512 world units) along UE X or Y; cells sit on multiples of it.
+	inline constexpr double TerrainCellCm = 512.0 * CmPerUnit;
+
+	// The original's view distance, retuned every frame between these against the frame rate
+	// (ORR formats/shading.h); the remaster's default is ORR's middle choice.
+	inline constexpr int32 ViewCellsMin = 10, ViewCellsMax = 22, ViewCellsDefault = 16;
+
 	// The knock-over flipbook: 32 steps of the original's 14 ms tick, then the settled wreck.
 	inline constexpr int32 WreckStepCount = 33;
 	inline constexpr double WreckStepSeconds = 0.014;
