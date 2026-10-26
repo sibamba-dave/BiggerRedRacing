@@ -533,6 +533,7 @@ void ABRRRaceGameMode::UpdateRaceEnd()
 			R.LapTimes = S.LapTimes;
 		}
 	}
+	G->RecordTimes(R, Race->VehicleOf(Me));
 	G->ReturnToFrontEnd();
 }
 

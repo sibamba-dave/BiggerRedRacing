@@ -434,8 +434,17 @@ namespace
 			double LY = 44;
 			for (int32 L = 0; L < R.LapTimes.Num(); ++L)
 			{
-				P.Text(FString::Printf(TEXT("LAP %d  %s"), L + 1, *Clock(R.LapTimes[L])), 190, LY, 0, -1, Scn.Palette);
+				P.Text(FString::Printf(TEXT("LAP %d %s"), L + 1, *Clock(R.LapTimes[L])), 190, LY, 0, -1, Scn.Palette);
 				LY += 10;
+			}
+			if (R.BestLap > 0)
+			{
+				P.Text(FString::Printf(TEXT("BEST LAP %s%s"), *Clock(R.BestLap), R.bNewBestLap ? TEXT(" NEW") : TEXT("")), 190, LY + 6, 0, R.bNewBestLap ? 5 : -1, Scn.Palette);
+				LY += 10;
+			}
+			if (R.BestRace > 0)
+			{
+				P.Text(FString::Printf(TEXT("BEST RACE %s%s"), *Clock(R.BestRace), R.bNewBestRace ? TEXT(" NEW") : TEXT("")), 190, LY + 6, 0, R.bNewBestRace ? 5 : -1, Scn.Palette);
 			}
 			if (bChampionship)
 			{
@@ -611,6 +620,9 @@ void BRRMenu::ShowSampleResults(ABRRFrontEndGameMode& Menu)
 	R.Seconds = 119.59;
 	const TCHAR* Names[6] = { TEXT("ATV"), TEXT("JEEP"), TEXT("JEEP"), TEXT("ATV"), TEXT("JEEP"), TEXT("ATV") };
 	for (int32 I = 0; I < 6; ++I) R.Rows.Add({ Names[I], I + 1, 115.0 + I * 3.1, I < 4, I == 1 });
+	R.BestLap = 38.90;
+	R.bNewBestLap = true;
+	R.BestRace = 117.25;
 	Menu.Push(MakeShared<FResultsScreen>());
 }
 

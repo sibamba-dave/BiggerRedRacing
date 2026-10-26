@@ -45,6 +45,33 @@ void UBRRGameInstance::ApplySettings() const
 	BRRAudio::SetVolumes(SoundVolume, MusicVolume);
 }
 
+void UBRRGameInstance::RecordTimes(FBRRRaceResult& R, const FString& InVehicle) const
+{
+	const TCHAR* Records = TEXT("BRR.Records");
+	const FString Key = FString::Printf(TEXT("%s.%s"), *R.Level.ToUpper(), *InVehicle.ToUpper());
+	FString Lap, Race;
+	GConfig->GetString(Records, *(Key + TEXT(".Lap")), Lap, GGameUserSettingsIni);
+	GConfig->GetString(Records, *(Key + TEXT(".Race")), Race, GGameUserSettingsIni);
+	R.BestLap = Lap.IsEmpty() ? 0.0 : FCString::Atod(*Lap);
+	R.BestRace = Race.IsEmpty() ? 0.0 : FCString::Atod(*Race);
+	for (double T : R.LapTimes)
+	{
+		if (T > 0 && (R.BestLap <= 0 || T < R.BestLap))
+		{
+			R.BestLap = T;
+			R.bNewBestLap = true;
+		}
+	}
+	if (R.Seconds > 0 && (R.BestRace <= 0 || R.Seconds < R.BestRace))
+	{
+		R.BestRace = R.Seconds;
+		R.bNewBestRace = true;
+	}
+	if (R.bNewBestLap) GConfig->SetString(Records, *(Key + TEXT(".Lap")), *FString::SanitizeFloat(R.BestLap), GGameUserSettingsIni);
+	if (R.bNewBestRace) GConfig->SetString(Records, *(Key + TEXT(".Race")), *FString::SanitizeFloat(R.BestRace), GGameUserSettingsIni);
+	if (R.bNewBestLap || R.bNewBestRace) GConfig->Flush(false, GGameUserSettingsIni);
+}
+
 void UBRRGameInstance::SaveSettings() const
 {
 	GConfig->SetFloat(ConfigSection, TEXT("SoundVolume"), SoundVolume, GGameUserSettingsIni);

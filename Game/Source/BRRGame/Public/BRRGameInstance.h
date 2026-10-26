@@ -23,6 +23,9 @@ struct FBRRRaceResult
 	double Seconds = 0;
 	TArray<double> LapTimes;
 	TArray<FBRRResultRow> Rows;
+	// The circuit's records for this vehicle after the race (0: none yet), and whether it set them.
+	double BestLap = 0, BestRace = 0;
+	bool bNewBestLap = false, bNewBestRace = false;
 };
 
 // The championship as the original runs it (ORR game/championship.cpp): TOURN.TXT's `tourn 0..6`
@@ -74,6 +77,10 @@ public:
 	TArray<FString> RoundLevels() const; // this round's circuits not raced yet, imported
 	// Scores the race just run and moves the championship on.
 	FBRRChampionship::EOutcome RecordChampionshipRace(const FString& RacedLevel, int32 Place);
+
+	// --- records: the best lap and the best race per circuit and vehicle, kept in
+	// GameUserSettings.ini [BRR.Records]. Fills the result's Best* fields.
+	void RecordTimes(FBRRRaceResult& Result, const FString& Vehicle) const;
 
 	// --- settings
 	float SoundVolume = 1.f, MusicVolume = 0.6f;
