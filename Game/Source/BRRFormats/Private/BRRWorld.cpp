@@ -1,5 +1,7 @@
 #include "BRRWorld.h"
 
+#include "BRRConvert.h"
+
 #include <exception>
 #include <string>
 
@@ -16,9 +18,7 @@
 namespace
 {
 	using bigred::TerrainVertex;
-
-	std::string ToUtf8(const FString& S) { return std::string(TCHAR_TO_UTF8(*S)); }
-	FString FromUtf8(const std::string& S) { return FString(UTF8_TO_TCHAR(S.c_str())); }
+	using namespace BRR::Private;
 
 	FBRRImage ImageFromRgba(const std::vector<uint8_t>& Rgba, int32 Width, int32 Height)
 	{
@@ -73,21 +73,6 @@ namespace
 	FBRRMesh ConvertLocal(const std::vector<TerrainVertex>& Verts)
 	{
 		return ConvertTriangles(Verts, 0, Verts.size(), &LocalRenderToUE);
-	}
-
-	// Game-frame rotation matrix (row-major, applied as world = M * local) to a UE quaternion.
-	FQuat GameRotationToUE(const float M[9])
-	{
-		// UE = P * game with P = [[0,0,1],[1,0,0],[0,-1,0]]; R_ue = P * M * P^T.
-		auto G = [&](int32 R, int32 C) { return double(M[R * 3 + C]); };
-		// Column c of R_ue is the image of UE axis c. UE X = game Z, UE Y = game X, UE Z = -game Y.
-		auto MapCol = [&](int32 GameCol, double Sign) {
-			return FVector(G(2, GameCol), G(0, GameCol), -G(1, GameCol)) * Sign;
-		};
-		const FVector XAxis = MapCol(2, 1.0);
-		const FVector YAxis = MapCol(0, 1.0);
-		const FVector ZAxis = MapCol(1, -1.0);
-		return FQuat(FMatrix(XAxis, YAxis, ZAxis, FVector::ZeroVector));
 	}
 }
 
@@ -257,8 +242,22 @@ bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<
 			Vehicle.Body = ConvertLocal(Model.body);
 			for (const bigred::VehiclePart& Part : Model.parts)
 			{
+				// The part's own orientation (a quarter-turn yaw puts every wheel's axle, the mesh's
+				// local Z, across the car) is baked in, as place_vehicle applies it before the body's.
+				float R[9];
+				bigred::vehicle_rotation(float(Part.rot_bam16[0] * BamToRad), float(Part.rot_bam16[1] * BamToRad),
+					float(Part.rot_bam16[2] * BamToRad), R);
+				auto PartToUE = [&R](float X, float Y, float Z)
+				{
+					const double GY = -Y; // local render space -> game local
+					return BRR::GameToUE(R[0] * X + R[1] * GY + R[2] * Z, R[3] * X + R[4] * GY + R[5] * Z,
+						R[6] * X + R[7] * GY + R[8] * Z);
+				};
 				FBRRWheel& Wheel = Vehicle.Wheels.AddDefaulted_GetRef();
-				Wheel.Mesh = ConvertLocal(Part.local);
+				Wheel.Mesh = ConvertTriangles(Part.local, 0, Part.local.size(), PartToUE);
+				Wheel.Axle = GameDirToUE(R[2], R[5], R[8]).GetSafeNormal();
+				const FVector3f Size = Wheel.Mesh.GetBounds().GetSize();
+				Wheel.Radius = FMath::Max(Size.X, Size.Z) * 0.5;
 				Wheel.Socket = BRR::GameToUE(Part.pos[0], Part.pos[1], Part.pos[2]);
 				Wheel.bRolls = Part.rolls;
 				Wheel.bSteers = Part.steer_gain != 0;

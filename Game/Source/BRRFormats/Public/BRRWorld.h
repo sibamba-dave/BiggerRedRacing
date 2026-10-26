@@ -85,8 +85,10 @@ struct FBRRStart
 
 struct FBRRWheel
 {
-	FBRRMesh Mesh;      // local to the socket
+	FBRRMesh Mesh;      // local to the socket, already in the vehicle's orientation
 	FVector Socket;     // UE cm, relative to the body origin
+	FVector Axle = FVector::RightVector; // rolling axis, vehicle frame
+	double Radius = 0;  // cm
 	bool bRolls = false;
 	bool bSteers = false;
 };

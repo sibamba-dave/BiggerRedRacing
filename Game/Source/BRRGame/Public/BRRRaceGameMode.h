@@ -1,0 +1,64 @@
+// Runs a race on an imported level map (/Game/BRR/<LEVEL>/L_<LEVEL>): the player's Chaos car, the
+// ghost opponents and the original's rules (FBRRRace) stepped at the original 28 ms tick.
+//
+// Options: ?Vehicle=JEEP picks the player's car (default: the level's first car).
+// Dev: -BRRDriveTest runs the handling comparison against the original on a flat slab and quits;
+//      -BRRAutopilot drives the player's car along a ghost's racing line (screenshots, lap tests).
+#pragma once
+
+#include "CoreMinimal.h"
+#include "BRRRace.h"
+#include "BRRWorld.h"
+#include "GameFramework/GameModeBase.h"
+
+#include "BRRRaceGameMode.generated.h"
+
+class ABRRGhostCar;
+class ABRRVehiclePawn;
+class UStaticMesh;
+struct FBRRVehicleMesh;
+
+UCLASS()
+class BRRGAME_API ABRRRaceGameMode : public AGameModeBase
+{
+	GENERATED_BODY()
+
+public:
+	ABRRRaceGameMode();
+
+	virtual void StartPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
+	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
+
+	const FBRRRace* GetRace() const { return Race.Get(); }
+	const ABRRVehiclePawn* GetPlayerCar() const { return PlayerCar; }
+	const FString& GetLevelName() const { return LevelName; }
+
+private:
+	bool BuildRace(FString& OutError);
+	bool LoadVehicleMeshes(const FString& Vehicle, UStaticMesh*& OutBody, TArray<UStaticMesh*>& OutWheels) const;
+	void RunDriveTest();
+
+	FString LevelName;
+	FString DataDir;
+	TUniquePtr<FBRRRace> Race;
+	TMap<FString, FBRRVehicleMesh> VehicleData;
+
+	UPROPERTY()
+	TObjectPtr<ABRRVehiclePawn> PlayerCar;
+
+	UPROPERTY()
+	TArray<TObjectPtr<ABRRGhostCar>> Ghosts; // indexed by racer, null for the player
+
+	void UpdateAutopilot();
+
+	TArray<FTransform> PrevPose, CurrPose;
+	TArray<FVector> AutopilotLine;
+	int32 AutopilotCursor = 0;
+	double AutopilotStuck = 0;
+	int32 AutopilotRecoveries = 0;
+	int32 LoggedLaps = 0;
+	TArray<double> GhostSpin;
+	double Accumulator = 0;
+	bool bAutopilot = false;
+};

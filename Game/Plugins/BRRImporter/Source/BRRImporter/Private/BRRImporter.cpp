@@ -257,6 +257,8 @@ namespace
 		const FTransform Transform(FRotator(0, Start.Yaw, 0), Start.Location + FVector(0, 0, Vehicle.GroundOffset));
 		AStaticMeshActor* Actor = SpawnMeshActor(World, Vehicle.Body, Transform, Label);
 		if (!Actor) return;
+		// A static preview of the grid; the race removes these and spawns the real cars.
+		Actor->Tags.Add(TEXT("BRRPreview"));
 		for (int32 I = 0; I < Vehicle.Wheels.Num(); ++I)
 		{
 			UStaticMeshComponent* Wheel = NewObject<UStaticMeshComponent>(Actor, *FString::Printf(TEXT("Wheel%d"), I));
