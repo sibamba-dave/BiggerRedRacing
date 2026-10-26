@@ -2,7 +2,6 @@
 
 #include "BRRArchive.h"
 #include "BRRRaceGameMode.h"
-#include "BRRVehiclePawn.h"
 #include "CanvasItem.h"
 #include "Engine/Canvas.h"
 #include "Engine/Texture2D.h"
@@ -13,15 +12,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogBRRHUD, Log, All);
 namespace
 {
 	// GAMESVGA.SPR glyphs (ORR formats/sprite.h, game_spr).
-	constexpr int32 Digit0 = 0, OrdinalSt = 10, Dot0 = 14, WrongWay = 20, FinalLap = 21, SmallDigit0 = 27, MissedCheck = 40;
-
-	// The original's speedometer calibration (ORR race_board): its dials read 120 at a forward
-	// speed of 35000 (1/512 units per 28 ms tick).
-	int32 DialKmh(double CmPerSecond)
-	{
-		const double Vfwd = CmPerSecond / BRR::CmPerUnit * 512.0 * 0.028;
-		return FMath::Abs(FMath::RoundToInt32(Vfwd * 120.0 / 35000.0));
-	}
+	constexpr int32 Digit0 = 0, OrdinalSt = 10, Dot0 = 14, WrongWay = 20, FinalLap = 21, Meter = 39, MissedCheck = 40;
 }
 
 UTexture2D* ABRRRaceHUD::MakeTexture(const FBRRImage& Image)
@@ -64,6 +55,16 @@ bool ABRRRaceHUD::LoadArtwork()
 	if (BRR::LoadTopMap(DataDir, Mode->GetLevelName(), LevelPalette, TopMap, Error))
 	{
 		MapTexture = MakeTexture(TopMap.Image);
+		MapInset = FIntPoint(TopMap.Image.Width, TopMap.Image.Height);
+		for (int32 Y = 0; Y < TopMap.Image.Height; ++Y)
+		{
+			for (int32 X = 0; X < TopMap.Image.Width; ++X)
+			{
+				if (TopMap.Image.Pixels[Y * TopMap.Image.Width + X].A == 0) continue;
+				MapInset.X = FMath::Min(MapInset.X, X);
+				MapInset.Y = FMath::Min(MapInset.Y, Y);
+			}
+		}
 	}
 	UE_LOG(LogBRRHUD, Display, TEXT("HUD artwork: %d game sprites, %d letters, map %s"), Game.Num(), Alphabet.Num(),
 		MapTexture ? TEXT("yes") : TEXT("no"));
@@ -116,41 +117,6 @@ float ABRRRaceHUD::Text(const FString& S, float X, float Y, float Scale, const F
 	return X;
 }
 
-float ABRRRaceHUD::NumberWidth(int32 Value, float Scale) const
-{
-	const FString Digits = FString::FromInt(FMath::Max(Value, 0));
-	float W = 0;
-	for (const TCHAR C : Digits) W += SpriteWidth(Game, SmallDigit0 + (C - '0')) * Scale;
-	return W;
-}
-
-float ABRRRaceHUD::Number(int32 Value, float X, float Y, float Scale)
-{
-	for (const TCHAR C : FString::FromInt(FMath::Max(Value, 0))) X = Sprite(Game, SmallDigit0 + (C - '0'), X, Y, Scale);
-	return X;
-}
-
-float ABRRRaceHUD::ClockWidth(float Scale) const
-{
-	return NumberWidth(0, Scale) * 6.f + TextWidth(TEXT(":."), Scale * 4.f);
-}
-
-float ABRRRaceHUD::Clock(double Seconds, float X, float Y, float Scale)
-{
-	const int32 Hundredths = FMath::FloorToInt32(Seconds * 100.0);
-	const int32 M = Hundredths / 6000, S = (Hundredths / 100) % 60, H = Hundredths % 100;
-	const float DigitH = SpriteHeight(Game, SmallDigit0) * Scale;
-	const float SepScale = Scale * 4.f;
-	const float SepY = Y + DigitH - SpriteHeight(Alphabet, BRR::InterfaceGlyph(':')) * SepScale;
-	X = Number(M, X, Y, Scale);
-	X = Text(TEXT(":"), X, SepY, SepScale);
-	X = Number(S / 10, X, Y, Scale);
-	X = Number(S % 10, X, Y, Scale);
-	X = Text(TEXT("."), X, SepY, SepScale);
-	X = Number(H / 10, X, Y, Scale);
-	return Number(H % 10, X, Y, Scale);
-}
-
 void ABRRRaceHUD::Centred(int32 Index, float CX, float Y, float Scale)
 {
 	Sprite(Game, Index, CX - SpriteWidth(Game, Index) * Scale * 0.5f, Y, Scale);
@@ -166,71 +132,44 @@ void ABRRRaceHUD::DrawHUD()
 	if (Game.Num() <= MissedCheck) return;
 
 	const float W = Canvas->ClipX, H = Canvas->ClipY;
-	const float K = H / 480.f;                         // the SVGA artwork is drawn for 480 lines
-	const float Margin = 16.f * K;
-	const float Fs = FMath::Max(1.f, FMath::RoundToFloat(1.4f * K)); // SML_ALPH, whole-pixel magnification
-	const float Ds = 0.36f * K;                        // the 42-pixel digits
-	const float DigitH = SpriteHeight(Game, SmallDigit0) * Ds;
-	const float Line = DigitH + 5.f * K;
-	const float LabelDy = (DigitH - SpriteHeight(Alphabet, BRR::InterfaceGlyph('A')) * Fs) * 0.5f;
+	// The original draws its SVGA artwork 1:1 on a 640x480 screen; every position below is that
+	// screen's, measured on a capture of the original (WATER1, Tools/dosbox-x), times K.
+	const float K = H / 480.f;
 	const FBRRRacerStatus Me = Race->Status(Race->PlayerIndex());
 
-	// Top right: lap, clock, last lap.
-	{
-		const int32 Shown = FMath::Min(Me.Lap + 1, Race->Laps());
-		const float LapW = TextWidth(TEXT("LAP "), Fs) + NumberWidth(Shown, Ds) + TextWidth(TEXT("/"), Fs) + NumberWidth(Race->Laps(), Ds);
-		float Pen = W - Margin - LapW;
-		Pen = Text(TEXT("LAP "), Pen, Margin + LabelDy, Fs);
-		Pen = Number(Shown, Pen, Margin, Ds);
-		Pen = Text(TEXT("/"), Pen, Margin + LabelDy, Fs);
-		Number(Race->Laps(), Pen, Margin, Ds);
-		Clock(Race->RaceTime(), W - Margin - ClockWidth(Ds), Margin + Line, Ds);
-		if (!Me.LapTimes.IsEmpty())
-		{
-			const float Cw = ClockWidth(Ds * 0.8f);
-			Text(TEXT("LAST "), W - Margin - Cw - TextWidth(TEXT("LAST "), Fs), Margin + Line * 2 + LabelDy, Fs, FLinearColor(0.7f, 0.8f, 1.f));
-			Clock(Me.LapTimes.Last(), W - Margin - Cw, Margin + Line * 2, Ds * 0.8f);
-		}
-	}
-
-	// Top left: the placing in the game's large digits and ordinal, the mini-map under it.
-	float PlaceBottom = Margin;
-	{
-		const int32 Place = FMath::Clamp(Me.Place, 1, 9);
-		const int32 Ordinal = OrdinalSt + (Place == 1 ? 0 : Place == 2 ? 1 : Place == 3 ? 2 : 3);
-		const float Ps = 0.9f * K;
-		const float Pen = Sprite(Game, Digit0 + Place, Margin, Margin, Ps);
-		Sprite(Game, Ordinal, Pen, Margin, Ps);
-		PlaceBottom = Margin + SpriteHeight(Game, Digit0 + Place) * Ps;
-	}
+	// Top left: the level's map, 1:1, its outline at (2, 2), and every racer's dot on it in its
+	// own colour, the player's last.
 	if (MapTexture)
 	{
-		const float Ms = FMath::Max(1.f, FMath::RoundToFloat(K));
-		const float Mx = Margin, My = PlaceBottom + 6.f * K;
+		const float Mx = (2.f - MapInset.X) * K, My = (2.f - MapInset.Y) * K;
 		FCanvasTileItem Map(FVector2D(Mx, My), MapTexture->GetResource(),
-			FVector2D(MapTexture->GetSizeX() * Ms, MapTexture->GetSizeY() * Ms), FLinearColor::White);
+			FVector2D(MapTexture->GetSizeX() * K, MapTexture->GetSizeY() * K), FLinearColor::White);
 		Map.BlendMode = SE_BLEND_Masked; // opaque, as the original's 8-bit map
 		Canvas->DrawItem(Map);
-		// Every racer's dot in its own colour, as the original draws them; the player's last.
 		auto Dot = [&](int32 R)
 		{
 			const int32 Glyph = Dot0 + FMath::Clamp(Race->ColourOf(R) - 1, 0, 5);
 			const FVector2D Px = TopMap.ToPixel(Race->RacerTransform(R).GetLocation());
-			Sprite(Game, Glyph, Mx + Px.X * Ms - SpriteWidth(Game, Glyph) * Ms * 0.5f, My + Px.Y * Ms - SpriteHeight(Game, Glyph) * Ms * 0.5f, Ms);
+			Sprite(Game, Glyph, Mx + Px.X * K - SpriteWidth(Game, Glyph) * K * 0.5f, My + Px.Y * K - SpriteHeight(Game, Glyph) * K * 0.5f, K);
 		};
 		for (int32 R = 0; R < Race->NumRacers(); ++R)
 			if (R != Race->PlayerIndex()) Dot(R);
 		Dot(Race->PlayerIndex());
 	}
 
-	// Bottom right: the speedometer reading.
-	if (const ABRRVehiclePawn* Car = Mode->GetPlayerCar())
+	// Top right: the placing (large digit and ordinal, right edge at 610, top at 24), the meter
+	// under it at (524, 72), and the laps completed over the laps, in the interface alphabet at
+	// twice its size, right edge at 592, top at 110. No clock and no speed: the original shows
+	// neither.
 	{
-		const int32 Kmh = DialKmh(Car->GetForwardSpeed());
-		const float UnitW = TextWidth(TEXT(" KM/H"), Fs);
-		const float Sy = H - Margin - DigitH;
-		Number(Kmh, W - Margin - UnitW - NumberWidth(Kmh, Ds), Sy, Ds);
-		Text(TEXT(" KM/H"), W - Margin - UnitW, Sy + LabelDy, Fs);
+		const int32 Place = FMath::Clamp(Me.Place, 1, 9);
+		const int32 Ordinal = OrdinalSt + (Place == 1 ? 0 : Place == 2 ? 1 : Place == 3 ? 2 : 3);
+		const float PlaceW = (SpriteWidth(Game, Digit0 + Place) + SpriteWidth(Game, Ordinal)) * K;
+		Sprite(Game, Ordinal, Sprite(Game, Digit0 + Place, 610.f * K - PlaceW, 24.f * K, K), 24.f * K, K);
+		// The original's meter; its fill is the damage, which the race does not model yet: full.
+		Sprite(Game, Meter, 524.f * K, 72.f * K, K);
+		const FString Laps = FString::Printf(TEXT("%d/%d"), FMath::Min(Me.Lap, Race->Laps()), Race->Laps());
+		Text(Laps, 592.f * K - TextWidth(Laps, 2.f * K), 110.f * K, 2.f * K);
 	}
 
 	// Centre: the banners the game has artwork for.

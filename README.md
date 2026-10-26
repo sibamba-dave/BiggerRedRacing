@@ -62,8 +62,12 @@ The original runs in DOSBox-X for side-by-side checks. Put the portable 64-bit b
 `Tools/dosbox-x/` (git-ignored), copy the rip's `RACING\` to `Tools/dosbox-x/c/RACING\`, and start it
 with `Tools/brr-dosbox.conf` (fix its paths). `RACING.EXE` takes `-CFG <name>` (skips name entry),
 `-NOSOUND` and `-LEV <LEVEL>`, which goes straight into a single race on that level (`-CAR` crashed
-here). It runs without the CD; DOSBox-X did not accept `Tools/brr-dosbox.cue` for the raw `BRR_CD.img`
-yet.
+here).
+
+`python Tools/brr_cd.py <BRR_CD.img> <out_dir> --rip <rip_dir>` reads a raw CD image (2352-byte
+sectors, Mode 2 data track): it copies any CD file the rip lacks into the rip, writes the audio
+tracks as WAVs and writes the cue sheet DOSBox-X mounts the image with (CD music included). The
+music and the intro video (`VIDEO/INTROSND.RPL`, Escape 122) are the original's: keep them out of git.
 
 ## Credits
 Format parsers are adapted from [OpenRedRacing](https://github.com/nynjardin/OpenRedRacing) (MIT, Copyright (c) 2026 PaPe), which in turn credits jacobgelling/red-archive and red-image. Big Red Racing and its data are the property of their respective owners.

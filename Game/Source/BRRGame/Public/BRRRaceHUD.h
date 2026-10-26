@@ -27,10 +27,6 @@ private:
 	float Sprite(const TArray<TObjectPtr<UTexture2D>>& Sheet, int32 Index, float X, float Y, float Scale, float Alpha = 1.f);
 	float Text(const FString& S, float X, float Y, float Scale, const FLinearColor& Tint = FLinearColor::White);
 	float TextWidth(const FString& S, float Scale) const;
-	float Number(int32 Value, float X, float Y, float Scale);
-	float NumberWidth(int32 Value, float Scale) const;
-	float Clock(double Seconds, float X, float Y, float Scale);
-	float ClockWidth(float Scale) const;
 	void Centred(int32 Index, float CX, float Y, float Scale);
 	float SpriteWidth(const TArray<TObjectPtr<UTexture2D>>& Sheet, int32 Index) const;
 	float SpriteHeight(const TArray<TObjectPtr<UTexture2D>>& Sheet, int32 Index) const;
@@ -47,6 +43,7 @@ private:
 	TObjectPtr<UTexture2D> MapTexture;
 
 	FBRRTopMap TopMap;
+	FIntPoint MapInset = FIntPoint::ZeroValue; // the map image's first opaque column and row
 	int32 FinalLapShownAt = -1; // race time (s) the final lap began, for the banner
 	double FinalLapStart = 0;
 };

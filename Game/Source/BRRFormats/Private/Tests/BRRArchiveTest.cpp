@@ -40,8 +40,9 @@ bool FBRRArchiveDecodeAllTest::RunTest(const FString& Parameters)
 			MemberCount += Archive.Entries.Num();
 		}
 	}
-	TestEqual(TEXT("archive count"), ArchiveCount, 78);
-	TestEqual(TEXT("member count"), MemberCount, 2777);
+	// The whole CD's RACING folder (Tools/brr_cd.py restores what a partial rip lacks: BYESCN.SCN).
+	TestEqual(TEXT("archive count"), ArchiveCount, 79);
+	TestEqual(TEXT("member count"), MemberCount, 2779);
 	return true;
 }
 
