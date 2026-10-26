@@ -13,11 +13,23 @@
 			"Name": "BRRGame",
 			"Type": "Runtime",
 			"LoadingPhase": "Default",
-			"AdditionalDependencies": [ "Engine", "BRRFormats" ]
+			"AdditionalDependencies": [
+				"Engine",
+				"BRRFormats"
+			]
 		}
 	],
 	"Plugins": [
-		{ "Name": "ChaosVehiclesPlugin", "Enabled": true },
-		{ "Name": "ModelingToolsEditorMode", "Enabled": true, "TargetAllowList": [ "Editor" ] }
+		{
+			"Name": "ChaosVehiclesPlugin",
+			"Enabled": true
+		},
+		{
+			"Name": "ModelingToolsEditorMode",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		}
 	]
 }

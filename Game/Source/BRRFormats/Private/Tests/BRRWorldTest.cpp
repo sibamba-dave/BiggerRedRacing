@@ -1,0 +1,110 @@
+#include "BRRArchive.h"
+#include "BRRWorld.h"
+
+#include "HAL/FileManager.h"
+#include "Misc/AutomationTest.h"
+#include "Misc/Paths.h"
+
+#if WITH_DEV_AUTOMATION_TESTS
+
+// The vertical-slice level: everything the importer needs must come out non-empty and in range.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBRRWorldDirt1Test, "BRR.Formats.World.Dirt1",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBRRWorldDirt1Test::RunTest(const FString& Parameters)
+{
+	const FString DataDir = BRR::GetDataDir();
+	if (DataDir.IsEmpty())
+	{
+		AddWarning(TEXT("BRR data dir not found (set BRR_DATA_DIR); skipping."));
+		return true;
+	}
+	FBRRWorld World;
+	FString Error;
+	if (!TestTrue(TEXT("DIRT1 + JEEP loads"), FBRRWorld::Load(DataDir, TEXT("DIRT1"), { TEXT("JEEP") }, 1, World, Error)))
+	{
+		AddError(Error);
+		return false;
+	}
+	TestEqual(TEXT("map width"), World.MapWidth, 256);
+	TestTrue(TEXT("terrain triangles"), World.Terrain.NumTriangles() > 100000);
+	TestTrue(TEXT("decor triangles"), World.Decor.NumTriangles() > 0);
+	TestTrue(TEXT("placements"), World.Placements.Num() > 0);
+	TestTrue(TEXT("gates"), World.Gates.Num() >= 14);
+	TestEqual(TEXT("grid slots"), World.Grid.Num(), 6);
+	TestTrue(TEXT("atlases"), World.Atlases.Num() > 0);
+	TestEqual(TEXT("one vehicle"), World.Vehicles.Num(), 1);
+	TestEqual(TEXT("view screen"), World.View.Width, 320);
+	TestTrue(TEXT("ghosts"), World.Ghosts.Num() >= 6);
+	for (const FBRRGhostTrack& G : World.Ghosts)
+	{
+		AddInfo(FString::Printf(TEXT("ghost %d.REC type %d car %d colour %d, %d ticks (%.1f s)"),
+			G.Slot, G.Type, G.VehicleIndex, G.Colour, G.Records.Num(), G.Records.Num() * 0.028));
+	}
+
+	const FBox3f Terrain = World.Terrain.GetBounds();
+	AddInfo(FString::Printf(TEXT("DIRT1 terrain %d tris, bounds %s"), World.Terrain.NumTriangles(), *Terrain.ToString()));
+	AddInfo(FString::Printf(TEXT("DIRT1 decor %d tris in %d sections, %d placements, %d gates, %d atlases, laps %d"),
+		World.Decor.NumTriangles(), World.Decor.Sections.Num(), World.Placements.Num(), World.Gates.Num(), World.Atlases.Num(), World.Laps));
+	for (const FBRRStart& S : World.Grid) AddInfo(FString::Printf(TEXT("grid %s yaw %.1f"), *S.Location.ToString(), S.Yaw));
+	if (World.Vehicles.Num() == 1)
+	{
+		const FBRRVehicleMesh& Jeep = World.Vehicles[0];
+		const FVector3f Size = Jeep.Body.GetBounds().GetSize();
+		AddInfo(FString::Printf(TEXT("JEEP body %d tris, size %s cm, %d wheels"), Jeep.Body.NumTriangles(), *Size.ToString(), Jeep.Wheels.Num()));
+		for (const FBRRWheel& W : Jeep.Wheels) AddInfo(FString::Printf(TEXT("  wheel at %s rolls=%d steers=%d"), *W.Socket.ToString(), W.bRolls, W.bSteers));
+		TestTrue(TEXT("jeep has a body"), Jeep.Body.NumTriangles() > 0);
+	}
+	// Grid cars sit inside the map.
+	for (const FBRRStart& S : World.Grid)
+		TestTrue(TEXT("grid slot inside terrain"), Terrain.IsInsideOrOnXY(FVector3f(S.Location)));
+	return true;
+}
+
+// Every shipped level and vehicle loads through the full ORR scene pipeline.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBRRWorldAllContentTest, "BRR.Formats.World.AllContent",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBRRWorldAllContentTest::RunTest(const FString& Parameters)
+{
+	const FString DataDir = BRR::GetDataDir();
+	if (DataDir.IsEmpty())
+	{
+		AddWarning(TEXT("BRR data dir not found (set BRR_DATA_DIR); skipping."));
+		return true;
+	}
+	TArray<FString> Levels, Vehicles;
+	IFileManager::Get().FindFiles(Levels, *FPaths::Combine(DataDir, TEXT("*.LEV")), true, false);
+	IFileManager::Get().FindFiles(Vehicles, *FPaths::Combine(DataDir, TEXT("*.VHC")), true, false);
+	for (FString& V : Vehicles) V = FPaths::GetBaseFilename(V);
+
+	for (const FString& File : Levels)
+	{
+		const FString Level = FPaths::GetBaseFilename(File);
+		FBRRWorld World;
+		FString Error;
+		const bool bOk = FBRRWorld::Load(DataDir, Level, {}, 1, World, Error);
+		if (TestTrue(FString::Printf(TEXT("%s loads (%s)"), *Level, *Error), bOk))
+		{
+			TestTrue(FString::Printf(TEXT("%s has terrain"), *Level), World.Terrain.NumTriangles() > 0);
+			AddInfo(FString::Printf(TEXT("%s: %d terrain / %d decor tris, %d gates, %d cars"), *Level,
+				World.Terrain.NumTriangles(), World.Decor.NumTriangles(), World.Gates.Num(), World.CarList.Num()));
+		}
+	}
+
+	FBRRWorld World;
+	FString Error;
+	const bool bOk = FBRRWorld::Load(DataDir, TEXT("DIRT1"), Vehicles, 1, World, Error);
+	if (TestTrue(FString::Printf(TEXT("all vehicles load (%s)"), *Error), bOk))
+	{
+		for (const FBRRVehicleMesh& V : World.Vehicles)
+		{
+			TestTrue(FString::Printf(TEXT("%s has a body"), *V.Name), V.Body.NumTriangles() > 0);
+			AddInfo(FString::Printf(TEXT("%s: %d tris, size %s, %d parts"), *V.Name, V.Body.NumTriangles(),
+				*V.Body.GetBounds().GetSize().ToString(), V.Wheels.Num()));
+		}
+	}
+	return true;
+}
+
+#endif
