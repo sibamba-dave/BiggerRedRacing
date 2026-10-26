@@ -57,5 +57,13 @@ default is 16. 0 draws the whole map.
 Palette check: `python Tools/palette_check.py <screenshot.png> <palette.png>` reports pixels that are
 not the level's palette colours (export `T_<LEVEL>_Palette` from the import as the palette).
 
+## Reference captures of the original
+The original runs in DOSBox-X for side-by-side checks. Put the portable 64-bit build in
+`Tools/dosbox-x/` (git-ignored), copy the rip's `RACING\` to `Tools/dosbox-x/c/RACING\`, and start it
+with `Tools/brr-dosbox.conf` (fix its paths). `RACING.EXE` takes `-CFG <name>` (skips name entry),
+`-NOSOUND` and `-LEV <LEVEL>`, which goes straight into a single race on that level (`-CAR` crashed
+here). It runs without the CD; DOSBox-X did not accept `Tools/brr-dosbox.cue` for the raw `BRR_CD.img`
+yet.
+
 ## Credits
 Format parsers are adapted from [OpenRedRacing](https://github.com/nynjardin/OpenRedRacing) (MIT, Copyright (c) 2026 PaPe), which in turn credits jacobgelling/red-archive and red-image. Big Red Racing and its data are the property of their respective owners.

@@ -58,8 +58,10 @@ bool FBRRAssetsTest::RunTest(const FString& Parameters)
 }
 
 // The in-race HUD artwork (GAMESVGA.SPR, SML_ALPH.SPR) carries palette indices. On the original's
-// 8-bit screen only the level's palette is loaded during a race, so the question is how far the
-// level palettes stray from DEFAULT.COL at the indices that artwork uses.
+// 8-bit screen only the level's palette is loaded during a race, and a capture of the original on
+// WATER1 (Tools/dosbox-x) shows the HUD in the level's colours (its magenta map dot is 38,00,39,
+// not DEFAULT.COL's 3f,00,3f), so ABRRRaceHUD decodes it through the level palette. This measures
+// how far that is from DEFAULT.COL, which ORR uses, level by level.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBRRHudPaletteTest, "BRR.Formats.HudPalette",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 

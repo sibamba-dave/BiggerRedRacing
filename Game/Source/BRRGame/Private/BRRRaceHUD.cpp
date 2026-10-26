@@ -44,22 +44,24 @@ bool ABRRRaceHUD::LoadArtwork()
 	const FString DataDir = BRR::GetDataDir();
 	if (!Mode || DataDir.IsEmpty()) return false;
 
+	// Everything on the race screen goes through the level's palette: the original's VGA holds
+	// one 256-colour palette and a race loads the level's. Checked against the original on
+	// WATER1 (Tools/dosbox-x): its magenta map dot is the level's 38,00,39, not DEFAULT.COL's
+	// 3f,00,3f, which ORR and this HUD had used.
 	FString Error;
-	TArray<FColor> Palette, LevelPalette;
+	TArray<FColor> LevelPalette;
 	TArray<FBRRImage> Images;
-	if (!BRR::LoadPalette(DataDir, TEXT("ALWAYS.WAP"), TEXT("DEFAULT.COL"), Palette, Error))
+	const FString Lev = Mode->GetLevelName() + TEXT(".LEV");
+	if (!BRR::LoadPalette(DataDir, Lev, TEXT("MAP.COL"), LevelPalette, Error) && !BRR::LoadPalette(DataDir, Lev, TEXT("1.COL"), LevelPalette, Error))
 	{
-		UE_LOG(LogBRRHUD, Warning, TEXT("No HUD palette: %s"), *Error);
+		UE_LOG(LogBRRHUD, Warning, TEXT("No level palette for the HUD: %s"), *Error);
 		return false;
 	}
-	if (BRR::LoadSprites(DataDir, TEXT("INGAME.WAP"), TEXT("GAMESVGA.SPR"), Palette, Images, Error))
+	if (BRR::LoadSprites(DataDir, TEXT("INGAME.WAP"), TEXT("GAMESVGA.SPR"), LevelPalette, Images, Error))
 		for (const FBRRImage& I : Images) Game.Add(MakeTexture(I));
-	if (BRR::LoadSprites(DataDir, TEXT("ALWAYS.WAP"), TEXT("SML_ALPH.SPR"), Palette, Images, Error))
+	if (BRR::LoadSprites(DataDir, TEXT("ALWAYS.WAP"), TEXT("SML_ALPH.SPR"), LevelPalette, Images, Error))
 		for (const FBRRImage& I : Images) Alphabet.Add(MakeTexture(I));
-
-	const FString Lev = Mode->GetLevelName() + TEXT(".LEV");
-	if ((BRR::LoadPalette(DataDir, Lev, TEXT("MAP.COL"), LevelPalette, Error) || BRR::LoadPalette(DataDir, Lev, TEXT("1.COL"), LevelPalette, Error))
-		&& BRR::LoadTopMap(DataDir, Mode->GetLevelName(), LevelPalette, TopMap, Error))
+	if (BRR::LoadTopMap(DataDir, Mode->GetLevelName(), LevelPalette, TopMap, Error))
 	{
 		MapTexture = MakeTexture(TopMap.Image);
 	}
