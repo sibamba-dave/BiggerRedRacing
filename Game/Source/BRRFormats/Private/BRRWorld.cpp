@@ -11,6 +11,7 @@
 #include "formats/texture.h"
 #include "formats/vehicle_script.h"
 #include "scene/level_scene.h"
+#include "scene/dashboard.h"
 #include "scene/vehicle_render.h"
 #include "sim/race.h"
 #include "sim/replay.h"
@@ -376,7 +377,9 @@ bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<
 			Vehicle.Name = VehicleName.ToUpper();
 			Vehicle.Colour = Colour;
 			Vehicle.Body = ConvertLocal(Model.body);
-			for (const bigred::VehiclePart& Part : Model.parts)
+			auto AddParts = [&](const std::vector<bigred::VehiclePart>& Parts, TArray<FBRRWheel>& OutParts)
+			{
+			for (const bigred::VehiclePart& Part : Parts)
 			{
 				// The part's own orientation (a quarter-turn yaw puts every wheel's axle, the mesh's
 				// local Z, across the car) is baked in, as place_vehicle applies it before the body's.
@@ -389,7 +392,7 @@ bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<
 					return BRR::GameToUE(R[0] * X + R[1] * GY + R[2] * Z, R[3] * X + R[4] * GY + R[5] * Z,
 						R[6] * X + R[7] * GY + R[8] * Z);
 				};
-				FBRRWheel& Wheel = Vehicle.Wheels.AddDefaulted_GetRef();
+				FBRRWheel& Wheel = OutParts.AddDefaulted_GetRef();
 				Wheel.Mesh = ConvertTriangles(Part.local, 0, Part.local.size(), PartToUE);
 				Wheel.Axle = GameDirToUE(R[2], R[5], R[8]).GetSafeNormal();
 				const FVector3f Size = Wheel.Mesh.GetBounds().GetSize();
@@ -397,6 +400,26 @@ bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<
 				Wheel.Socket = BRR::GameToUE(Part.pos[0], Part.pos[1], Part.pos[2]);
 				Wheel.bRolls = Part.rolls;
 				Wheel.bSteers = Part.steer_gain != 0;
+			}
+			};
+			AddParts(Model.parts, Vehicle.Wheels);
+			if (Tuning.sections.size() >= 2)
+			{
+				const bigred::VehicleModel Cabin = bigred::build_vehicle_model(*Vhc, *Ingame, Tuning, Colour, Scene, nullptr, nullptr, nullptr, 1);
+				if (Cabin.valid())
+				{
+					Vehicle.Cabin = ConvertLocal(Cabin.body);
+					AddParts(Cabin.parts, Vehicle.CabinParts);
+					const int32_t* In = Tuning.sections[1].internal;
+					Vehicle.CabinEye = BRR::GameToUE(In[0], In[1], In[2]);
+					Vehicle.CabinPitchDown = In[3] * 360.0 / 65536.0;
+					bigred::Dashboard Dash;
+					if (Dash.load(*Vhc, Tuning))
+					{
+						const auto It = Cabin.sheet_layers.find(Dash.sheet_name());
+						if (It != Cabin.sheet_layers.end()) Vehicle.DashAtlas = It->second;
+					}
+				}
 			}
 		}
 

@@ -190,6 +190,11 @@ void ABRRRaceGameMode::StartPlay()
 		PC->SetViewTarget(RaceCamera);
 	}
 	StartSound();
+	if (FParse::Param(FCommandLine::Get(), TEXT("BRRCabin")))
+	{
+		// Straight into the cabin view: past the three chase heights.
+		for (int32 K = 0; K < 3; ++K) Race->CyclePlayerCamera(PlayerCar->HasCabin());
+	}
 }
 
 bool ABRRRaceGameMode::LoadVehicleMeshes(const FString& Vehicle, int32 Colour, UStaticMesh*& OutBody, TArray<UStaticMesh*>& OutWheels) const
@@ -280,6 +285,16 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 			PlayerCar = GetWorld()->SpawnActor<ABRRVehiclePawn>(ABRRVehiclePawn::StaticClass(), Start);
 			PlayerCar->Setup(*Data, Body, Wheels, Handling.Surfaces[0], Start);
 			PlayerCar->SetSurfaces(Handling);
+			const FString Dir = FString::Printf(TEXT("/Game/BRR/%s/Meshes/"), *LevelName);
+			if (UStaticMesh* Cabin = LoadObject<UStaticMesh>(nullptr, *(Dir + FString::Printf(TEXT("SM_%s_Cabin"), *Vehicle)), nullptr, LOAD_NoWarn | LOAD_Quiet))
+			{
+				TArray<UStaticMesh*> Parts;
+				for (int32 P = 0; P < Data->CabinParts.Num(); ++P)
+				{
+					Parts.Add(LoadObject<UStaticMesh>(nullptr, *(Dir + FString::Printf(TEXT("SM_%s_CabinPart%d"), *Vehicle, P)), nullptr, LOAD_NoWarn | LOAD_Quiet));
+				}
+				PlayerCar->SetupCabin(Cabin, Parts, *Data, LevelName);
+			}
 		}
 		else if (Race->IsGhost(R))
 		{
@@ -386,14 +401,26 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 	if (RaceCamera)
 	{
 		const bool bRemastered = CVarLook.GetValueOnGameThread() != 0;
-		RaceCamera->SetActorTransform(Race->PlayerCameraTransform(Alpha, bRemastered ? CVarCameraDistance.GetValueOnGameThread() : 1.0,
-			bRemastered ? CVarCameraLift.GetValueOnGameThread() : 0.0));
+		const bool bCabin = Race->IsPlayerInCabin() && PlayerCar->HasCabin();
+		PlayerCar->SetCabinView(bCabin);
+		if (bCabin)
+		{
+			RaceCamera->SetActorTransform(PlayerCar->GetCabinEyeTransform());
+			TArray<FColor> Dash;
+			int32 DashW = 0, DashH = 0;
+			if (Race->DrawDashboard(Dash, DashW, DashH)) PlayerCar->UpdateDashboard(Dash, DashW, DashH);
+		}
+		else
+		{
+			RaceCamera->SetActorTransform(Race->PlayerCameraTransform(Alpha, bRemastered ? CVarCameraDistance.GetValueOnGameThread() : 1.0,
+				bRemastered ? CVarCameraLift.GetValueOnGameThread() : 0.0));
+		}
 		UE_LOG(LogBRRRace, VeryVerbose, TEXT("camera %s rot %s | car %s rot %s"), *RaceCamera->GetActorLocation().ToCompactString(),
 			*RaceCamera->GetActorRotation().ToCompactString(), *PlayerCar->GetBodyOriginTransform().GetLocation().ToCompactString(),
 			*PlayerCar->GetActorRotation().ToCompactString());
 		if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
 		{
-			if (PC->WasInputKeyJustPressed(EKeys::C) || PC->WasInputKeyJustPressed(EKeys::Gamepad_RightShoulder)) Race->CyclePlayerCamera();
+			if (PC->WasInputKeyJustPressed(EKeys::C) || PC->WasInputKeyJustPressed(EKeys::Gamepad_RightShoulder)) Race->CyclePlayerCamera(PlayerCar->HasCabin());
 			if (PC->GetViewTarget() != RaceCamera) PC->SetViewTarget(RaceCamera);
 		}
 	}

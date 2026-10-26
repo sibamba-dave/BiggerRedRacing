@@ -609,6 +609,12 @@ namespace
 			}
 		}
 		Out.GroundOffset = -Lowest;
+		// The cabin view's interior and its parts (the race shows them in place of the body).
+		MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Cabin"), *Vehicle.Name), Vehicle.Cabin, false);
+		for (int32 I = 0; I < Vehicle.CabinParts.Num(); ++I)
+		{
+			MakeMesh(Assets, FString::Printf(TEXT("SM_%s_CabinPart%d"), *Vehicle.Name, I), Vehicle.CabinParts[I].Mesh, false);
+		}
 		return Out;
 	}
 

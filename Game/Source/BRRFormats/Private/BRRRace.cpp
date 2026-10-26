@@ -13,8 +13,10 @@
 
 #include "formats/game_files.h"
 #include "formats/level_script.h"
+#include "formats/texture.h"
 #include "formats/vehicle_script.h"
 #include "scene/chase_camera.h"
+#include "scene/dashboard.h"
 #include "scene/level_scene.h"
 #include "scene/vehicle_render.h"
 #include "sim/race.h"
@@ -29,23 +31,28 @@ namespace
 	// The rev counter (0-250, the engine's pitch) the original's gear table gives for the car's
 	// forward speed - VehicleSim::gear_curve's rev half, which is private to it. Wholly airborne
 	// the original leaves the table alone and the revs climb 5 a tick.
-	int32 PlayerRev(const bigred::VehicleSim& P)
+	void PlayerGearbox(bigred::VehicleSim& P)
 	{
-		if (!P.tune) return 0;
-		if (P.near_ground == 0) return FMath::Min(P.rev + 5, 250);
+		if (!P.tune) return;
+		if (P.near_ground == 0)
+		{
+			P.rev = FMath::Min(P.rev + 5, 250);
+			return;
+		}
 		const int32 Speed = P.vfwd >= 0 ? P.vfwd : -P.vfwd;
 		const std::vector<bigred::GearRow>& Rows = P.vfwd >= 0 ? P.tune->gear_f : P.tune->gear_b;
-		if (Rows.empty()) return 0;
+		if (Rows.empty()) return;
 		const size_t Last = std::min<size_t>(Rows.size(), 12) - 1;
 		for (size_t R = 0; R < Last; ++R)
 		{
 			if (Speed < Rows[R + 1].speed)
 			{
 				const int32 Span = FMath::Max(Rows[R + 1].speed - Rows[R].speed, 1);
-				return Rows[R].rev_lo + int32(int64(Rows[R].rev_hi - Rows[R].rev_lo) * (Speed - Rows[R].speed) / Span);
+				P.gear = Rows[R].gear;
+				P.rev = Rows[R].rev_lo + int32(int64(Rows[R].rev_hi - Rows[R].rev_lo) * (Speed - Rows[R].speed) / Span);
+				return;
 			}
 		}
-		return P.rev;
 	}
 }
 
@@ -327,6 +334,8 @@ struct FBRRRace::FImpl
 	int32 PendingImpact = 0;                // 1/512 units per tick, the next tick's knock
 	bool bRecovered = false;
 	std::unique_ptr<FBRRRaceSound> Sound;
+	bigred::Dashboard Dash;   // the player's, when its vehicle has one
+	bool bCabin = false;      // the cabin view is on
 	uint32 BandClock = 0;
 
 	void LinkField()
@@ -413,6 +422,12 @@ TUniquePtr<FBRRRace> FBRRRace::Create(const FString& DataDir, const FString& Lev
 		bigred::mark_checkpoint_gates(Gates, Lines);
 		I.Race.configure(std::move(Gates), bigred::parse_laps(Script), bigred::parse_countdown_ticks(Script), GridRacers, std::move(Lines));
 
+		{
+			// The player's dashboard: its sheet and gauges come from the .VHC itself.
+			bigred::VehicleTuning DashTune;
+			bigred::ArchivePtr Vhc;
+			if (bigred::load_vehicle(GameDir, ToUtf8(PlayerVehicle.ToUpper()), DashTune, &Vhc) && Vhc) I.Dash.load(*Vhc, DashTune);
+		}
 		I.Tracks.resize(GridRacers);
 		I.Cars.resize(GridRacers);
 		I.Ghosts.resize(GridRacers);
@@ -587,7 +602,7 @@ void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity,
 		P.landing_impact = (P.near_ground_prev == 0 && P.near_ground != 0 && P.vy > 0) ? P.vy : 0;
 		P.air_ticks = P.near_ground != 0 ? 0 : P.air_ticks + 1;
 		P.rolled_over = PlayerPose.GetUnitAxis(EAxis::Z).Z < 0.0;
-		P.rev = PlayerRev(P);
+		PlayerGearbox(P);
 		P.scenery_hit = I.PendingImpact > 0;
 		P.impact_magnitude = I.PendingImpact;
 		P.scenery_wrecked = -1;
@@ -761,7 +776,41 @@ FTransform FBRRRace::PlayerCameraTransform(double Alpha, double Distance, double
 	return FTransform(FRotationMatrix::MakeFromXZ(Forward, FVector::UpVector).ToQuat(), Eye);
 }
 
-void FBRRRace::CyclePlayerCamera() { Impl->Camera.cycle_preset(); }
+void FBRRRace::CyclePlayerCamera(bool bCabinAvailable)
+{
+	FImpl& I = *Impl;
+	if (I.bCabin)
+	{
+		I.bCabin = false;
+		I.Camera.cycle_preset(); // from the third height back to the first
+	}
+	else if (I.Camera.preset == 2 && bCabinAvailable)
+	{
+		I.bCabin = true;         // the chase camera keeps running underneath
+	}
+	else
+	{
+		I.Camera.cycle_preset();
+	}
+}
+
+bool FBRRRace::IsPlayerInCabin() const { return Impl->bCabin; }
+
+bool FBRRRace::DrawDashboard(TArray<FColor>& OutPixels, int32& OutWidth, int32& OutHeight)
+{
+	FImpl& I = *Impl;
+	if (!I.Dash.valid()) return false;
+	const bigred::VehicleSim& Car = I.Cars[I.Player];
+	bigred::DashValues V;
+	V.by_source = {Car.vfwd, Car.rev, Car.nitro_fuel, Car.gear, (I.Terrain.height_fx(Car.px, Car.pz) - Car.py) >> 9};
+	I.Dash.draw(V);
+	const std::vector<uint8_t> Rgba = bigred::decode_tm_rgba(I.Dash.pixels().data(), I.Scene.palette);
+	OutWidth = bigred::kTmWidth;
+	OutHeight = bigred::kTmHeight;
+	OutPixels.SetNumUninitialized(OutWidth * OutHeight);
+	for (int32 P = 0; P < OutPixels.Num(); ++P) OutPixels[P] = FColor(Rgba[P * 4], Rgba[P * 4 + 1], Rgba[P * 4 + 2], Rgba[P * 4 + 3]);
+	return true;
+}
 
 double FBRRRace::WreckSeconds(int32 Instance) const
 {

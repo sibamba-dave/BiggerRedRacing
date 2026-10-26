@@ -118,7 +118,14 @@ public:
 	// camera; both ease away in a tunnel or under a roof, where the original's own placement is
 	// what keeps the eye out of the rock.
 	FTransform PlayerCameraTransform(double Alpha, double Distance = 1.0, double Lift = 0.0) const;
-	void CyclePlayerCamera();          // the three distance presets
+	// C: the three chase heights, then - when the game has the vehicle's cabin - the cabin view,
+	// and back to the first, as the original cycles them.
+	void CyclePlayerCamera(bool bCabinAvailable = false);
+	bool IsPlayerInCabin() const;
+	// The cabin's dashboard (FBRRVehicleMesh::DashAtlas) redrawn with this tick's readings - speed,
+	// revs, nitro, gear, height - in the level's palette; false when the vehicle has none. The
+	// sheet persists, as in the original: each call draws over the last.
+	bool DrawDashboard(TArray<FColor>& OutPixels, int32& OutWidth, int32& OutHeight);
 
 	// Destructible decor (FBRRWorld::Wrecks, by scenery instance), shared by the whole field. The
 	// player knocks a piece over when the original's blocker probe touches it, as in

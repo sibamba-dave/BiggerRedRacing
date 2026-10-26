@@ -69,6 +69,17 @@ public:
 	// Puts the car back on its wheels where it is (or at Where), at rest.
 	void Recover(const TOptional<FTransform>& Where = {});
 
+	// The cabin view (FBRRRace::IsPlayerInCabin): the vehicle's interior and its parts shown in
+	// place of the body, the eye at the vehicle's `internal` offset, and the dashboard's gauges
+	// redrawn onto its sheet (FBRRRace::DrawDashboard) through UpdateDashboard.
+	void SetupCabin(UStaticMesh* Cabin, const TArray<UStaticMesh*>& Parts, const FBRRVehicleMesh& Vehicle, const FString& Level);
+	bool HasCabin() const { return CabinMesh != nullptr; }
+	void SetCabinView(bool bOn);
+	// The original's cabin eye: turned with the car, its pitch and roll following the body's only
+	// in part (7/8 and 5/6), looking down by the vehicle's own angle (ORR cabin_view).
+	FTransform GetCabinEyeTransform() const;
+	void UpdateDashboard(const TArray<FColor>& Pixels, int32 Width, int32 Height);
+
 	// For the race's sound, read and cleared by the game mode: the hardest knock against solid
 	// scenery since (speed into it, cm/s), and whether the car was put back on the track.
 	double TakeImpactSpeed() { const double S = ImpactSpeed; ImpactSpeed = 0; return S; }
@@ -104,10 +115,24 @@ public:
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UChaosWheeledVehicleMovementComponent> Movement;
 
+	UPROPERTY()
+	TObjectPtr<UStaticMeshComponent> CabinMesh;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UStaticMeshComponent>> CabinPartMeshes;
+
+	UPROPERTY()
+	TObjectPtr<class UTexture2D> DashTexture;
+
 private:
 	bool bBoostKey = false;
 	double ImpactSpeed = 0;
 	bool bRecovered = false;
+	bool bInCabin = false;
+	FVector CabinEye = FVector::ZeroVector;
+	double CabinPitchDown = 0;
+	struct FCabinPart { FVector Socket, Axle; bool bSteers = false; };
+	TArray<FCabinPart> CabinParts;
 	struct FWheelVisual
 	{
 		TObjectPtr<UStaticMeshComponent> Mesh;

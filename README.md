@@ -50,7 +50,8 @@ The game runs in a borderless window over the whole desktop (Alt+Enter for a win
 `-ResX=`/`-ResY=` to start in one).
 
 Controls: W/Up accelerate, S/Down brake and reverse, A/D or Left/Right steer, Space handbrake,
-R recover, Shift boost, P photo, F5 look, C camera. Gamepad: triggers, left stick, X handbrake, Y recover, A boost.
+R recover, Shift boost, P photo, F5 look, C camera (the three chase heights, then the cabin: the
+vehicle's interior with its own dials, redrawn live by the original's `ndial` gauges). Gamepad: triggers, left stick, X handbrake, Y recover, A boost.
 
 Sound: the original's own - every car's engine (its pitch on the gear table's revs), skids and
 rolling on each surface, impacts, splats, landings, the boost, the countdown tones, checkpoint and
@@ -60,7 +61,7 @@ intro track then its loop, from TOURN.TXT, played from the rip's `Music/TrackNN.
 (`Tools/brr_cd.py`; `[BRR] MusicDir` to point elsewhere). `brr.SoundVolume`, `brr.MusicVolume`,
 `brr.Commentary`. `-BRRAudioDump=<file.wav>` records 20 seconds of the output.
 
-Dev switches: `-BRRDriveTest` (handling comparison, see `Docs/Handling.md`), `-BRRAutopilot` (drives
+Dev switches: `-BRRCabin` (start in the cabin view), `-BRRDriveTest` (handling comparison, see `Docs/Handling.md`), `-BRRAutopilot` (drives
 the player's car along a ghost's racing line, recovering when stuck).
 
 View distance: `brr.ViewCells` (console or `-ExecCmds="brr.ViewCells N"`) draws the world N terrain
@@ -89,7 +90,7 @@ not the level's palette colours (export `T_<LEVEL>_Palette` from the import as t
   moving ripples, reflecting the sky and the banks; ice smooth and shining; lava glowing. The
   original has no such notion, so `FBRRWorld::LiquidOf` reads it off each level's surface types:
   the WATER circuits' river is TRACK, the lakes and the sea elsewhere are SLIPPY, which is ice on
-  SNOW and lava on MOON. The vehicles are glossy paint (bodies) and dull rubber (wheels).
+  SNOW and lava on MOON. The vehicles are glossy paint (bodies) and dull rubber (wheels).
   The chase camera is the original's rope, hung closer and higher: 0.6 of its distance behind
   (`brr.CameraDistance`) and raised by a fifth of that (`brr.CameraLift`), still aimed where the
   original aims; both ease off in tunnels. The original's own, at 34 m behind and 3.5 m up at

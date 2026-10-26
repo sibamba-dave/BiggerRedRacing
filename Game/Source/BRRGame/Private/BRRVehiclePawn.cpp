@@ -6,6 +6,8 @@
 #include "ChaosWheeledVehicleMovementComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/Texture2D.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "InputCoreTypes.h"
@@ -243,6 +245,90 @@ void ABRRVehiclePawn::Recover(const TOptional<FTransform>& Where)
 	bRecovered = true;
 }
 
+void ABRRVehiclePawn::SetupCabin(UStaticMesh* Cabin, const TArray<UStaticMesh*>& Parts, const FBRRVehicleMesh& Vehicle, const FString& Level)
+{
+	if (!Cabin) return;
+	auto Attach = [this](UStaticMesh* Mesh, const TCHAR* Name, const FVector& At)
+	{
+		UStaticMeshComponent* C = NewObject<UStaticMeshComponent>(this, Name);
+		C->SetStaticMesh(Mesh);
+		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		C->SetCastShadow(false); // the body's shadow stays, cast hidden
+		C->SetupAttachment(Chassis);
+		C->SetRelativeLocation(At);
+		C->SetHiddenInGame(true);
+		C->RegisterComponent();
+		return C;
+	};
+	CabinMesh = Attach(Cabin, TEXT("Cabin"), BodyOffset);
+	for (int32 I = 0; I < Vehicle.CabinParts.Num() && I < Parts.Num(); ++I)
+	{
+		const FBRRWheel& P = Vehicle.CabinParts[I];
+		CabinPartMeshes.Add(Attach(Parts[I], *FString::Printf(TEXT("CabinPart%d"), I), P.Socket + BodyOffset));
+		CabinParts.Add({ P.Socket + BodyOffset, P.Axle, P.bSteers });
+	}
+	CabinEye = Vehicle.CabinEye;
+	CabinPitchDown = Vehicle.CabinPitchDown;
+
+	// The dashboard: its sheet is one of the level's atlas pages; the faces that show it get a
+	// live texture instead, redrawn by the race.
+	if (Vehicle.DashAtlas != INDEX_NONE)
+	{
+		DashTexture = UTexture2D::CreateTransient(BRR::AtlasWidth, BRR::AtlasHeight, PF_B8G8R8A8);
+		DashTexture->Filter = TF_Nearest;
+		DashTexture->SRGB = true;
+		DashTexture->UpdateResource();
+		const FString Page = FString::Printf(TEXT("_Atlas%02d"), Vehicle.DashAtlas);
+		for (int32 M = 0; M < CabinMesh->GetNumMaterials(); ++M)
+		{
+			UMaterialInterface* Mat = CabinMesh->GetMaterial(M);
+			if (!Mat || !Mat->GetName().Contains(Page)) continue;
+			UMaterialInstanceDynamic* Live = CabinMesh->CreateDynamicMaterialInstance(M, Mat);
+			Live->SetTextureParameterValue(TEXT("Atlas"), DashTexture);
+			Live->SetTextureParameterValue(TEXT("AtlasHD"), DashTexture);
+		}
+	}
+}
+
+void ABRRVehiclePawn::SetCabinView(bool bOn)
+{
+	if (!CabinMesh || bOn == bInCabin) return;
+	bInCabin = bOn;
+	// The car's own body would fill the lens: hidden, its shadow kept.
+	BodyMesh->SetHiddenInGame(bOn);
+	BodyMesh->bCastHiddenShadow = true;
+	for (const FWheelVisual& W : WheelVisuals)
+	{
+		W.Mesh->SetHiddenInGame(bOn);
+		W.Mesh->bCastHiddenShadow = true;
+	}
+	CabinMesh->SetHiddenInGame(!bOn);
+	for (UStaticMeshComponent* P : CabinPartMeshes) P->SetHiddenInGame(!bOn);
+}
+
+FTransform ABRRVehiclePawn::GetCabinEyeTransform() const
+{
+	const FTransform Body = GetBodyOriginTransform();
+	const FRotator R = Body.Rotator();
+	const FRotator Eye(R.Pitch * 7.0 / 8.0 - CabinPitchDown, R.Yaw, R.Roll * 5.0 / 6.0);
+	return FTransform(Eye, Body.TransformPosition(CabinEye));
+}
+
+void ABRRVehiclePawn::UpdateDashboard(const TArray<FColor>& Pixels, int32 Width, int32 Height)
+{
+	if (!DashTexture || Pixels.Num() != Width * Height || Width != DashTexture->GetSizeX() || Height != DashTexture->GetSizeY()) return;
+	// The render thread reads the copy after this returns, and frees it.
+	FColor* Copy = new FColor[Pixels.Num()];
+	FMemory::Memcpy(Copy, Pixels.GetData(), Pixels.Num() * sizeof(FColor));
+	FUpdateTextureRegion2D* Region = new FUpdateTextureRegion2D(0, 0, 0, 0, Width, Height);
+	DashTexture->UpdateTextureRegions(0, 1, Region, Width * sizeof(FColor), sizeof(FColor), reinterpret_cast<uint8*>(Copy),
+		[](uint8* Data, const FUpdateTextureRegion2D* Regions)
+		{
+			delete[] reinterpret_cast<FColor*>(Data);
+			delete Regions;
+		});
+}
+
 void ABRRVehiclePawn::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp, bool bSelfMoved,
 	FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit)
 {
@@ -360,6 +446,12 @@ void ABRRVehiclePawn::Tick(float DeltaSeconds)
 		const FQuat Roll(FVector::RightVector, -FMath::DegreesToRadians(Wheel->GetRotationAngle()));
 		Visual.Mesh->SetRelativeRotation(SteerRot * Roll);
 		Visual.Mesh->SetRelativeLocation(Visual.Socket + FVector(0, 0, Wheel->GetSuspensionOffset()));
+	}
+	// The cabin's steering wheel turns with the steering, about its own axis.
+	for (int32 I = 0; bInCabin && I < CabinParts.Num() && I < CabinPartMeshes.Num(); ++I)
+	{
+		if (!CabinParts[I].bSteers) continue;
+		CabinPartMeshes[I]->SetRelativeRotation(FQuat(CabinParts[I].Axle, FMath::DegreesToRadians(Steer * 90.0)));
 	}
 }
 

@@ -136,6 +136,13 @@ struct FBRRVehicleMesh
 	int32 Colour = 1;   // team colour 1..6
 	FBRRMesh Body;      // local, UE cm
 	TArray<FBRRWheel> Wheels;
+	// The cabin view (C past the third chase height): the interior (`IN_<NAME>`, section 1), local
+	// like Body, with its own parts (the steering wheel); empty when the vehicle has none.
+	FBRRMesh Cabin;
+	TArray<FBRRWheel> CabinParts;
+	int32 DashAtlas = INDEX_NONE; // the atlas page the dashboard's gauges are redrawn on (FBRRRace::DrawDashboard)
+	FVector CabinEye = FVector::ZeroVector; // UE cm from the body origin (`internal`)
+	double CabinPitchDown = 0;              // degrees the eye looks below the body's heading
 };
 
 // One destructible decor piece: how it stands, and the original's knock-over flipbook.
