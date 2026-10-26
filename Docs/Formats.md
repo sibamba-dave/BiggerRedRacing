@@ -31,7 +31,21 @@ No header. Entries: `char name[] '\0'`, `u32 packed`, `u32 unpacked`, `u8 method
 | `.FT` | 118 bytes: bounds, radius, surface profile or blocker | 📄 partial |
 | `n.REC` | 40-byte header + int16 deltas per 28 ms tick | ✅ raw records |
 | `.TXT` | level / vehicle / screen scripts | ✅ level grid/laps/cars/unsafe/ghost rates, TOURN.TXT; vehicle handling 📄 |
-| `VICTORY.MVI` | `MVI\0`, u16 320, 200, 178 frames, palette @0x14, RLE frames | ❓ |
+| `VICTORY.MVI` | end video: palette + RLE delta frames + WAV effects, see [Videos](#videos-introsndrpl-victorymvi) | 📄 `Tools/brr_video.py` |
 | WAV | RIFF PCM 8-bit mono 11025 Hz | trivial |
 
 Timing: game tick 14 ms, physics 28 ms.
+
+## Videos (INTROSND.RPL, VICTORY.MVI)
+Both decode with `python Tools/brr_video.py <file> <out_dir>` (PNG frames + `audio.wav`); verified by eye on first/middle/last frames.
+
+**`VIDEO/INTROSND.RPL`** (intro, played by `VIDEO/VIDTHUMP.EXE`, Eidos `eidosply.c`/`thump122.asm`): Acorn Replay ARMovie.
+- Header: newline-separated text fields, value first: `ARMovie`, name, copyright, author, video format `122`, 320, 200, 8 bpp, 25 fps, sound format `101` (text says "none", 0 bits), 22050 Hz, 1 channel, 1 frame per chunk, 3299 (last chunk index: 3300 chunks), even/odd chunk size, catalogue offset (24720660), sprite offset/size, key frames 0.
+- Catalogue: one `offset,video_size;audio_size` line per chunk. Chunk = Escape 122 frame then 735 bytes of audio, 4-aligned.
+- Escape 122 frame: `u32 0x116` (0x100 + 22), `u32 size`, `u16 pal_bytes`, palette (6-bit RGB from entry 0; 0 = keep), then an LSB-first bitstream. 8×8 blocks in raster order; a skip count `ecode` (1 bit 0 → 0; else 3 bits +1, 7 → 7 bits +8, 127 → 12 bits +135) is read before a block when none is pending; N > 0 skips this and the next N−1 blocks and the block after the run is coded without a count. A coded block is a 4×4 grid of 2×2 cells (mask bit i = cell i, row-major, LSB first): while a 0 bit, one cell pattern + a 16-bit mask of cells to paint with it; then a bit, if 0 a 16-bit mask with one pattern per set cell. Cell pattern: 4-bit mask; 0 / 15 → solid colour `2·u7` / `2·u7+1`; else two u8 colours, mask bit (TL, TR, BL, BR) picks one. Algorithm after NihAV's `escape.rs`, which follows the original player.
+- Audio: Eidos ADPCM despite the header: IMA step/index tables, high nibble first, `diff = (code & 7) · step >> 2`, sign bit 8, state carried across chunks. 1470 samples per chunk, 4 851 000 in all: 220 s at 22050 Hz, so the movie runs at 15 chunks/s, not the header's 25 fps (132 s). The spectrum falls off at ~5.5 kHz (an 11 kHz source resampled), which fits 22050 Hz being right. Presumably the player paces video by the sound (it keeps "sound/video queues"); not confirmed by running it.
+
+**`RACING/VICTORY.MVI`** (end video, `RACING.EXE`): own format, 178 frames, 10.5 s at 17 fps (fps field inferred).
+- Header 16 bytes: `"MVI\0"`, `u16 width 320, height 200, frames 178, 17`, `u32 0`.
+- Per frame: records until a 0 byte, then `u16 size` + picture. Records: `1` = 768-byte 6-bit palette (only before frame 0); `2` = sound effect: `u16 size`, `u8 param` (27/77/127/227, probably pan), RIFF WAV (PCM 8-bit mono 11025 Hz) of `size` bytes, started with this frame (9 effects).
+- Picture: RLE over 64000 pixels, row-major: `c ≥ 0x80` → c−0x80 literals; `1..0x7F` → run of c × next byte; `0` → `u16 count`, byte. Index 0 leaves the pixel as it was (frame 0 has none; later frames are deltas mostly of 0).
