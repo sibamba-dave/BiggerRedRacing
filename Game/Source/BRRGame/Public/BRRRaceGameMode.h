@@ -103,5 +103,9 @@ private:
 	int32 LoggedLaps = 0;
 	TArray<double> GhostSpin;
 	double Accumulator = 0;
+	// brr.LogPerf: frames and race ticks over the current window, against the wall clock.
+	double PerfSince = -1;
+	int32 PerfFrames = 0, PerfTicks = 0;
+	double PerfPhysics = 0; // seconds the physics stepped (each frame's, capped at MaxPhysicsDeltaTime)
 	bool bAutopilot = false;
 };

@@ -279,6 +279,7 @@ struct FBRRRace::FImpl
 	int32 Player = 0;
 	bigred::ChaseCamera Camera;
 	bigred::CameraState CameraPrev;
+	double CameraOpen = 1.0, CameraOpenPrev = 1.0; // 1 with open sky over the camera, 0 under a roof
 	bigred::SceneryState Scenery;
 	bigred::NitroReserve Nitros;
 	double BoostAccel = 0; // cm/s/s along the player's car this tick
@@ -602,6 +603,8 @@ void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity,
 
 		I.CameraPrev = I.Camera.now;
 		I.Camera.step(P, I.Terrain);
+		I.CameraOpenPrev = I.CameraOpen;
+		I.CameraOpen += ((P.in_tunnel || I.Camera.under_roof() ? 0.0 : 1.0) - I.CameraOpen) * 0.15;
 
 		I.LinkField();
 		I.Race.tick(I.Field.data(), int(I.Field.size()));
@@ -623,14 +626,14 @@ void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity,
 	}
 }
 
-FTransform FBRRRace::PlayerCameraTransform(double Alpha) const
+FTransform FBRRRace::PlayerCameraTransform(double Alpha, double Distance, double Lift) const
 {
 	// camera_view works in ORR's render space (X mirrored about the map, +Y up); at scale 1 that
 	// is game units, so map it back to the game frame and on to UE.
 	const FImpl& I = *Impl;
 	const bigred::CameraView V = bigred::camera_view(I.CameraPrev, I.Camera.now, float(Alpha), I.Scene.map_w, 1.0f);
 	const double Mirror = double(I.Scene.map_w - 1) * bigred::kTerrainTexelWorldSize;
-	const FVector Eye = BRR::GameToUE(Mirror - V.eye[0], -V.eye[1], V.eye[2]);
+	const double Open = FMath::Lerp(I.CameraOpenPrev, I.CameraOpen, Alpha);
 	auto Dir = [](const float D[3]) { return FVector(D[2], -D[0], D[1]); }; // render dir -> UE
 	const FVector Ahead = Dir(V.forward).GetSafeNormal2D();
 	// The view looks at the controller's aim point - the car lifted by the preset's aim height,
@@ -640,6 +643,10 @@ FTransform FBRRRace::PlayerCameraTransform(double Alpha) const
 	const bigred::VehicleSim& Car = I.Cars[I.Player];
 	const int32 AimHeight = Car.in_tunnel ? bigred::kTunnelAimHeight : bigred::kCameraPresets[I.Camera.preset].aim_height;
 	const FVector Aim = BRR::GameToUE(Car.world_x(), Car.world_y() - AimHeight, Car.world_z());
+	const FVector Original = BRR::GameToUE(Mirror - V.eye[0], -V.eye[1], V.eye[2]);
+	const FVector Pull = (Original - Aim) * FVector(1, 1, 0) * (1.0 - FMath::Lerp(1.0, Distance, Open));
+	const FVector Behind = Original - Pull;
+	const FVector Eye = Behind + FVector(0, 0, Lift * Open * FVector::Dist2D(Behind, Aim));
 	const FVector ToAim = Aim - Eye;
 	const double Pitch = FMath::Atan2(ToAim.Z, ToAim.Size2D());
 	const FVector Forward = Ahead * FMath::Cos(Pitch) + FVector::UpVector * FMath::Sin(Pitch);

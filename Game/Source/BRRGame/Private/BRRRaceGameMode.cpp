@@ -30,6 +30,7 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Paths.h"
 #include "Misc/Parse.h"
+#include "PhysicsEngine/PhysicsSettings.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBRRRace, Log, All);
 
@@ -54,6 +55,17 @@ namespace
 
 	TAutoConsoleVariable<int32> CVarPhotoSamples(TEXT("brr.PhotoSamples"), 512,
 		TEXT("Samples per pixel the path tracer gathers for a photo (P in a race)."));
+
+	TAutoConsoleVariable<float> CVarCameraLift(TEXT("brr.CameraLift"), 0.2f,
+		TEXT("How much higher the remastered look hangs the chase camera than the original, as a fraction of its distance behind ")
+		TEXT("the car, still aimed where the original aims (0: the original's height). The classic look keeps the original's."));
+
+	TAutoConsoleVariable<float> CVarCameraDistance(TEXT("brr.CameraDistance"), 0.6f,
+		TEXT("How far behind the car the remastered look hangs the chase camera, as a fraction of the original's distance ")
+		TEXT("(1: the original's). The classic look keeps the original's."));
+
+	TAutoConsoleVariable<bool> CVarLogPerf(TEXT("brr.LogPerf"), false,
+		TEXT("Logs the frame rate, the race's pace against the wall clock and the player's speed every five seconds."));
 
 	TAutoConsoleVariable<bool> CVarSurfaceHandling(TEXT("brr.SurfaceHandling"), true,
 		TEXT("The player's car handles as the surface under it does in the original (off: the track's everywhere)."));
@@ -257,6 +269,7 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 	while (Accumulator >= FBRRRace::TickSeconds)
 	{
 		Accumulator -= FBRRRace::TickSeconds;
+		++PerfTicks;
 		Race->Tick(PlayerCar->GetBodyOriginTransform(), PlayerCar->GetVelocity(), PlayerCar->IsBoostKeyDown());
 		PlayerCar->bBoosting = Race->IsPlayerBoosting();
 		PlayerCar->BoostAccel = Race->PlayerBoostAccel();
@@ -288,6 +301,22 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 		}
 	}
 
+	if (CVarLogPerf.GetValueOnGameThread())
+	{
+		const double Now = FPlatformTime::Seconds();
+		if (PerfSince < 0) PerfSince = Now, PerfFrames = PerfTicks = 0, PerfPhysics = 0;
+		++PerfFrames;
+		PerfPhysics += FMath::Min(DeltaSeconds, UPhysicsSettings::Get()->MaxPhysicsDeltaTime);
+		if (Now - PerfSince >= 5.0)
+		{
+			const double Wall = Now - PerfSince;
+			UE_LOG(LogBRRRace, Display, TEXT("perf: %.1f fps, race at %.2fx real time, physics at %.2fx, %.0f km/h"), PerfFrames / Wall,
+				PerfTicks * FBRRRace::TickSeconds / Wall, PerfPhysics / Wall, PlayerCar->GetVelocity().Size() * 0.036);
+			PerfSince = Now;
+			PerfFrames = PerfTicks = 0;
+			PerfPhysics = 0;
+		}
+	}
 	PlayerCar->bControlsLocked = !Race->HasStarted();
 	UpdateStartLights();
 	if (Wrecks) Wrecks->Sync(*Race);
@@ -305,7 +334,9 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 	const double Alpha = Accumulator / FBRRRace::TickSeconds;
 	if (RaceCamera)
 	{
-		RaceCamera->SetActorTransform(Race->PlayerCameraTransform(Alpha));
+		const bool bRemastered = CVarLook.GetValueOnGameThread() != 0;
+		RaceCamera->SetActorTransform(Race->PlayerCameraTransform(Alpha, bRemastered ? CVarCameraDistance.GetValueOnGameThread() : 1.0,
+			bRemastered ? CVarCameraLift.GetValueOnGameThread() : 0.0));
 		UE_LOG(LogBRRRace, VeryVerbose, TEXT("camera %s rot %s | car %s rot %s"), *RaceCamera->GetActorLocation().ToCompactString(),
 			*RaceCamera->GetActorRotation().ToCompactString(), *PlayerCar->GetBodyOriginTransform().GetLocation().ToCompactString(),
 			*PlayerCar->GetActorRotation().ToCompactString());

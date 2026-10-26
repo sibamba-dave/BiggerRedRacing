@@ -104,8 +104,12 @@ public:
 	double PlayerBoostAccel() const;
 
 	// The original's chase camera on the player, stepped with each tick; Alpha (0..1) blends the
-	// last two ticks. Returns the eye and its orientation in UE space.
-	FTransform PlayerCameraTransform(double Alpha) const;
+	// last two ticks. Returns the eye and its orientation in UE space. Distance scales how far
+	// behind the aim point the eye hangs (the original's rope still decides where it goes), and
+	// Lift raises it by that fraction of the distance behind, wherever the sky is open over the
+	// camera; both ease away in a tunnel or under a roof, where the original's own placement is
+	// what keeps the eye out of the rock.
+	FTransform PlayerCameraTransform(double Alpha, double Distance = 1.0, double Lift = 0.0) const;
 	void CyclePlayerCamera();          // the three distance presets
 
 	// Destructible decor (FBRRWorld::Wrecks, by scenery instance), shared by the whole field. The

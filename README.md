@@ -81,7 +81,12 @@ not the level's palette colours (export `T_<LEVEL>_Palette` from the import as t
   moving ripples, reflecting the sky and the banks; ice smooth and shining; lava glowing. The
   original has no such notion, so `FBRRWorld::LiquidOf` reads it off each level's surface types:
   the WATER circuits' river is TRACK, the lakes and the sea elsewhere are SLIPPY, which is ice on
-  SNOW and lava on MOON. The vehicles are glossy paint (bodies) and dull rubber (wheels).
+  SNOW and lava on MOON. The vehicles are glossy paint (bodies) and dull rubber (wheels).
+  The chase camera is the original's rope, hung closer and higher: 0.6 of its distance behind
+  (`brr.CameraDistance`) and raised by a fifth of that (`brr.CameraLift`), still aimed where the
+  original aims; both ease off in tunnels. The original's own, at 34 m behind and 3.5 m up at
+  speed, skims the ground on a wide screen. `brr.LogPerf 1` logs the frame rate and the race's
+  pace against the wall clock.
 
 NVIDIA's DLSS 4.5 plugins for UE 5.8 (DLSS, Streamline and its parts) go in the engine, e.g.
 `Engine/Plugins/Marketplace/NVIDIA/`; the project enables `DLSS` and `Streamline`. They are not part
