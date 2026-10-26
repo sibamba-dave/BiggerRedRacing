@@ -5,6 +5,7 @@
 #include "BRRGhostCar.h"
 #include "BRRRaceHUD.h"
 #include "BRRAudio.h"
+#include "BRRGameInstance.h"
 #include "BRRSoundOutput.h"
 #include "AudioDevice.h"
 #include "BRRVehiclePawn.h"
@@ -174,7 +175,8 @@ void ABRRRaceGameMode::StartPlay()
 		UE_LOG(LogBRRRace, Error, TEXT("Cannot race %s: %s"), *LevelName, *Error);
 		return;
 	}
-	bAutopilot = FParse::Param(FCommandLine::Get(), TEXT("BRRAutopilot"));
+	bPreview = UGameplayStatics::HasOption(OptionsString, TEXT("Preview"));
+	bAutopilot = bPreview || FParse::Param(FCommandLine::Get(), TEXT("BRRAutopilot"));
 	for (int32 R = 0; bAutopilot && R < Race->NumRacers() && AutopilotLine.IsEmpty(); ++R)
 	{
 		if (Race->IsGhost(R)) AutopilotLine = Race->GhostPath(R);
@@ -383,6 +385,8 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 			PerfPhysics = 0;
 		}
 	}
+	UpdateRaceEnd();
+	if (!Race) return;
 	PlayerCar->bControlsLocked = !Race->HasStarted();
 	UpdateStartLights();
 	if (Wrecks) Wrecks->Sync(*Race);
@@ -479,6 +483,47 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 		GhostSpin[R] = FMath::Fmod(GhostSpin[R] + FMath::RadiansToDegrees(Forward / 40.0), 360.0);
 		Ghosts[R]->SetBodyPose(FTransform(Rotation, Location), GhostSpin[R]);
 	}
+}
+
+void ABRRRaceGameMode::UpdateRaceEnd()
+{
+	UBRRGameInstance* G = GetGameInstance<UBRRGameInstance>();
+	APlayerController* PC = GetWorld()->GetFirstPlayerController();
+	if (!G || !G->bRaceFromMenu || !PC) return;
+	if (PC->WasInputKeyJustPressed(EKeys::Escape) || PC->WasInputKeyJustPressed(EKeys::Gamepad_Special_Right)
+		|| (bPreview && (PC->WasInputKeyJustPressed(EKeys::Enter) || PC->WasInputKeyJustPressed(EKeys::SpaceBar))))
+	{
+		G->LastResult = FBRRRaceResult();
+		G->ReturnToFrontEnd();
+		return;
+	}
+	if (bPreview) return;
+	const int32 Me = Race->PlayerIndex();
+	if (!Race->Status(Me).bFinished) return;
+	if (FinishedAt < 0) FinishedAt = RaceClock;
+	if (RaceClock - FinishedAt < 5.0) return;
+
+	FBRRRaceResult& R = G->LastResult;
+	R = FBRRRaceResult();
+	R.bValid = true;
+	R.Level = LevelName;
+	for (int32 I = 0; I < Race->NumRacers(); ++I)
+	{
+		const FBRRRacerStatus S = Race->Status(I);
+		FBRRResultRow& Row = R.Rows.AddDefaulted_GetRef();
+		Row.Name = Race->VehicleOf(I);
+		Row.Place = S.Place;
+		Row.bFinished = S.bFinished;
+		for (double T : S.LapTimes) Row.Seconds += T;
+		Row.bPlayer = I == Me;
+		if (Row.bPlayer)
+		{
+			R.Place = S.Place;
+			R.Seconds = Row.Seconds;
+			R.LapTimes = S.LapTimes;
+		}
+	}
+	G->ReturnToFrontEnd();
 }
 
 void ABRRRaceGameMode::RunDriveTest()

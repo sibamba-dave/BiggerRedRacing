@@ -1,0 +1,152 @@
+#include "BRRGameInstance.h"
+
+#include "BRRArchive.h"
+#include "BRRAudio.h"
+#include "HAL/IConsoleManager.h"
+#include "Kismet/GameplayStatics.h"
+#include "Misc/ConfigCacheIni.h"
+#include "Misc/PackageName.h"
+
+namespace
+{
+	const TCHAR* Section = TEXT("BRR");
+	const TCHAR* FrontEndMap = TEXT("/Engine/Maps/Entry");
+}
+
+void UBRRGameInstance::Init()
+{
+	Super::Init();
+	DataDir = BRR::GetDataDir();
+	if (!DataDir.IsEmpty())
+	{
+		FString Error;
+		BRR::LoadTournament(DataDir, Tournament, Error);
+		Text.Load(DataDir);
+	}
+	GConfig->GetFloat(Section, TEXT("SoundVolume"), SoundVolume, GGameUserSettingsIni);
+	GConfig->GetFloat(Section, TEXT("MusicVolume"), MusicVolume, GGameUserSettingsIni);
+	GConfig->GetBool(Section, TEXT("Commentary"), bCommentary, GGameUserSettingsIni);
+	GConfig->GetInt(Section, TEXT("Look"), Look, GGameUserSettingsIni);
+	GConfig->GetInt(Section, TEXT("ViewCells"), ViewCells, GGameUserSettingsIni);
+	ApplySettings();
+}
+
+void UBRRGameInstance::ApplySettings() const
+{
+	auto Set = [](const TCHAR* Name, const FString& Value)
+	{
+		if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(Name)) V->Set(*Value, ECVF_SetByGameSetting);
+	};
+	Set(TEXT("brr.SoundVolume"), FString::SanitizeFloat(SoundVolume));
+	Set(TEXT("brr.MusicVolume"), FString::SanitizeFloat(MusicVolume));
+	Set(TEXT("brr.Commentary"), bCommentary ? TEXT("1") : TEXT("0"));
+	Set(TEXT("brr.Look"), FString::FromInt(Look));
+	Set(TEXT("brr.ViewCells"), FString::FromInt(ViewCells));
+	BRRAudio::SetVolumes(SoundVolume, MusicVolume);
+}
+
+void UBRRGameInstance::SaveSettings() const
+{
+	GConfig->SetFloat(Section, TEXT("SoundVolume"), SoundVolume, GGameUserSettingsIni);
+	GConfig->SetFloat(Section, TEXT("MusicVolume"), MusicVolume, GGameUserSettingsIni);
+	GConfig->SetBool(Section, TEXT("Commentary"), bCommentary, GGameUserSettingsIni);
+	GConfig->SetInt(Section, TEXT("Look"), Look, GGameUserSettingsIni);
+	GConfig->SetInt(Section, TEXT("ViewCells"), ViewCells, GGameUserSettingsIni);
+	GConfig->Flush(false, GGameUserSettingsIni);
+	ApplySettings();
+}
+
+bool UBRRGameInstance::IsImported(const FString& Level)
+{
+	return FPackageName::DoesPackageExist(FString::Printf(TEXT("/Game/BRR/%s/L_%s"), *Level, *Level));
+}
+
+TArray<FString> UBRRGameInstance::RaceableLevels() const
+{
+	TArray<FString> Out;
+	for (const FString& L : Tournament.SingleRaceOrder)
+	{
+		if (IsImported(L)) Out.Add(L);
+	}
+	return Out;
+}
+
+void UBRRGameInstance::StartRace(const FString& InLevel, const FString& InVehicle, bool bInPreview)
+{
+	Level = InLevel;
+	Vehicle = InVehicle;
+	bPreview = bInPreview;
+	bRaceFromMenu = true;
+	LastResult = FBRRRaceResult();
+	FString Options = InVehicle.IsEmpty() ? FString() : FString::Printf(TEXT("Vehicle=%s"), *InVehicle);
+	if (bInPreview) Options += Options.IsEmpty() ? TEXT("Preview") : TEXT("?Preview");
+	UGameplayStatics::OpenLevel(this, FName(*FString::Printf(TEXT("/Game/BRR/%s/L_%s"), *InLevel, *InLevel)), true, Options);
+}
+
+void UBRRGameInstance::ReturnToFrontEnd()
+{
+	UGameplayStatics::OpenLevel(this, FName(FrontEndMap), true);
+}
+
+void UBRRGameInstance::StartChampionship()
+{
+	Champ = FBRRChampionship();
+	Champ.bActive = true;
+	// Rounds whose circuits are all missing are skipped, as ORR drops circuits it cannot load.
+	while (CurrentRound() && RoundLevels().IsEmpty()) ++Champ.Round;
+	Champ.bActive = CurrentRound() != nullptr;
+}
+
+const FBRRTournamentRound* UBRRGameInstance::CurrentRound() const
+{
+	return Tournament.Rounds.IsValidIndex(Champ.Round) ? &Tournament.Rounds[Champ.Round] : nullptr;
+}
+
+bool UBRRGameInstance::IsFinalRound() const
+{
+	return Champ.Round == Tournament.Rounds.Num() - 1;
+}
+
+int32 UBRRGameInstance::RoundNeed() const
+{
+	const FBRRTournamentRound* R = CurrentRound();
+	if (!R) return 0;
+	int32 Available = 0;
+	for (const FString& L : R->Levels) Available += IsImported(L);
+	return FMath::Clamp(R->Need, 1, FMath::Max(Available, 1));
+}
+
+TArray<FString> UBRRGameInstance::RoundLevels() const
+{
+	TArray<FString> Out;
+	if (const FBRRTournamentRound* R = CurrentRound())
+	{
+		for (const FString& L : R->Levels)
+		{
+			if (IsImported(L) && !Champ.Raced.Contains(L)) Out.Add(L);
+		}
+	}
+	return Out;
+}
+
+FBRRChampionship::EOutcome UBRRGameInstance::RecordChampionshipRace(const FString& RacedLevel, int32 Place)
+{
+	using EOutcome = FBRRChampionship::EOutcome;
+	Champ.Raced.AddUnique(RacedLevel);
+	if (Place == 1) ++Champ.Wins;
+	const int32 Need = RoundNeed();
+	EOutcome Out = EOutcome::Racing;
+	if (Champ.Wins >= Need && IsFinalRound()) Out = EOutcome::Champion;
+	else if (Champ.Wins >= Need) Out = EOutcome::NextRound;
+	else if (RoundLevels().Num() + Champ.Wins < Need) Out = EOutcome::Eliminated;
+	if (Out == EOutcome::NextRound)
+	{
+		++Champ.Round;
+		Champ.Wins = 0;
+		Champ.Raced.Reset();
+		while (CurrentRound() && RoundLevels().IsEmpty() && !IsFinalRound()) ++Champ.Round;
+	}
+	if (Out == EOutcome::Champion || Out == EOutcome::Eliminated) Champ.bActive = false;
+	Champ.Last = Out;
+	return Out;
+}

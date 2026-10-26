@@ -6,6 +6,7 @@
 #include <string>
 
 #include "formats/game_files.h"
+#include "formats/level_script.h"
 #include "formats/localised_text.h"
 #include "formats/sprite.h"
 #include "formats/texture.h"
@@ -205,3 +206,106 @@ int32 BRR::InterfaceGlyph(TCHAR C)
 {
 	return bigred::interface_glyph(char32_t(C), false);
 }
+
+int32 BRR::InterfaceGlyph(TCHAR C, bool bWibbly)
+{
+	return bigred::interface_glyph(char32_t(C), bWibbly);
+}
+
+bool BRR::LoadScreen(const FString& DataDir, const FString& Archive, const FString& Member, FBRRImage& OutImage, TArray<FColor>& OutPalette, FString& OutError)
+{
+	if (!LoadScreen(DataDir, Archive, Member, OutImage, OutError)) return false;
+	return Guard(Archive, OutError, [&]
+	{
+		const bigred::Blob* Blob = FindMember(DataDir, Archive, Member, OutError);
+		if (!Blob) return false;
+		const std::vector<bigred::RGB> Rgb = bigred::load_palette_rgb(Blob->data(), bigred::kRawPaletteBytes);
+		OutPalette.Reset(int32(Rgb.size()));
+		for (const bigred::RGB& C : Rgb) OutPalette.Add(FColor(C.r, C.g, C.b, 255));
+		return OutPalette.Num() == 256;
+	});
+}
+
+TArray<FString> BRR::LevelCars(const FString& DataDir, const FString& Level)
+{
+	TArray<FString> Out;
+	FString Error;
+	Guard(Level, Error, [&]
+	{
+		const bigred::Blob* Txt = FindMember(DataDir, Level + TEXT(".LEV"), Level.ToUpper() + TEXT(".TXT"), Error);
+		if (!Txt) return false;
+		for (const std::string& Car : bigred::parse_car_list(std::string(Txt->begin(), Txt->end())))
+		{
+			if (!bigred::is_presentation_vehicle(Car)) Out.Add(FromUtf8(Car));
+		}
+		return true;
+	});
+	return Out;
+}
+
+FString BRR::LevelEnvironment(const FString& Level)
+{
+	return FromUtf8(bigred::env_name_for_level(ToUtf8(Level.ToUpper())));
+}
+
+struct FBRRText::FImpl
+{
+	bigred::TextTable Table;
+};
+
+FBRRText::FBRRText() : Impl(MakeUnique<FImpl>()) {}
+FBRRText::~FBRRText() = default;
+
+bool FBRRText::Load(const FString& DataDir, const FString& Language)
+{
+	try
+	{
+		const std::string Dir = ToUtf8(DataDir);
+		return Impl->Table.load(Dir, Language.IsEmpty() ? bigred::config_language(Dir) : ToUtf8(Language.ToUpper()));
+	}
+	catch (const std::exception&)
+	{
+		return false;
+	}
+}
+
+bool FBRRText::IsReady() const { return Impl->Table.ready(); }
+
+FString FBRRText::Text(const FString& Key, const FString& Fallback) const
+{
+	return FromUtf8(Impl->Table.text(ToUtf8(Key), ToUtf8(Fallback)));
+}
+
+TArray<FString> FBRRText::Lines(const FString& Key) const
+{
+	TArray<FString> Out;
+	for (const std::string& L : Impl->Table.text_lines(ToUtf8(Key))) Out.Add(FromUtf8(L));
+	return Out;
+}
+
+TArray<TArray<FString>> FBRRText::MacroLines(const FString& Key) const
+{
+	TArray<TArray<FString>> Out;
+	for (const std::vector<std::string>& L : Impl->Table.macro_lines(ToUtf8(Key)))
+	{
+		TArray<FString>& Row = Out.AddDefaulted_GetRef();
+		for (const std::string& P : L) Row.Add(FromUtf8(P));
+	}
+	return Out;
+}
+
+TArray<FBRRTextRun> FBRRText::Layout(const FString& Key) const
+{
+	TArray<FBRRTextRun> Out;
+	for (const bigred::TextTable::Run& R : Impl->Table.layout(ToUtf8(Key)))
+	{
+		FBRRTextRun& Run = Out.AddDefaulted_GetRef();
+		Run.X = R.x;
+		Run.Y = R.y;
+		Run.Ramp = R.ramp;
+		Run.Font = R.font;
+		Run.Text = FromUtf8(R.text);
+	}
+	return Out;
+}
+

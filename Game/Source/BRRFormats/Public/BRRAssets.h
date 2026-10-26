@@ -51,6 +51,8 @@ namespace BRR
 
 	// Glyph of SML_ALPH.SPR (the interface alphabet) that draws C, or -1.
 	BRRFORMATS_API int32 InterfaceGlyph(TCHAR C);
+	// The same for the menus' wibbly alphabet (WIBS1..5), which differs from SML_ALPH in places.
+	BRRFORMATS_API int32 InterfaceGlyph(TCHAR C, bool bWibbly);
 
 	// Raw bytes of one archive member.
 	BRRFORMATS_API bool LoadMember(const FString& DataDir, const FString& Archive, const FString& Member,
@@ -73,6 +75,47 @@ namespace BRR
 	BRRFORMATS_API bool LoadSprites(const FString& DataDir, const FString& Archive, const FString& Member,
 		const TArray<FColor>& Palette, TArray<FBRRImage>& OutSprites, FString& OutError);
 
+	// A 320x200 screen and the palette it carries (a menu's sprites are drawn through it).
+	BRRFORMATS_API bool LoadScreen(const FString& DataDir, const FString& Archive, const FString& Member,
+		FBRRImage& OutImage, TArray<FColor>& OutPalette, FString& OutError);
+
+	// The vehicles a circuit offers (its script's car list), in order; presentation-only ones left out.
+	BRRFORMATS_API TArray<FString> LevelCars(const FString& DataDir, const FString& Level);
+	// The circuit's theme: DIRT1 -> "DIRT", the .ENV that holds its car screen's picture.
+	BRRFORMATS_API FString LevelEnvironment(const FString& Level);
+
 	// TOURN.TXT from TOURN.WAP.
 	BRRFORMATS_API bool LoadTournament(const FString& DataDir, FBRRTournament& Out, FString& OutError);
 }
+
+// One run of an interface string as the original lays it out (ORR TextTable::layout): `@X` places
+// it on the 320x200 screen (-1 = continues the last), `@C` the colour ramp (drawn in shade 2,
+// palette index Ramp*16+2; -1 = white, index 16), `@F` a font.
+struct FBRRTextRun
+{
+	int32 X = -1, Y = -1;
+	int32 Ramp = -1;
+	int32 Font = -1;
+	FString Text;
+};
+
+// TOURN.<LANG> and START.<LANG>, the interface's strings (ORR formats/localised_text.h). The
+// language is BIGRED.CFG's (`lang`), ENG by default.
+class BRRFORMATS_API FBRRText
+{
+public:
+	FBRRText();
+	~FBRRText();
+	bool Load(const FString& DataDir, const FString& Language = FString());
+	bool IsReady() const;
+	// The words, commands dropped, lines joined by a space; Fallback when the key is not there.
+	FString Text(const FString& Key, const FString& Fallback = FString()) const;
+	TArray<FString> Lines(const FString& Key) const;
+	// `@M` statistics and the like: each line of the entry split at its macros.
+	TArray<TArray<FString>> MacroLines(const FString& Key) const;
+	TArray<FBRRTextRun> Layout(const FString& Key) const;
+
+private:
+	struct FImpl;
+	TUniquePtr<FImpl> Impl;
+};

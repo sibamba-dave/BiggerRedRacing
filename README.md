@@ -38,6 +38,22 @@ UnrealEditor.exe Game\BiggerRedRacing.uproject /Game/BRR/DIRT1/L_DIRT1 -game -Re
 ```
 writes `Game/Saved/Screenshots/WindowsEditor/DIRT1.png` and quits.
 
+## Front end
+Run the game (`-game`, no map) and it starts on the original's menus: single race, the
+championship, options. Each screen is the original's own `.SCN` (picture, sprites, the wibbly
+WIBS lettering and the strings of `TOURN.<LANG>` where its script puts them, its click boxes and
+shortcut keys - `BRR::LoadScn`, `FBRRText`), drawn at 320x200 over a 4:3 picture with the classic
+look, so its pixels are the palette's. The flow is the original's: CONFSCN, GLOBESCN (the circuit:
+its picture stands where the original's 3D globe turns), TRAKSCN (car, preview lap, race; the
+circuit's music starts here), CARSCN (the vehicle turning in front of its picture, its stats),
+the race, RESULSCN. The championship is TOURN.TXT's seven rounds: win the round's `need` of its
+circuits to go on (ORR's rules; for the session only, as in the original). Options: sound
+(music and effects volumes, commentary) and display (the classic view distance, and the look).
+Escape leaves a race for the menus; a preview lap is driven by the autopilot. Settings are saved
+in `GameUserSettings.ini` `[BRR]`. `-BRRMenuWalk=0,0,3` presses those boxes a second and a half
+apart, shooting each screen (`Menu_<n>.png`), then quits; `-1` is Escape, `-2` right, `-3` a sample
+results screen.
+
 ## Racing
 Import a level, open `/Game/BRR/<LEVEL>/L_<LEVEL>` and press Play (or run with `-game`). You drive
 the level's first car (`?Vehicle=ATV` to change) from a grid block chosen as the original does,

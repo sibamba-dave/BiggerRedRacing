@@ -99,6 +99,12 @@ private:
 	TObjectPtr<ABRRAnimDecor> AnimDecor;
 
 	void UpdateAutopilot();
+	// A race started from the front end goes back to it: its results a few seconds after the
+	// player's finish, nothing on Escape; a preview lap (?Preview, driven by the autopilot) on any
+	// of Escape, Enter or Space.
+	void UpdateRaceEnd();
+	bool bPreview = false;
+	double FinishedAt = -1;
 	void UpdateStartLights();
 
 	TArray<FTransform> PrevPose, CurrPose;
