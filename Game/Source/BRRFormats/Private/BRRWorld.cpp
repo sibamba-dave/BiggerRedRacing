@@ -163,6 +163,26 @@ bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<
 			for (const std::pair<int, int>& Range : Scene.lights_ranges)
 				Out.StartLights.Add(ConvertTriangles(Scene.lights_buf, size_t(Range.first), size_t(Range.second), WorldRenderToUE));
 		}
+		for (const bigred::LevelAnim& Anim : Scene.anims) Out.AnimStepSeconds.Add(Anim.step_ms() / 1000.0);
+		const double RenderToCm = InvScale * BRR::CmPerUnit;
+		for (const bigred::SpritePlacement& S : Scene.sprites)
+		{
+			if (S.frames.empty()) continue;
+			FBRRSprite& Sprite = Out.Sprites.AddDefaulted_GetRef();
+			Sprite.Centre = WorldRenderToUE(S.x, S.y, S.z);
+			Sprite.HalfWidth = float(S.half_w * RenderToCm);
+			Sprite.HalfHeight = float(S.half_h * RenderToCm);
+			Sprite.AnimSlot = S.anim_slot;
+			if (S.wreck >= 0 && size_t(S.wreck) < Scene.wrecks.size()) Sprite.WreckInstance = Scene.wrecks[S.wreck].instance;
+			for (const bigred::SpritePlacement::Frame& F : S.frames)
+			{
+				FBRRSprite::FFrame& Frame = Sprite.Frames.AddDefaulted_GetRef();
+				Frame.bOn = F.on;
+				Frame.Atlas = int32(F.layer >= 0 ? F.layer : S.layer);
+				Frame.UV0 = FVector2f(F.u0, F.v0);
+				Frame.UV1 = FVector2f(F.u1, F.v1);
+			}
+		}
 		static_assert(bigred::LevelScene::kWreckStepCount == BRR::WreckStepCount, "flipbook length");
 		for (const bigred::LevelScene::WreckPiece& Piece : Scene.wrecks)
 		{

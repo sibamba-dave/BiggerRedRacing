@@ -407,6 +407,14 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 			for (const FBRRMeshSection& Section : Step.Sections) Assets.MaterialFor(Section.Atlas, Section.bTwoSided);
 		}
 	}
+	// Billboards are built by the race too (ABRRSprites), drawn two-sided.
+	for (const FBRRSprite& Sprite : World.Sprites)
+	{
+		for (const FBRRSprite::FFrame& Frame : Sprite.Frames)
+		{
+			if (Frame.bOn) Assets.MaterialFor(Frame.Atlas, true);
+		}
+	}
 	if (AStaticMeshActor* Preview = SpawnMeshActor(Map, MakeMesh(Assets, FString::Printf(TEXT("SM_%s_WreckPreview"), *Level), WreckPreview, false),
 		FTransform::Identity, TEXT("WreckPreview")))
 	{

@@ -5,7 +5,9 @@
 #include "BRRGhostCar.h"
 #include "BRRRaceHUD.h"
 #include "BRRVehiclePawn.h"
+#include "BRRSprites.h"
 #include "BRRWrecks.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 #include "Components/PrimitiveComponent.h"
@@ -135,6 +137,8 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 	}
 	Wrecks = GetWorld()->SpawnActor<ABRRWrecks>();
 	Wrecks->Build(World.Wrecks, LevelName);
+	Sprites = GetWorld()->SpawnActor<ABRRSprites>();
+	Sprites->Build(World, LevelName);
 	StartLights.Init(nullptr, 4);
 	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
 	{
@@ -233,6 +237,13 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 			if (PC->WasInputKeyJustPressed(EKeys::C) || PC->WasInputKeyJustPressed(EKeys::Gamepad_RightShoulder)) Race->CyclePlayerCamera();
 			if (PC->GetViewTarget() != RaceCamera) PC->SetViewTarget(RaceCamera);
 		}
+	}
+	if (Sprites)
+	{
+		const APlayerController* PC = GetWorld()->GetFirstPlayerController();
+		const FRotator Facing = PC && PC->PlayerCameraManager ? PC->PlayerCameraManager->GetCameraRotation()
+			: RaceCamera ? RaceCamera->GetActorRotation() : FRotator::ZeroRotator;
+		Sprites->Update(*Race, Facing, GetWorld()->GetTimeSeconds());
 	}
 	for (int32 R = 0; R < Ghosts.Num(); ++R)
 	{

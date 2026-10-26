@@ -16,6 +16,7 @@
 class ACameraActor;
 class ABRRGhostCar;
 class ABRRVehiclePawn;
+class ABRRSprites;
 class ABRRWrecks;
 class UStaticMesh;
 struct FBRRVehicleMesh;
@@ -64,6 +65,10 @@ private:
 	// The destructible decor, built from the level at race start.
 	UPROPERTY()
 	TObjectPtr<ABRRWrecks> Wrecks;
+
+	// The billboards, turned to the camera every frame.
+	UPROPERTY()
+	TObjectPtr<ABRRSprites> Sprites;
 
 	void UpdateAutopilot();
 	void UpdateStartLights();

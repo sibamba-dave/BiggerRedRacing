@@ -137,6 +137,25 @@ struct FBRRWreck
 	TArray<int32> StepMesh;
 };
 
+// One of the original's `{13, ...}` billboards: a camera-facing quad of a fixed WORLD size, rebuilt
+// from the camera every frame (ORR LevelScene::sprite_quads).
+struct FBRRSprite
+{
+	struct FFrame
+	{
+		bool bOn = false;
+		int32 Atlas = INDEX_NONE;   // index into FBRRWorld::Atlases
+		FVector2f UV0 = FVector2f::ZeroVector, UV1 = FVector2f::ZeroVector; // top-left .. bottom-right
+	};
+	FVector Centre = FVector::ZeroVector; // UE world space
+	float HalfWidth = 0, HalfHeight = 0;  // cm
+	// What picks the frame: a destructible (Frames[0] standing, 1 + flipbook step once knocked
+	// over), else an `anim` slot (FBRRWorld::AnimStepSeconds), else Frames[0] always.
+	int32 WreckInstance = -1;
+	int32 AnimSlot = -1;
+	TArray<FFrame> Frames;
+};
+
 struct BRRFORMATS_API FBRRWorld
 {
 	FString LevelName;
@@ -159,6 +178,10 @@ struct BRRFORMATS_API FBRRWorld
 	TArray<FBRRMesh> StartLights;
 	// Decor a vehicle can knock over (ORR LevelScene::wrecks). Not in Decor either.
 	TArray<FBRRWreck> Wrecks;
+	TArray<FBRRSprite> Sprites;
+	// Per level-script `anim` slot, how long each step is held. Every instance on a slot is in
+	// phase: the step showing T seconds after the start is floor(T / AnimStepSeconds) mod count.
+	TArray<double> AnimStepSeconds;
 	TArray<FBRRPlacement> Placements;
 	TArray<FBRRGate> Gates;
 	TArray<FBRRStart> Grid;          // retail six-car grid

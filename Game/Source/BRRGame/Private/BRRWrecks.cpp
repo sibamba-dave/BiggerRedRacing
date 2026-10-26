@@ -1,5 +1,6 @@
 #include "BRRWrecks.h"
 
+#include "BRRLevelMaterials.h"
 #include "BRRRace.h"
 #include "BRRWorld.h"
 #include "Components/SceneComponent.h"
@@ -15,12 +16,7 @@ UMaterialInterface* ABRRWrecks::MaterialFor(int32 Atlas, bool bTwoSided)
 {
 	const TPair<int32, bool> Key(Atlas, bTwoSided);
 	if (UMaterialInterface** Found = Materials.Find(Key)) return *Found;
-	// The importer's names (BRRImporter MaterialFor).
-	const FString Name = FString::Printf(TEXT("MI_%s_%s%s"), *LevelName,
-		Atlas == INDEX_NONE ? TEXT("Flat") : *FString::Printf(TEXT("Atlas%02d"), Atlas), bTwoSided ? TEXT("_2S") : TEXT(""));
-	UMaterialInterface* Material = LoadObject<UMaterialInterface>(nullptr,
-		*FString::Printf(TEXT("/Game/BRR/%s/Materials/%s.%s"), *LevelName, *Name, *Name));
-	if (!Material) UE_LOG(LogTemp, Warning, TEXT("BRRWrecks: %s missing - re-import %s"), *Name, *LevelName);
+	UMaterialInterface* Material = BRR::LoadLevelMaterial(LevelName, Atlas, bTwoSided);
 	Materials.Add(Key, Material);
 	MaterialRefs.Add(Material);
 	return Material;

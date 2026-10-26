@@ -48,6 +48,27 @@ bool FBRRWorldDirt1Test::RunTest(const FString& Parameters)
 		}
 		AddInfo(FString::Printf(TEXT("destructibles: %d pieces, %d distinct knock-over poses"), World.Wrecks.Num(), Poses));
 	}
+	if (TestTrue(TEXT("billboards"), World.Sprites.Num() > 0))
+	{
+		int32 OfWrecks = 0, Animated = 0;
+		for (const FBRRSprite& S : World.Sprites)
+		{
+			TestTrue(TEXT("billboard has a size"), S.HalfWidth > 0 && S.HalfHeight > 0);
+			for (const FBRRSprite::FFrame& F : S.Frames)
+			{
+				if (F.bOn) TestTrue(TEXT("billboard frame on a real atlas"), World.Atlases.IsValidIndex(F.Atlas));
+			}
+			if (S.WreckInstance >= 0)
+			{
+				++OfWrecks;
+				TestTrue(TEXT("a destructible's billboard has its flipbook"), S.Frames.Num() == 1 + BRR::WreckStepCount);
+				TestTrue(TEXT("its destructible is exported"), World.Wrecks.ContainsByPredicate([&S](const FBRRWreck& W) { return W.Instance == S.WreckInstance; }));
+			}
+			Animated += S.AnimSlot >= 0 && World.AnimStepSeconds.IsValidIndex(S.AnimSlot);
+		}
+		AddInfo(FString::Printf(TEXT("billboards: %d, %d of destructibles, %d animated; %d anim slots"), World.Sprites.Num(), OfWrecks,
+			Animated, World.AnimStepSeconds.Num()));
+	}
 	if (TestEqual(TEXT("start light states"), World.StartLights.Num(), 4))
 	{
 		for (int32 K = 0; K < 4; ++K)
