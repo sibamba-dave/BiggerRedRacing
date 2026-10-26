@@ -114,7 +114,11 @@ The model is `4x_foolhardy_Remacri.pth` (OpenModelDB; e.g. huggingface.co/uwg/up
 original's art (Real-ESRGAN x4plus, UltraSharp, NMKD Siax, NMKD Superscale, Remacri) it adds the
 most texture without speckling it; x4plus, trained on photographs, smears the ground flat. Terrain
 pages are upscaled tile by tile (the map lays tiles next to unrelated ones), and transparency
-stays crisp.
+stays crisp. The raw upscale (`<hash>_raw.png`) is then held to the original: Remacri reads faint
+dithering (the track dirt) as line art and draws scratches, so low-contrast areas take the smooth
+enlargement and only structure (cobbles, rock edges, lettering) keeps the model's detail;
+`--refinish` redoes that step, and the normal/roughness maps, without the model. Grass and dirt get
+no real detail this way - there is none in the source for a model to find.
 
 ## Reference captures of the original
 The original runs in DOSBox-X for side-by-side checks. Put the portable 64-bit build in
