@@ -28,6 +28,7 @@ public:
 	// The photo last saved, empty before the first.
 	const FString& LastSaved() const { return Saved; }
 
+	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
 
 private:

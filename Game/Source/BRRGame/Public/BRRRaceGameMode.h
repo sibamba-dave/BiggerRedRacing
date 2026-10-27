@@ -110,6 +110,7 @@ private:
 	// The import's MPC_BRR: its DrawDistance is the view distance (brr.ViewCells).
 	UPROPERTY()
 	TObjectPtr<UMaterialParameterCollection> DrawRange;
+	float LastDrawDistance = -1.f; // the last written MPC DrawDistance; -1 forces the first write
 
 	// The billboards, turned to the camera every frame.
 	UPROPERTY()

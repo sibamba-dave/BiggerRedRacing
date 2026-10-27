@@ -557,8 +557,12 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 	if (DrawRange)
 	{
 		const int32 Cells = Look && Look->IsRemastered() ? 0 : CVarViewCells.GetValueOnGameThread();
-		UKismetMaterialLibrary::SetScalarParameterValue(GetWorld(), DrawRange, TEXT("DrawDistance"),
-			Cells > 0 ? float(Cells * BRR::TerrainCellCm) : 0.f);
+		const float Distance = Cells > 0 ? float(Cells * BRR::TerrainCellCm) : 0.f;
+		if (Distance != LastDrawDistance) // an MPC write dirties a uniform buffer for every material on it
+		{
+			LastDrawDistance = Distance;
+			UKismetMaterialLibrary::SetScalarParameterValue(GetWorld(), DrawRange, TEXT("DrawDistance"), Distance);
+		}
 	}
 	if (Sprites)
 	{

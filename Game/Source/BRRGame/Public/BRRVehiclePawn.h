@@ -14,9 +14,7 @@
 #include "BRRVehiclePawn.generated.h"
 
 class UBoxComponent;
-class UCameraComponent;
 class UChaosWheeledVehicleMovementComponent;
-class USpringArmComponent;
 class UStaticMesh;
 class UStaticMeshComponent;
 struct FBRRSurfaceMetrics;
@@ -114,12 +112,6 @@ public:
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UStaticMeshComponent> BodyMesh;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<USpringArmComponent> CameraArm;
-
-	UPROPERTY(VisibleAnywhere)
-	TObjectPtr<UCameraComponent> Camera;
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UChaosWheeledVehicleMovementComponent> Movement;

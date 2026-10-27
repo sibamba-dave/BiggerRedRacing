@@ -49,6 +49,9 @@ int32 UBRRImportCommandlet::Main(const FString& Params)
 			UE_LOG(LogBRRImportCommandlet, Error, TEXT("%s: %s"), *Name, *Error);
 			++Failures;
 		}
+		// Everything is saved by the import; without this, -All holds every level's meshes and
+		// textures to the end and runs out of memory partway down the list.
+		CollectGarbage(RF_NoFlags, true);
 	}
 	UE_LOG(LogBRRImportCommandlet, Display, TEXT("Imported %d/%d levels"), Levels.Num() - Failures, Levels.Num());
 	return Failures == 0 ? 0 : 1;

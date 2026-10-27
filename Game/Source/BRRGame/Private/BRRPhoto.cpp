@@ -26,6 +26,12 @@ ABRRPhoto::ABRRPhoto()
 	SetTickableWhenPaused(true);
 }
 
+void ABRRPhoto::BeginPlay()
+{
+	Super::BeginPlay();
+	SetActorTickEnabled(false); // ticks only while a photo is being taken (Take to Finish)
+}
+
 bool ABRRPhoto::Take(ABRRLook* InLook, int32 InSamples, const FString& InPath)
 {
 	if (IsBusy() || !InLook) return false;
@@ -48,6 +54,7 @@ bool ABRRPhoto::Take(ABRRLook* InLook, int32 InSamples, const FString& InPath)
 	Look->Apply(/*bRemastered=*/true, /*bPathTracing=*/true, /*bFrameGeneration=*/false, /*bNativeResolution=*/true);
 	Step = EStep::Gathering;
 	StepFrame = GFrameCounter;
+	SetActorTickEnabled(true);
 	UE_LOG(LogBRRPhoto, Display, TEXT("Photo: gathering %d samples per pixel"), Samples);
 	return true;
 }
@@ -88,6 +95,7 @@ void ABRRPhoto::Finish()
 	UGameplayStatics::SetGamePaused(World, bWasPaused);
 	Saved = Path;
 	Step = EStep::Idle;
+	SetActorTickEnabled(false);
 	UE_LOG(LogBRRPhoto, Display, TEXT("Photo: saved %s"), *Path);
 	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::White, FString::Printf(TEXT("Photo saved: %s"), *FPaths::GetCleanFilename(Path)));
 }

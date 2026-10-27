@@ -2,14 +2,12 @@
 
 #include "BRRRace.h"
 #include "BRRWorld.h"
-#include "Camera/CameraComponent.h"
 #include "ChaosWheeledVehicleMovementComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Texture2D.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "GameFramework/PlayerController.h"
-#include "GameFramework/SpringArmComponent.h"
 #include "InputCoreTypes.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBRRVehicle, Log, All);
@@ -76,21 +74,8 @@ ABRRVehiclePawn::ABRRVehiclePawn()
 	BodyMesh->SetupAttachment(Chassis);
 	BodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-	CameraArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraArm"));
-	CameraArm->SetupAttachment(Chassis);
-	CameraArm->TargetArmLength = 900.f;
-	CameraArm->SocketOffset = FVector(0, 0, 150.f);
-	CameraArm->SetRelativeRotation(FRotator(-6.f, 0, 0));
-	CameraArm->bEnableCameraLag = true;
-	CameraArm->bEnableCameraRotationLag = true;
-	CameraArm->CameraRotationLagSpeed = 6.f;
-	CameraArm->bInheritPitch = false;
-	CameraArm->bInheritRoll = false;
-	CameraArm->bDoCollisionTest = false;
-
-	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
-	Camera->SetupAttachment(CameraArm);
-	Camera->SetFieldOfView(75.f);
+	// No camera components: the race views through its own RaceCamera, and the spring arm's lag
+	// was a per-tick cost on a camera nothing ever looked through.
 
 	Movement = CreateDefaultSubobject<UChaosWheeledVehicleMovementComponent>(TEXT("Movement"));
 	Movement->SetIsReplicated(false);
