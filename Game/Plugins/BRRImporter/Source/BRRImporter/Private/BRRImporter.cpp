@@ -8,6 +8,7 @@
 #include "Engine/Texture2D.h"
 #include "Engine/Texture2DArray.h"
 #include "BRRRefine.h"
+#include "BRRTrees.h"
 #include "Materials/MaterialExpressionPerInstanceCustomData.h"
 #include "Materials/MaterialExpressionSingleLayerWaterMaterialOutput.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
@@ -1062,6 +1063,10 @@ namespace
 	// there). Up to these angles between faces: the terrain's rolling ground, the scenery's and
 	// the bodies' gentle bends; anything sharper keeps its edge.
 	constexpr float TerrainSmoothing = 50.f, DecorSmoothing = 35.f, BodySmoothing = 25.f;
+	// The remastered look's round versions (BRR::SubdivideSmooth, twice: 16 triangles for one):
+	// folds sharper than these stay creases - a car's panel lines, a building's corners - and the
+	// rest (an inflatable's tubes, a tree's crown, a rock) comes out smooth.
+	constexpr float BodyCrease = 50.f, DecorCrease = 50.f;
 	FBRRMesh Smoothed(const FBRRMesh& Mesh, float MaxAngle)
 	{
 		FBRRMesh Out = Mesh;
@@ -1094,6 +1099,8 @@ namespace
 	{
 		FVehicleAssets Out;
 		Out.Body = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Body"), *Vehicle.Name), Smoothed(Vehicle.Body, BodySmoothing), false, ESurface::Paint);
+		const FBRRMesh RoundBody = BRR::SubdivideSmooth(Vehicle.Body, 2, BodyCrease);
+		MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Body_HD"), *Vehicle.Name), RoundBody, false, ESurface::Paint); // ABRRLook swaps it in
 		double Lowest = Vehicle.Body.GetBounds().Min.Z;
 		for (int32 I = 0; I < Vehicle.Wheels.Num(); ++I)
 		{
@@ -1190,6 +1197,25 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 
 	UStaticMesh* Terrain = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Terrain"), *Level), Smoothed(World.Terrain, TerrainSmoothing), true, ESurface::Ground, true);
 	UStaticMesh* Decor = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Decor"), *Level), Smoothed(World.Decor, DecorSmoothing), true, ESurface::Ground, true);
+	// The remastered look's scenery, rounded, its plants grown again (BRR::FindTrees, GrowTree):
+	// drawn only, the original's collides (as the terrain).
+	TBitArray<> PlantTriangles;
+	const TArray<BRR::FBRRTree> Trees = BRR::FindTrees(World, PlantTriangles);
+	UStaticMesh* DecorHD = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_DecorHD"), *Level),
+		BRR::SubdivideSmooth(BRR::WithoutPlants(World.Decor, PlantTriangles), 2, DecorCrease), false, ESurface::Ground, true);
+	FBRRMesh Grown;
+	for (const BRR::FBRRTree& Tree : Trees)
+	{
+		const FBRRMesh One = BRR::GrowTree(Tree);
+		for (const FBRRMeshSection& Section : One.Sections)
+		{
+			FBRRMeshSection* To = Grown.Sections.FindByPredicate([&](const FBRRMeshSection& S) { return S.bTwoSided == Section.bTwoSided; });
+			if (!To) { To = &Grown.Sections.AddDefaulted_GetRef(); To->bTwoSided = Section.bTwoSided; }
+			To->Vertices.Append(Section.Vertices);
+		}
+	}
+	UE_LOG(LogBRRImport, Display, TEXT("%s: %d plants grown again (%d triangles)"), *Level, Trees.Num(), Grown.NumTriangles());
+	UStaticMesh* TreesHD = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_TreesHD"), *Level), Grown, false, ESurface::Ground, true);
 	// The remastered look's terrain: each triangle cut 4 x 4 onto a smooth surface through the
 	// original's heights (FBRRWorld::RefinedTerrain). Drawn only: the original's collides.
 	FBRRMesh RefinedLand, Water, WaterBed;
@@ -1237,6 +1263,7 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 		for (const FBRRVehicleMesh& Vehicle : Painted.Vehicles)
 		{
 			MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Body_C%d"), *Vehicle.Name, Colour), Smoothed(Vehicle.Body, BodySmoothing), false, ESurface::Paint);
+			MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Body_C%d_HD"), *Vehicle.Name, Colour), BRR::SubdivideSmooth(Vehicle.Body, 2, BodyCrease), false, ESurface::Paint);
 		}
 	}
 
@@ -1258,7 +1285,18 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 			Refined->GetStaticMeshComponent()->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
 		}
 	}
-	SpawnMeshActor(Map, Decor, FTransform::Identity, TEXT("Decor"));
+	if (AStaticMeshActor* Original = SpawnMeshActor(Map, Decor, FTransform::Identity, TEXT("Decor")))
+	{
+		if (DecorHD) Original->Tags.Add(TEXT("BRRClassicOnly")); // hidden in the remastered look, still solid
+	}
+	for (const TPair<UStaticMesh*, const TCHAR*>& Drawn : { MakeTuple(DecorHD, TEXT("DecorHD")), MakeTuple(TreesHD, TEXT("TreesHD")) })
+	{
+		if (AStaticMeshActor* Round = SpawnMeshActor(Map, Drawn.Key, FTransform::Identity, Drawn.Value))
+		{
+			Round->Tags.Add(TEXT("BRRRemasterOnly"));
+			Round->GetStaticMeshComponent()->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+		}
+	}
 
 	// The destructible decor is built by the race (ABRRWrecks) from the level data. Here: every
 	// material its flipbooks read, and a preview of the standing pieces for the editor, which the

@@ -141,6 +141,13 @@ bool FBRRWorldAllContentTest::RunTest(const FString& Parameters)
 			TestTrue(FString::Printf(TEXT("%s has terrain"), *Level), World.Terrain.NumTriangles() > 0);
 			AddInfo(FString::Printf(TEXT("%s: %d terrain / %d decor tris, %d gates, %d cars"), *Level,
 				World.Terrain.NumTriangles(), World.Decor.NumTriangles(), World.Gates.Num(), World.CarList.Num()));
+			// Which scenery it places, and how often (SHAPES lines: what the remastered look may replace).
+			TMap<FString, int32> Shapes;
+			for (const FBRRPlacement& P : World.Placements) ++Shapes.FindOrAdd(P.Shape);
+			Shapes.ValueSort([](int32 A, int32 B) { return A > B; });
+			FString List;
+			for (const TPair<FString, int32>& S : Shapes) List += FString::Printf(TEXT(" %s:%d"), *S.Key, S.Value);
+			AddInfo(FString::Printf(TEXT("SHAPES %s:%s"), *Level, *List));
 		}
 	}
 

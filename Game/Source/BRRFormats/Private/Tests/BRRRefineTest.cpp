@@ -18,6 +18,29 @@ bool FBRRRefineTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("a stone is a twice-cut icosahedron"), Stone.NumTriangles(), 320);
 		const FBox3f Box = Stone.GetBounds();
 		TestTrue(TEXT("a stone is about a metre"), Box.GetSize().X > 60.f && Box.GetSize().X < 160.f);
+
+		// Subdivision: a cube's 90 degree folds are creases (its corners stay); an octahedron's
+		// 109 degree ones are not at a 120 degree crease angle (it rounds towards a sphere).
+		auto Solid = [](const TArray<FVector3f>& P, const TArray<int32>& Idx)
+		{
+			FBRRMesh M;
+			FBRRMeshSection& S = M.Sections.AddDefaulted_GetRef();
+			for (const int32 I : Idx) { FBRRVertex V; V.Position = P[I]; S.Vertices.Add(V); }
+			return M;
+		};
+		const TArray<FVector3f> CubeP = { {0,0,0},{100,0,0},{100,100,0},{0,100,0},{0,0,100},{100,0,100},{100,100,100},{0,100,100} };
+		const TArray<int32> CubeI = { 0,2,1, 0,3,2, 4,5,6, 4,6,7, 0,1,5, 0,5,4, 1,2,6, 1,6,5, 2,3,7, 2,7,6, 3,0,4, 3,4,7 };
+		const FBRRMesh Cube = BRR::SubdivideSmooth(Solid(CubeP, CubeI), 2, 50.f);
+		TestEqual(TEXT("sixteen triangles for one"), Cube.NumTriangles(), 12 * 16);
+		bool bCorner = false;
+		for (const FBRRVertex& V : Cube.Sections[0].Vertices) bCorner |= V.Position.Equals(FVector3f(100, 100, 100), 0.01f);
+		TestTrue(TEXT("a cube keeps its corners"), bCorner);
+		const TArray<FVector3f> OctP = { {100,0,0},{-100,0,0},{0,100,0},{0,-100,0},{0,0,100},{0,0,-100} };
+		const TArray<int32> OctI = { 0,2,4, 2,1,4, 1,3,4, 3,0,4, 2,0,5, 1,2,5, 3,1,5, 0,3,5 };
+		const FBRRMesh Ball = BRR::SubdivideSmooth(Solid(OctP, OctI), 3, 120.f);
+		float Lo = 1e9f, Hi = 0;
+		for (const FBRRVertex& V : Ball.Sections[0].Vertices) Lo = FMath::Min(Lo, V.Position.Size()), Hi = FMath::Max(Hi, V.Position.Size());
+		TestTrue(FString::Printf(TEXT("an octahedron rounds (radius %.0f to %.0f)"), Lo, Hi), Hi / Lo < 1.25f);
 	}
 	const FString DataDir = BRR::GetDataDir();
 	if (DataDir.IsEmpty())

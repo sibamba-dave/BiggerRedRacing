@@ -13,6 +13,10 @@ Usage:
       Cuts it together at the original's timings over its sound: the filmed race shots (30 a
       second), the title cards and the inserts from their own frames, upscaled (title cards
       smoothed as flat art by the engine's BRR::SmoothPixelArt, see -run=BRRUpscaleFrames).
+  Tools/upscale/.venv/Scripts/python -I Tools/brr_film.py homevideo <plan.json> <frames_dir> <model.pth> <out_dir>
+      The filmed inserts upscaled, but left looking like home video: the model's 4x (the project's
+      Remacri) of the deblocked frame only half way over a plain smooth upscale, the camera's grain put back, its colour
+      and its blown highlights kept. Writes <out_dir>/frame_NNNN.png at 1920x1200 for assemble.
 
 The original's frames, sound and the result stay out of git (README): only the shot list and the
 plan, which are timings, are kept (Tools/film/).
@@ -62,6 +66,9 @@ def classify(frame):
     return 'race', ('water' if water > 0.3 else 'land')
 
 
+OVERRIDES = {1259: 'live', 1271: 'live', 1279: 'live', 1319: 'title'}
+
+
 def shots(frames_dir, out):
     files = sorted(glob.glob(os.path.join(frames_dir, 'frame_*.png')))
     prev = None
@@ -92,6 +99,12 @@ def shots(frames_dir, out):
         if kind == 'race' and ground is None:
             ground = 'land'
         result.append({'start': a, 'end': b, 'kind': kind, 'ground': ground})
+    # What the picture alone misreads (by the shot's first frame): the arm insert is too dark for
+    # an insert and the start of it too flat, and DONT STOP's black and white reads as a race.
+    for r in result:
+        r['kind'] = OVERRIDES.get(r['start'], r['kind'])
+        if r['kind'] != 'race':
+            r['ground'] = None
     # Neighbouring titles and inserts are one piece each.
     merged = []
     for s in result:
@@ -176,17 +189,54 @@ def assemble(plan_json, frames_dir, film_dir, audio, out):
     print(out)
 
 
+def homevideo(plan_json, frames_dir, model_path, out_dir):
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import torch
+    import upscale_textures as up
+    with open(plan_json) as fh:
+        data = json.load(fh)
+    model = up.load_model(model_path)
+    os.makedirs(out_dir, exist_ok=True)
+    rng = np.random.default_rng(1996)
+    n = 0
+    for s in data['shots']:
+        if s['kind'] != 'live':
+            continue
+        for f in range(s['start'], s['end']):
+            # The codec's 2x2 and 4x4 blocks smoothed away first: a camcorder is soft, not blocky.
+            from PIL import ImageFilter
+            src = Image.open(os.path.join(frames_dir, f'frame_{f:04d}.png')).convert('RGB')
+            src = src.filter(ImageFilter.MedianFilter(3)).filter(ImageFilter.GaussianBlur(0.9))
+            with torch.no_grad():
+                sharp = up.run(model, np.asarray(src)).astype(np.float32)
+            plain = np.asarray(src.resize((sharp.shape[1], sharp.shape[0]), Image.BICUBIC), dtype=np.float32)
+            # Half the model's detail: sharper than the tape, not a new picture.
+            mixed = Image.fromarray(np.clip(plain * 0.45 + sharp * 0.55, 0, 255).astype(np.uint8)).resize((1920, 1200), Image.LANCZOS)
+            a = np.asarray(mixed, dtype=np.float32)
+            # The camera's grain: a fresh speckle each frame, coarser than a pixel, mostly in the light.
+            grain = rng.normal(0, 1, (600, 960, 1)).astype(np.float32)
+            grain = np.asarray(Image.fromarray(((grain[..., 0] * 40) + 128).clip(0, 255).astype(np.uint8)).resize((1920, 1200), Image.BILINEAR), dtype=np.float32)[..., None] - 128
+            chroma = rng.normal(0, 3, (1, 1, 3)).astype(np.float32)  # a little colour flicker
+            a = a + grain * (0.35 + 0.4 * a / 255.0) * 0.5 + chroma
+            Image.fromarray(np.clip(a, 0, 255).astype(np.uint8)).save(os.path.join(out_dir, f'frame_{f:04d}.png'))
+            n += 1
+    print(f'{n} insert frames into {out_dir}')
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest='cmd', required=True)
     a = sub.add_parser('shots'); a.add_argument('frames'); a.add_argument('out')
     a = sub.add_parser('plan'); a.add_argument('shots'); a.add_argument('out')
+    a = sub.add_parser('homevideo'); a.add_argument('plan'); a.add_argument('frames'); a.add_argument('model'); a.add_argument('out')
     a = sub.add_parser('assemble'); a.add_argument('plan'); a.add_argument('frames'); a.add_argument('film'); a.add_argument('audio'); a.add_argument('out')
     args = p.parse_args()
     if args.cmd == 'shots':
         shots(args.frames, args.out)
     elif args.cmd == 'plan':
         plan(args.shots, args.out)
+    elif args.cmd == 'homevideo':
+        homevideo(args.plan, args.frames, args.model, args.out)
     else:
         assemble(args.plan, args.frames, args.film, args.audio, args.out)
 

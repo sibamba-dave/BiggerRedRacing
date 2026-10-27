@@ -15,7 +15,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogBRRFilm, Log, All);
 
 namespace
 {
-	constexpr int32 SettleFrames = 12; // the image's history (TSR, Lumen, exposure) after a cut
+	constexpr int32 CutSettleFrames = 12; // the image's history (TSR, Lumen, exposure) after a cut
 }
 
 ABRRFilm::ABRRFilm()
@@ -66,9 +66,9 @@ void ABRRFilm::Update(const TArray<FTransform>& Racers, double RaceSeconds, ACam
 	const FVector F = Car.GetUnitAxis(EAxis::X).GetSafeNormal2D();
 	const FVector R = FVector(-F.Y, F.X, 0);
 	const FVector Up = FVector::UpVector;
-	const bool bCut = Frame == -SettleFrames - 1 || Frame < -SettleFrames;
-	if (Frame < -SettleFrames) Frame = -SettleFrames;
-	if (Frame == -SettleFrames) Anchor = P + F * 2600.0 + R * 900.0 + Up * 260.0;
+	const bool bCut = Frame == -CutSettleFrames - 1 || Frame < -CutSettleFrames;
+	if (Frame < -CutSettleFrames) Frame = -CutSettleFrames;
+	if (Frame == -CutSettleFrames) Anchor = P + F * 2600.0 + R * 900.0 + Up * 260.0;
 
 	FVector WantEye, WantLook;
 	float Fov = 62.f;
@@ -119,6 +119,6 @@ void ABRRFilm::Update(const TArray<FTransform>& Racers, double RaceSeconds, ACam
 	if (Frame >= Shot.Frames)
 	{
 		++Current;
-		Frame = -SettleFrames - 1;
+		Frame = -CutSettleFrames - 1;
 	}
 }

@@ -677,27 +677,21 @@
   {
    "start": 1259,
    "end": 1271,
-   "kind": "title",
+   "kind": "live",
    "ground": null
   },
   {
    "start": 1271,
    "end": 1279,
-   "kind": "race",
-   "ground": "land",
-   "circuit": "RUF2",
-   "camera": "high",
-   "racer": 3,
+   "kind": "live",
+   "ground": null,
    "id": 71
   },
   {
    "start": 1279,
    "end": 1293,
-   "kind": "race",
-   "ground": "land",
-   "circuit": "CITY1",
-   "camera": "front",
-   "racer": 4,
+   "kind": "live",
+   "ground": null,
    "id": 72
   },
   {
@@ -739,11 +733,8 @@
   {
    "start": 1319,
    "end": 1325,
-   "kind": "race",
-   "ground": "land",
-   "circuit": "RUF1",
-   "camera": "high",
-   "racer": 2,
+   "kind": "title",
+   "ground": null,
    "id": 77
   },
   {

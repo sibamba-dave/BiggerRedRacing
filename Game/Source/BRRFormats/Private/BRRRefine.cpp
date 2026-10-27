@@ -121,6 +121,138 @@ FBRRMesh BRR::Subdivide(const FBRRMesh& Mesh, int32 Divisions)
 	return SubdivideWith(Mesh, Divisions, &Linear);
 }
 
+namespace
+{
+	FBRRMesh LoopPass(const FBRRMesh& Mesh, float CosCrease)
+	{
+		// The points, welded across sections, and every triangle's three.
+		TMap<FIntVector, int32> Weld;
+		TArray<FVector3f> Points;
+		TArray<FIntVector> Tris;      // point indices
+		TArray<FIntPoint> Where;      // section, first vertex
+		for (int32 S = 0; S < Mesh.Sections.Num(); ++S)
+		{
+			const TArray<FBRRVertex>& V = Mesh.Sections[S].Vertices;
+			for (int32 T = 0; T + 2 < V.Num(); T += 3)
+			{
+				FIntVector Tri;
+				for (int32 K = 0; K < 3; ++K)
+				{
+					const FVector3f& P = V[T + K].Position;
+					const FIntVector Key(FMath::RoundToInt32(P.X * 10.f), FMath::RoundToInt32(P.Y * 10.f), FMath::RoundToInt32(P.Z * 10.f));
+					int32* Found = Weld.Find(Key);
+					if (!Found) { Found = &Weld.Add(Key, Points.Num()); Points.Add(P); }
+					Tri[K] = *Found;
+				}
+				if (Tri.X == Tri.Y || Tri.Y == Tri.Z || Tri.Z == Tri.X) continue; // degenerate
+				Tris.Add(Tri);
+				Where.Add(FIntPoint(S, T));
+			}
+		}
+		auto EdgeKey = [](int32 A, int32 B) { return A < B ? (uint64(A) << 32) | uint32(B) : (uint64(B) << 32) | uint32(A); };
+		struct FEdge { int32 A = 0, B = 0; TArray<int32, TInlineAllocator<2>> Faces; TArray<int32, TInlineAllocator<2>> Opposite; int32 Mid = -1; bool bCrease = false; };
+		TMap<uint64, FEdge> Edges;
+		TArray<FVector3f> FaceNormal;
+		FaceNormal.SetNumUninitialized(Tris.Num());
+		for (int32 F = 0; F < Tris.Num(); ++F)
+		{
+			const FIntVector& T = Tris[F];
+			FaceNormal[F] = ((Points[T.Z] - Points[T.X]) ^ (Points[T.Y] - Points[T.X])).GetSafeNormal();
+			for (int32 K = 0; K < 3; ++K)
+			{
+				const int32 A = T[K], B = T[(K + 1) % 3];
+				FEdge& E = Edges.FindOrAdd(EdgeKey(A, B));
+				E.A = A; E.B = B;
+				E.Faces.Add(F);
+				E.Opposite.Add(T[(K + 2) % 3]);
+			}
+		}
+		// The creases, and each point's neighbours and creased neighbours.
+		TArray<TArray<int32>> Ring, CreaseRing;
+		Ring.SetNum(Points.Num());
+		CreaseRing.SetNum(Points.Num());
+		for (TPair<uint64, FEdge>& Pair : Edges)
+		{
+			FEdge& E = Pair.Value;
+			E.bCrease = E.Faces.Num() != 2 || (FaceNormal[E.Faces[0]] | FaceNormal[E.Faces[1]]) < CosCrease;
+			Ring[E.A].AddUnique(E.B);
+			Ring[E.B].AddUnique(E.A);
+			if (E.bCrease) { CreaseRing[E.A].AddUnique(E.B); CreaseRing[E.B].AddUnique(E.A); }
+		}
+		// The new points: the old moved (even), one on every edge (odd).
+		TArray<FVector3f> Even;
+		Even.SetNumUninitialized(Points.Num());
+		for (int32 P = 0; P < Points.Num(); ++P)
+		{
+			const int32 Creases = CreaseRing[P].Num();
+			if (Creases >= 3) { Even[P] = Points[P]; continue; }          // a corner
+			if (Creases == 2)                                               // along a crease
+			{
+				Even[P] = Points[P] * 0.75f + (Points[CreaseRing[P][0]] + Points[CreaseRing[P][1]]) * 0.125f;
+				continue;
+			}
+			const int32 N = Ring[P].Num();
+			if (N < 3) { Even[P] = Points[P]; continue; }
+			const float Beta = N == 3 ? 3.f / 16.f : 3.f / (8.f * N);
+			FVector3f Sum = FVector3f::ZeroVector;
+			for (const int32 Q : Ring[P]) Sum += Points[Q];
+			Even[P] = Points[P] * (1.f - N * Beta) + Sum * Beta;
+		}
+		TArray<FVector3f> Odd;
+		for (TPair<uint64, FEdge>& Pair : Edges)
+		{
+			FEdge& E = Pair.Value;
+			E.Mid = Odd.Num();
+			Odd.Add(E.bCrease ? (Points[E.A] + Points[E.B]) * 0.5f
+				: (Points[E.A] + Points[E.B]) * 0.375f + (Points[E.Opposite[0]] + Points[E.Opposite[1]]) * 0.125f);
+		}
+
+		// Four triangles for each, the corners' attributes carried and halved along the edges.
+		FBRRMesh Out;
+		Out.Sections.SetNum(Mesh.Sections.Num());
+		for (int32 S = 0; S < Mesh.Sections.Num(); ++S)
+		{
+			Out.Sections[S].Atlas = Mesh.Sections[S].Atlas;
+			Out.Sections[S].bTwoSided = Mesh.Sections[S].bTwoSided;
+			Out.Sections[S].Vertices.Reserve(Mesh.Sections[S].Vertices.Num() * 4);
+		}
+		auto Half = [](const FBRRVertex& A, const FBRRVertex& B)
+		{
+			FBRRVertex M = A;
+			M.UV = (A.UV + B.UV) * 0.5f;
+			M.Color = FColor((A.Color.R + B.Color.R) / 2, (A.Color.G + B.Color.G) / 2, (A.Color.B + B.Color.B) / 2, (A.Color.A + B.Color.A) / 2);
+			M.Normal = FVector3f::ZeroVector;
+			return M;
+		};
+		for (int32 F = 0; F < Tris.Num(); ++F)
+		{
+			const FIntVector& T = Tris[F];
+			const FBRRVertex* V = &Mesh.Sections[Where[F].X].Vertices[Where[F].Y];
+			FBRRVertex C[3], M[3];
+			for (int32 K = 0; K < 3; ++K)
+			{
+				C[K] = V[K];
+				C[K].Position = Even[T[K]];
+				C[K].Normal = FVector3f::ZeroVector;
+				M[K] = Half(V[K], V[(K + 1) % 3]);
+				M[K].Position = Odd[Edges[EdgeKey(T[K], T[(K + 1) % 3])].Mid];
+			}
+			TArray<FBRRVertex>& To = Out.Sections[Where[F].X].Vertices;
+			To.Append({ C[0], M[0], M[2], M[0], C[1], M[1], M[2], M[1], C[2], M[0], M[1], M[2] });
+		}
+		return Out;
+	}
+}
+
+FBRRMesh BRR::SubdivideSmooth(const FBRRMesh& Mesh, int32 Levels, float CreaseAngleDegrees)
+{
+	const float CosCrease = FMath::Cos(FMath::DegreesToRadians(CreaseAngleDegrees));
+	FBRRMesh Out = Mesh;
+	for (int32 L = 0; L < Levels; ++L) Out = LoopPass(Out, CosCrease);
+	SmoothNormals(Out, CreaseAngleDegrees);
+	return Out;
+}
+
 FBRRMesh BRR::RoundWheel(const FBRRMesh& Wheel, const FVector& InAxle, int32 Divisions)
 {
 	const FVector3f Axle = FVector3f(InAxle.GetSafeNormal());

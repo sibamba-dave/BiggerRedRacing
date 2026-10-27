@@ -16,6 +16,14 @@ namespace BRR
 	// Every triangle cut into Divisions x Divisions, its UVs, colour and surface type carried over.
 	BRRFORMATS_API FBRRMesh Subdivide(const FBRRMesh& Mesh, int32 Divisions);
 
+	// The original's faceted shapes made smooth (Loop subdivision, Levels times: each pass cuts
+	// every triangle in four and moves the points towards the limit surface): a tree's blob of a
+	// crown, a rock, an inflatable's tubes come out round. Edges folded more sharply than
+	// CreaseAngle, open edges and edges shared by more than two faces are creases and stay sharp,
+	// so a car's panels and a building's corners keep their lines. UVs and colours are carried
+	// linearly; smooth-shaded at CreaseAngle.
+	BRRFORMATS_API FBRRMesh SubdivideSmooth(const FBRRMesh& Mesh, int32 Levels, float CreaseAngleDegrees);
+
 	// A wheel rounded: subdivided, and every point put back at the distance from the axle its
 	// corners are at, so the original's six- or eight-sided tyre turns into a circle. Smooth-shaded
 	// across the tread, sharp at its shoulders.

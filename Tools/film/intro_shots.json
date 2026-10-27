@@ -425,20 +425,20 @@
   {
    "start": 1259,
    "end": 1271,
-   "kind": "title",
+   "kind": "live",
    "ground": null
   },
   {
    "start": 1271,
    "end": 1279,
-   "kind": "race",
-   "ground": "land"
+   "kind": "live",
+   "ground": null
   },
   {
    "start": 1279,
    "end": 1293,
-   "kind": "race",
-   "ground": "land"
+   "kind": "live",
+   "ground": null
   },
   {
    "start": 1293,
@@ -467,8 +467,8 @@
   {
    "start": 1319,
    "end": 1325,
-   "kind": "race",
-   "ground": "land"
+   "kind": "title",
+   "ground": null
   },
   {
    "start": 1325,
