@@ -24,6 +24,7 @@ ABRRWake::ABRRWake()
 	Foam = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("Foam"));
 	Foam->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Foam->SetCastShadow(false);
+	Foam->SetVisibleInRayTracing(false);
 	SetRootComponent(Foam);
 	PrimaryActorTick.bCanEverTick = false;
 	Tags.Add(TEXT("BRRRemasterOnly"));
@@ -32,7 +33,16 @@ ABRRWake::ABRRWake()
 void ABRRWake::Build(const FBRRWorld& World)
 {
 	Material = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BRR/Materials/M_BRR_Foam.M_BRR_Foam"), nullptr, LOAD_NoWarn | LOAD_Quiet);
-	if (!Material) UE_LOG(LogBRRWake, Warning, TEXT("M_BRR_Foam missing: re-import a level for the wakes"));
+	if (!Material)
+	{
+		UE_LOG(LogBRRWake, Warning, TEXT("M_BRR_Foam missing: re-import a level for the wakes"));
+	}
+	else
+	{
+		// The one section, at capacity, once: frames only refill it (FBRRCardBuffer).
+		Cards.Create(Foam, 0, 4096);
+		Foam->SetMaterial(0, Material);
+	}
 	Rows = World.MapHeight;
 	Cols = World.MapWidth;
 	const double Cell = BRR::TerrainCellCm;
@@ -141,9 +151,13 @@ void ABRRWake::Update(const TArray<FTransform>& Poses, float DeltaSeconds, bool 
 {
 	static const IConsoleVariable* Effects = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.Effects"));
 	bOn = bOn && (!Effects || Effects->GetInt() != 0);
+	if (bOn != bShown)
+	{
+		bShown = bOn;
+		SetActorHiddenInGame(!bOn);
+	}
 	if (!bOn || !Material || Rows == 0)
 	{
-		if (Foam->GetNumSections() > 0) Foam->ClearAllMeshSections();
 		Trails.Reset();
 		Splashes.Reset();
 		return;
@@ -207,19 +221,14 @@ void ABRRWake::Update(const TArray<FTransform>& Poses, float DeltaSeconds, bool 
 	for (FSplash& S : Splashes) S.Age += Dt;
 	Splashes.RemoveAll([](const FSplash& S) { return S.Age > SplashSeconds; });
 
-	// The mesh: strips of quads, UV.y across a strip (its edges soft), the vertex alpha its strength.
-	TArray<FVector> Positions;
-	TArray<int32> Triangles;
-	TArray<FVector2D> UVs;
-	TArray<FColor> Colours;
+	// The mesh: strips of quads, UV.y across a strip (its edges soft), the vertex alpha its
+	// strength, into the section built once at capacity (FBRRCardBuffer).
+	Cards.Begin();
 	auto Quad = [&](const FVector& A0, const FVector& A1, const FVector& B0, const FVector& B1, double AlphaA, double AlphaB, double U0, double U1)
 	{
-		const int32 Base = Positions.Num();
-		Positions.Append({ A0, A1, B0, B1 });
-		UVs.Append({ FVector2D(U0, 0), FVector2D(U0, 1), FVector2D(U1, 0), FVector2D(U1, 1) });
 		const uint8 QA = uint8(FMath::Clamp(AlphaA, 0.0, 1.0) * 255), QB = uint8(FMath::Clamp(AlphaB, 0.0, 1.0) * 255);
-		Colours.Append({ FColor(255, 255, 255, QA), FColor(255, 255, 255, QA), FColor(255, 255, 255, QB), FColor(255, 255, 255, QB) });
-		Triangles.Append({ Base, Base + 1, Base + 2, Base + 1, Base + 3, Base + 2 });
+		Cards.AddQuad(A0, A1, B0, B1, FVector2D(U0, 0), FVector2D(U0, 1), FVector2D(U1, 0), FVector2D(U1, 1),
+			FColor(255, 255, 255, QA), FColor(255, 255, 255, QB), FVector::UpVector);
 	};
 	for (const FTrail& Trail : Trails)
 	{
@@ -282,11 +291,6 @@ void ABRRWake::Update(const TArray<FTransform>& Poses, float DeltaSeconds, bool 
 		}
 	}
 
-	if (Positions.IsEmpty())
-	{
-		if (Foam->GetNumSections() > 0) Foam->ClearAllMeshSections();
-		return;
-	}
 	static double Logged = 0;
 	if (Clock - Logged > 5.0)
 	{
@@ -296,12 +300,10 @@ void ABRRWake::Update(const TArray<FTransform>& Poses, float DeltaSeconds, bool 
 		{
 			int32 Crumbs = 0, OnWater = 0;
 			for (const FTrail& T : Trails) Crumbs += T.Crumbs.Num(), OnWater += T.bOnWater;
-			UE_LOG(LogBRRWake, Display, TEXT("wake: %d on the water, %d points, %d splashes, %d quads"), OnWater, Crumbs, Splashes.Num(), Positions.Num() / 4);
+			UE_LOG(LogBRRWake, Display, TEXT("wake: %d on the water, %d points, %d splashes, %d quads"), OnWater, Crumbs, Splashes.Num(), Cards.Used);
 		}
 	}
-	TArray<FVector> Normals;
-	Normals.Init(FVector::UpVector, Positions.Num());
-	Foam->CreateMeshSection(0, Positions, Triangles, Normals, UVs, Colours, TArray<FProcMeshTangent>(), false);
+	Cards.Commit(Foam, 0);
 	static const IConsoleVariable* Debug = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.WakeDebug"));
 	static UMaterialInterface* Plain = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 	Foam->SetMaterial(0, Debug && Debug->GetInt() == 1 && Plain ? Plain : Material.Get());

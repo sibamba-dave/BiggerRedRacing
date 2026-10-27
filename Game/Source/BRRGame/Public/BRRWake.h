@@ -8,6 +8,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "BRRCardBuffer.h"
 #include "GameFramework/Actor.h"
 
 #include "BRRWake.generated.h"
@@ -39,6 +40,8 @@ private:
 	TObjectPtr<UProceduralMeshComponent> Foam;
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> Material;
+	FBRRCardBuffer Cards;
+	bool bShown = true;
 
 	// The water: its level per map cell (NaN for none), and the remastered ground's height on a
 	// grid Sub per cell across, only near the water (elsewhere +inf).

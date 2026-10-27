@@ -8,58 +8,59 @@ ABRRParticles::ABRRParticles()
 	Puffs = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("Puffs"));
 	Puffs->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Puffs->SetCastShadow(false);
-	Puffs->bUseAsyncCooking = true;
+	Puffs->SetVisibleInRayTracing(false); // camera-facing cards are wrong in a reflection
 	SetRootComponent(Puffs);
 }
 
 void ABRRParticles::Update(const FBRRMesh& Mesh, const FString& Level, bool bStand)
 {
-	int32 Used = 0;
+	// One section per atlas ever seen, built once at capacity and refilled (FBRRCardBuffer): the
+	// field holds at most 100 puffs, so a section never grows past its 128 cards.
+	for (TPair<int32, FBRRCardBuffer>& B : Buffers) B.Value.Begin();
 	for (const FBRRMeshSection& S : Mesh.Sections)
 	{
 		if (S.Atlas == INDEX_NONE || S.Vertices.IsEmpty()) continue;
-		TArray<FVector> Positions;
-		TArray<int32> Triangles;
-		TArray<FVector> Normals;
-		TArray<FVector2D> UVs;
-		TArray<FColor> Colours;
-		for (int32 I = 0; I < S.Vertices.Num(); ++I)
+		FBRRCardBuffer* B = Buffers.Find(S.Atlas);
+		if (!B)
 		{
-			const FBRRVertex& V = S.Vertices[I];
-			Positions.Add(FVector(V.Position));
-			UVs.Add(FVector2D(V.UV));
-			Colours.Add(FColor(V.Color.R, V.Color.G, V.Color.B, 255)); // alpha 255: no liquid
-			Triangles.Add(I);
-		}
-		if (bStand)
-		{
-			// Each card is two triangles: lifted by half its height.
-			for (int32 Q = 0; Q + 5 < Positions.Num(); Q += 6)
-			{
-				double Low = Positions[Q].Z, Mid = 0;
-				for (int32 K = 0; K < 6; ++K) Low = FMath::Min(Low, Positions[Q + K].Z), Mid += Positions[Q + K].Z / 6;
-				for (int32 K = 0; K < 6; ++K) Positions[Q + K].Z += Mid - Low;
-			}
-		}
-		// Lit as the ground they rose from (the remastered look; the classic one is unlit): facing
-		// the camera, a card's own normal is side-on to the sun and the spray and dust come out dark.
-		Normals.Init(FVector::UpVector, Positions.Num());
-		Puffs->CreateMeshSection(Used, Positions, Triangles, Normals, UVs, Colours, TArray<FProcMeshTangent>(), false);
-		TObjectPtr<UMaterialInterface>& Mat = Materials.FindOrAdd(S.Atlas);
-		if (!Mat)
-		{
+			const int32 Section = Buffers.Num();
+			SectionOf.Add(S.Atlas, Section);
+			B = &Buffers.Add(S.Atlas);
+			B->Create(Puffs, Section, 128);
+			B->Begin();
 			// The effects' own (M_BRR_Effect); an older import's ordinary page if there is none.
-			Mat = LoadObject<UMaterialInterface>(nullptr, *FString::Printf(TEXT("/Game/BRR/%s/Materials/MI_%s_Atlas%02d_FX"), *Level, *Level, S.Atlas),
+			UMaterialInterface* Mat = LoadObject<UMaterialInterface>(nullptr, *FString::Printf(TEXT("/Game/BRR/%s/Materials/MI_%s_Atlas%02d_FX"), *Level, *Level, S.Atlas),
 				nullptr, LOAD_NoWarn | LOAD_Quiet);
 			if (!Mat)
 			{
 				Mat = LoadObject<UMaterialInterface>(nullptr, *FString::Printf(TEXT("/Game/BRR/%s/Materials/MI_%s_Atlas%02d_2S"), *Level, *Level, S.Atlas),
 					nullptr, LOAD_NoWarn | LOAD_Quiet);
 			}
+			Puffs->SetMaterial(Section, Mat);
 		}
-		Puffs->SetMaterial(Used, Mat);
-		++Used;
+		for (int32 Q = 0; Q + 5 < S.Vertices.Num(); Q += 6)
+		{
+			FVector P[6];
+			FVector2D Uv[6];
+			FColor C[6];
+			for (int32 K = 0; K < 6; ++K)
+			{
+				const FBRRVertex& V = S.Vertices[Q + K];
+				P[K] = FVector(V.Position);
+				Uv[K] = FVector2D(V.UV);
+				C[K] = FColor(V.Color.R, V.Color.G, V.Color.B, 255); // alpha 255: no liquid
+			}
+			if (bStand)
+			{
+				// Each card is two triangles: lifted by half its height.
+				double Low = P[0].Z, Mid = 0;
+				for (int32 K = 0; K < 6; ++K) Low = FMath::Min(Low, P[K].Z), Mid += P[K].Z / 6;
+				for (int32 K = 0; K < 6; ++K) P[K].Z += Mid - Low;
+			}
+			// Lit as the ground they rose from (the remastered look; the classic one is unlit):
+			// facing the camera, a card's own normal is side-on to the sun and would come out dark.
+			B->AddSix(P, Uv, C, FVector::UpVector);
+		}
 	}
-	for (int32 K = Used; K < Sections; ++K) Puffs->ClearMeshSection(K);
-	Sections = Used;
+	for (TPair<int32, FBRRCardBuffer>& B : Buffers) B.Value.Commit(Puffs, SectionOf[B.Key]);
 }

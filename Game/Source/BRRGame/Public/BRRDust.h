@@ -8,6 +8,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "BRRCardBuffer.h"
 #include "GameFramework/Actor.h"
 
 #include "BRRDust.generated.h"
@@ -56,4 +57,6 @@ private:
 	};
 	TArray<FRacer> Racers;
 	FRandomStream Random{ 1996 };
+	FBRRCardBuffer Cards;
+	bool bShown = true;
 };

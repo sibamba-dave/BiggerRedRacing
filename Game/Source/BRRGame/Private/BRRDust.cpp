@@ -19,6 +19,7 @@ ABRRDust::ABRRDust()
 	Haze = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("Haze"));
 	Haze->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Haze->SetCastShadow(false);
+	Haze->SetVisibleInRayTracing(false);
 	SetRootComponent(Haze);
 	PrimaryActorTick.bCanEverTick = false;
 	Tags.Add(TEXT("BRRRemasterOnly"));
@@ -27,6 +28,12 @@ ABRRDust::ABRRDust()
 void ABRRDust::Build(const FBRRWorld& World)
 {
 	Material = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BRR/Materials/M_BRR_Haze.M_BRR_Haze"), nullptr, LOAD_NoWarn | LOAD_Quiet);
+	if (Material)
+	{
+		// The one section, at capacity, once: frames only refill it (FBRRCardBuffer).
+		Cards.Create(Haze, 0, MaxPuffs);
+		Haze->SetMaterial(0, Material);
+	}
 	Rows = World.MapHeight;
 	Cols = World.MapWidth;
 	CornerZ = World.CornerZ;
@@ -73,9 +80,13 @@ void ABRRDust::Update(const TArray<FTransform>& Poses, const FVector& CameraRigh
 {
 	static const IConsoleVariable* Effects = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.Effects"));
 	bOn = bOn && (!Effects || Effects->GetInt() != 0);
+	if (bOn != bShown)
+	{
+		bShown = bOn;
+		SetActorHiddenInGame(!bOn);
+	}
 	if (!bOn || !Material || Rows == 0)
 	{
-		if (Haze->GetNumSections() > 0) Haze->ClearAllMeshSections();
 		Puffs.Reset();
 		Racers.Reset();
 		return;
@@ -102,7 +113,7 @@ void ABRRDust::Update(const TArray<FTransform>& Poses, const FVector& CameraRigh
 		const double Ground = FMath::Lerp(FMath::Lerp(Z(R, C), Z(R, C + 1), FC), FMath::Lerp(Z(R + 1, C), Z(R + 1, C + 1), FC), FR);
 		if (At.Z - Ground > 250.0) continue;
 		Racer.Since = 0;
-		if (Puffs.Num() >= MaxPuffs) Puffs.RemoveAt(0);
+		if (Puffs.Num() >= MaxPuffs) Puffs.RemoveAtSwap(0); // oldest out; draw order is re-sorted below anyway
 		const double Fast = FMath::Clamp((Speed - MinSpeed) / 3000.0, 0.0, 1.0);
 		const FVector Back = -Velocity.GetSafeNormal2D();
 		FPuff& P = Puffs.AddDefaulted_GetRef();
@@ -111,8 +122,9 @@ void ABRRDust::Update(const TArray<FTransform>& Poses, const FVector& CameraRigh
 		P.Colour = CellDust[R * Cols + C];
 		P.Life = Random.FRandRange(4.0, 6.5);
 		P.Size0 = 150.0 + 100.0 * Fast;
-		P.Size1 = 700.0 + 600.0 * Fast;
-		P.Strength = 0.3 + 0.3 * Fast;
+		// Capped lower than the old 1300: the widest cards were mostly overdraw.
+		P.Size1 = 700.0 + 200.0 * Fast;
+		P.Strength = 0.33 + 0.33 * Fast;
 		P.Spin = Random.FRandRange(0.f, 1.f);
 	}
 	for (FPuff& P : Puffs)
@@ -124,15 +136,13 @@ void ABRRDust::Update(const TArray<FTransform>& Poses, const FVector& CameraRigh
 	}
 	Puffs.RemoveAll([](const FPuff& P) { return P.Age > P.Life; });
 
-	TArray<FVector> Positions;
-	TArray<int32> Triangles;
-	TArray<FVector2D> UVs;
-	TArray<FColor> Colours;
-	// Far ones first: translucent cards over each other.
+	// Far ones first: translucent cards over each other. The cards go into the section built once
+	// at capacity (FBRRCardBuffer); nothing is rebuilt.
 	const FVector Facing = CameraRight ^ CameraUp;
 	TArray<int32> Order;
 	for (int32 I = 0; I < Puffs.Num(); ++I) Order.Add(I);
 	Order.Sort([&](int32 A, int32 B) { return (Puffs[A].Position | Facing) > (Puffs[B].Position | Facing); });
+	Cards.Begin();
 	for (const int32 I : Order)
 	{
 		const FPuff& P = Puffs[I];
@@ -140,21 +150,13 @@ void ABRRDust::Update(const TArray<FTransform>& Poses, const FVector& CameraRigh
 		const double Size = FMath::Lerp(P.Size0, P.Size1, 1.0 - FMath::Square(1.0 - T)) * 0.5;
 		const double Alpha = P.Strength * FMath::Min(P.Age / 0.4, 1.0) * FMath::Square(1.0 - T);
 		const FVector R = CameraRight * Size, U = CameraUp * Size;
-		const int32 Base = Positions.Num();
-		Positions.Append({ P.Position - R - U, P.Position + R - U, P.Position - R + U, P.Position + R + U });
 		// UV across the card, a whole number added to x to seed its noise, so no two look alike.
 		const double Seed = FMath::FloorToDouble(P.Spin * 50.0);
-		UVs.Append({ FVector2D(Seed, 0), FVector2D(Seed + 1, 0), FVector2D(Seed, 1), FVector2D(Seed + 1, 1) });
 		static const IConsoleVariable* Test = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.WakeDebug"));
 		const bool bTest = Test && Test->GetInt() == 2;
 		const FColor C = bTest ? FColor::White : FLinearColor(P.Colour.R, P.Colour.G, P.Colour.B, float(FMath::Clamp(Alpha, 0.0, 1.0))).ToFColor(false);
-		Colours.Append({ C, C, C, C });
-		Triangles.Append({ Base, Base + 1, Base + 2, Base + 1, Base + 3, Base + 2 });
-	}
-	if (Positions.IsEmpty())
-	{
-		if (Haze->GetNumSections() > 0) Haze->ClearAllMeshSections();
-		return;
+		Cards.AddQuad(P.Position - R - U, P.Position + R - U, P.Position - R + U, P.Position + R + U,
+			FVector2D(Seed, 0), FVector2D(Seed + 1, 0), FVector2D(Seed, 1), FVector2D(Seed + 1, 1), C, C, -Facing);
 	}
 	static double Clock = 0, Logged = 0;
 	Clock += Dt;
@@ -164,9 +166,7 @@ void ABRRDust::Update(const TArray<FTransform>& Poses, const FVector& CameraRigh
 		static const IConsoleVariable* Perf = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.LogPerf"));
 		if (Perf && Perf->GetBool()) UE_LOG(LogBRRDust, Display, TEXT("dust: %d puffs"), Puffs.Num());
 	}
-	TArray<FVector> Normals;
-	Normals.Init(-Facing, Positions.Num());
-	Haze->CreateMeshSection(0, Positions, Triangles, Normals, UVs, Colours, TArray<FProcMeshTangent>(), false);
+	Cards.Commit(Haze, 0);
 	static const IConsoleVariable* Debug = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.WakeDebug"));
 	static UMaterialInterface* Plain = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 	Haze->SetMaterial(0, Debug && Debug->GetInt() == 1 && Plain ? Plain : Material.Get());
