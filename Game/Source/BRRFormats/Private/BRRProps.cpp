@@ -17,6 +17,8 @@ BRR::EPropKind BRR::PropKindOf(const FString& Shape)
 	if (S.StartsWith(TEXT("ROCK"))) return EPropKind::Rock;
 	if (S == TEXT("ROADSIGN") || S == TEXT("DIR1") || S == TEXT("DIR2") || S == TEXT("CHEVRONS") || S.StartsWith(TEXT("MSIGN")) || S.StartsWith(TEXT("BILBORD"))
 		|| S == TEXT("SIGN1") || S == TEXT("SIGNPOST") || S == TEXT("BSIGN") || S == TEXT("ARROSIGN") || S == TEXT("ARROW") || S.StartsWith(TEXT("VSIGN"))) return EPropKind::Sign;
+	// The landmarks made again one by one (BuildLandmark).
+	if (S == TEXT("MUDHUT") || S == TEXT("CHINA1") || S == TEXT("PAGODA1") || S == TEXT("PAGODA2") || S == TEXT("BAYWATCH") || S.StartsWith(TEXT("ROCKET"))) return EPropKind::Landmark;
 	if (S.Contains(TEXT("TUNN")) || S.Contains(TEXT("BRIJ")) || S.Contains(TEXT("BRIDGE")) || S.StartsWith(TEXT("BR_")) || S == TEXT("FOOT_BR")
 		|| S.StartsWith(TEXT("RAMP")) || S.StartsWith(TEXT("PLAT")) || S.StartsWith(TEXT("MARSPLA")) || S == TEXT("SUPP") || S == TEXT("HUG_FLR") || S == TEXT("SLOPE")
 		|| S == TEXT("FLAT") || S.StartsWith(TEXT("JOIN")) || S == TEXT("JETTY") || S == TEXT("STEPS") || S == TEXT("HELIPAD") || S == TEXT("OVERHANG")) return EPropKind::Structure;
@@ -88,6 +90,143 @@ namespace
 	}
 
 	const FQuat4f Identity = FQuat4f::Identity;
+
+	// A builder's shapes turned about Z by Angle and set at Origin (in its frame), into another.
+	void Merge(FBuilder& Into, FBuilder& From, float Angle, const FVector3f& Origin)
+	{
+		const FQuat4f Q(FVector3f::UpVector, Angle);
+		for (int32 S = 0; S < 2; ++S)
+			for (FBRRVertex V : From.Mesh.Sections[S].Vertices) { V.Position = Origin + Q.RotateVector(V.Position); Into.Mesh.Sections[S].Vertices.Add(V); }
+	}
+
+	// The landmarks, each in its own way, in their box (the placement's frame), the long way along
+	// X (Along), in the original's upper (roof, nose) and lower (walls, body) colours.
+	void BuildLandmark(const FString& Shape, FBuilder& B, const FBox3f& Box, const FQuat4f& Along, FColor Upper, FColor Lower)
+	{
+		const FVector3f E = Box.GetSize(), C = Box.GetCenter();
+		const FVector3f Foot(C.X, C.Y, Box.Min.Z);
+		const float Long = FMath::Max(E.X, E.Y), Short = FMath::Min(E.X, E.Y), H = E.Z;
+		const FColor Wood(92, 62, 38), Dark(30, 26, 24), Metal(150, 155, 160);
+		if (Shape == TEXT("MUDHUT"))
+		{
+			// A round hut: mud walls, a dark door, a deep thatched cone with a ragged fringe.
+			const float R = Short * 0.42f;
+			B.Lathe(Foot, { {R * 1.04f, -10}, {R, H * 0.48f}, {R * 0.97f, H * 0.5f} }, { Shade(Lower, 0.8f), Lower, Shade(Lower, 1.05f) }, 28);
+			B.Box(Foot + Along.RotateVector(FVector3f(R * 0.98f, 0, H * 0.2f)), FVector3f(4, R * 0.22f, H * 0.2f), Along, Dark);
+			const int32 Sides = 36;
+			FBuilder Roof(7);
+			for (int32 S = 0; S < Sides; ++S)
+			{
+				const int32 N = (S + 1) % Sides;
+				const float A0 = 2.f * PI * S / Sides, A1 = 2.f * PI * (S + 1) / Sides;
+				const float Fr0 = R * (1.28f + 0.06f * Hash(S, 0, 0, 7)), Fr1 = R * (1.28f + 0.06f * Hash(N, 0, 0, 7));
+				const float Lo0 = H * (0.4f - 0.04f * Hash(S, 1, 0, 7)), Lo1 = H * (0.4f - 0.04f * Hash(N, 1, 0, 7));
+				const FVector3f P0(FMath::Cos(A0) * Fr0, FMath::Sin(A0) * Fr0, Lo0), P1(FMath::Cos(A1) * Fr1, FMath::Sin(A1) * Fr1, Lo1), Apex(0, 0, H * 1.02f);
+				const FColor Thatch = Shade(Upper, 0.85f + 0.3f * Hash(S, 2, 0, 7));
+				Roof.Solid(P0, P1, Apex, Shade(Thatch, 0.75f), Shade(Thatch, 0.75f), Shade(Upper, 1.1f), FVector3f(0, 0, H * 0.6f));
+				Roof.Solid(P0, P1, FVector3f(0, 0, H * 0.45f), Shade(Upper, 0.45f), Shade(Upper, 0.45f), Shade(Upper, 0.35f), FVector3f(0, 0, H));
+			}
+			Merge(B, Roof, 0.f, Foot);
+		}
+		else if (Shape == TEXT("CHINA1"))
+		{
+			// A pavilion: red posts, dark walls set in, two hipped roofs with upturned eaves.
+			const float R = Short * 0.36f, Wall = H * 0.45f;
+			for (const float SX : { -1.f, 1.f })
+				for (const float SY : { -1.f, 1.f })
+					B.Lathe(Foot + FVector3f(SX * R, SY * R, 0), { {9, 0}, {8, Wall}, {0, Wall} }, { Lower, Lower, Lower }, 10);
+			B.Box(Foot + FVector3f(0, 0, Wall * 0.5f), FVector3f(R * 0.9f, R * 0.9f, Wall * 0.5f), Identity, Shade(Lower, 0.45f));
+			for (int32 Tier = 0; Tier < 2; ++Tier)
+			{
+				FBuilder Roof(Tier + 11);
+				const float Z0 = Wall + Tier * H * 0.22f, Span = R * (Tier ? 1.05f : 1.55f), Rise = H * (Tier ? 0.32f : 0.22f);
+				Roof.Lathe(FVector3f::ZeroVector, { {Span * 1.04f, Z0 + 10}, {Span, Z0}, {Span * 0.55f, Z0 + Rise * 0.55f}, {Span * 0.12f, Z0 + Rise}, {0, Z0 + Rise} },
+					{ Shade(Upper, 0.9f), Shade(Upper, 0.8f), Upper, Shade(Upper, 1.1f), Shade(Upper, 1.1f) }, 4);
+				// The eaves' corners turned up.
+				for (FBRRVertex& V : Roof.Mesh.Sections[0].Vertices)
+				{
+					const float Out = FVector2f(V.Position.X, V.Position.Y).Size() / Span;
+					if (Out > 0.9f) V.Position.Z += (Out - 0.9f) * Span * 0.6f;
+				}
+				Merge(B, Roof, PI * 0.25f, Foot);
+			}
+			B.Lathe(Foot + FVector3f(0, 0, Wall + H * 0.54f), { {4, 0}, {1, H * 0.12f}, {0, H * 0.12f} }, { Dark, Dark, Dark }, 6);
+		}
+		else if (Shape == TEXT("PAGODA1"))
+		{
+			// A torii's legs: round red pillars on black feet, the tie beam through them.
+			const float Half = Long * 0.5f - Short * 0.4f, R = FMath::Max(Short * 0.32f, 18.f);
+			for (const float S : { -1.f, 1.f })
+			{
+				const FVector3f At = Foot + Along.RotateVector(FVector3f(S * Half, 0, 0));
+				B.Lathe(At, { {R * 1.25f, 0}, {R * 1.2f, H * 0.1f}, {R, H * 0.1f}, {R * 0.88f, H}, {0, H} }, { Dark, Dark, Lower, Lower, Lower }, 20);
+			}
+			B.Box(Foot + FVector3f(0, 0, H * 0.82f), FVector3f(Long * 0.5f + R, R * 0.55f, R * 0.6f), Along, Shade(Lower, 0.95f));
+		}
+		else if (Shape == TEXT("PAGODA2"))
+		{
+			// A torii's top: the black-capped lintel, its ends sweeping up.
+			const int32 Seg = 16;
+			const float Span = Long * 0.5f + 20.f, Depth = FMath::Max(Short * 0.6f, 30.f), Th = FMath::Max(H * 0.3f, 25.f);
+			auto Lift = [&](float T) { return FMath::Pow(FMath::Abs(T), 3.f) * Th * 1.6f; };
+			for (int32 I = 0; I < Seg; ++I)
+			{
+				const float X0 = -Span + 2.f * Span * I / Seg, X1 = -Span + 2.f * Span * (I + 1) / Seg;
+				const float Zm = Box.Max.Z - Th + (Lift(X0 / Span) + Lift(X1 / Span)) * 0.5f;
+				const FVector3f Mid = Foot + Along.RotateVector(FVector3f((X0 + X1) * 0.5f, 0, 0));
+				const float Slope = FMath::Atan2(Lift(X1 / Span) - Lift(X0 / Span), X1 - X0);
+				const FQuat4f Q = Along * FQuat4f(FVector3f::RightVector, -Slope);
+				const float Len = (X1 - X0) * 0.5f + 1.f;
+				B.Box(FVector3f(Mid.X, Mid.Y, Zm + Th * 0.25f), FVector3f(Len, Depth * 0.55f, Th * 0.25f), Q, Dark);
+				B.Box(FVector3f(Mid.X, Mid.Y, Zm - Th * 0.25f), FVector3f(Len, Depth * 0.5f, Th * 0.25f), Q, Lower);
+			}
+		}
+		else if (Shape == TEXT("BAYWATCH"))
+		{
+			// A lifeguard tower: stilts, a deck with a rail, a hut, a sloping roof.
+			const float Deck = H * 0.35f, HX = E.X * 0.42f, HY = E.Y * 0.42f;
+			for (const float SX : { -1.f, 1.f })
+				for (const float SY : { -1.f, 1.f })
+				{
+					B.Lathe(Foot + FVector3f(SX * HX, SY * HY, -20), { {8, 0}, {7, Deck + 20}, {0, Deck + 20} }, { Wood, Wood, Wood }, 8);
+					B.Lathe(Foot + FVector3f(SX * HX, SY * HY, Deck), { {3, 0}, {3, H * 0.2f}, {0, H * 0.2f} }, { Metal, Metal, Metal }, 6);
+				}
+			B.Box(Foot + FVector3f(0, 0, Deck), FVector3f(HX + 10, HY + 10, 6), Identity, Wood);
+			for (const int32 Ax : { 0, 1 })
+				for (const float S : { -1.f, 1.f })
+				{
+					FVector3f At = Foot + FVector3f(0, 0, Deck + H * 0.2f);
+					const FVector3f Half(Ax ? HX : 2.f, Ax ? 2.f : HY, 2.f);
+					At[Ax ? 1 : 0] += S * (Ax ? HY : HX);
+					B.Box(At, Half, Identity, FColor(225, 228, 230));
+				}
+			B.Box(Foot + FVector3f(0, 0, Deck + H * 0.22f), FVector3f(HX * 0.7f, HY * 0.7f, H * 0.22f), Identity, Lower);
+			B.Box(Foot + FVector3f(0, 0, Deck + H * 0.47f), FVector3f(HX * 1.05f, HY * 1.05f, 5), FQuat4f(FVector3f::ForwardVector, 0.08f), Upper);
+		}
+		else // ROCKET0-2: a cartoon rocket: banded body, nose cone, four fins (MOON3's are animated decor, ABRRAnimDecor: none here yet)
+		{
+			const float R = Short * 0.3f;
+			TArray<FVector2f> Body;
+			TArray<FColor> Cols;
+			const int32 Bands = 6;
+			for (int32 K = 0; K <= Bands; ++K)
+			{
+				const float T = float(K) / Bands;
+				const float Rad = R * (0.75f + 0.45f * FMath::Sin(PI * (0.15f + 0.7f * T)));
+				Body.Add({ Rad, H * 0.62f * T });
+				Cols.Add((K & 1) ? Shade(Lower, 0.6f) : Lower);
+				if (K > 0 && K < Bands) { Body.Add({ Rad, H * 0.62f * T + 0.5f }); Cols.Add((K & 1) ? Lower : Shade(Lower, 0.6f)); }
+			}
+			Body.Append({ {R * 0.6f, H * 0.8f}, {R * 0.25f, H * 0.93f}, {0, H} });
+			Cols.Append({ Upper, Upper, Shade(Upper, 1.1f) });
+			B.Lathe(Foot, Body, Cols, 24);
+			for (int32 F = 0; F < 4; ++F)
+			{
+				const FQuat4f Q(FVector3f::UpVector, PI * 0.5f * F + PI * 0.25f);
+				B.Box(Foot + Q.RotateVector(FVector3f(R * 1.05f, 0, H * 0.14f)), FVector3f(R * 0.45f, 3.f, H * 0.14f), Q, Upper);
+			}
+		}
+	}
 	const FColor Metal(150, 155, 160), DarkMetal(42, 44, 48), Rubber(26, 26, 28);
 }
 
@@ -245,6 +384,18 @@ FBRRMesh BRR::BuildProps(const FBRRWorld& World, TBitArray<>& OutReplaced, int32
 			for (FBRRMeshSection& S : Rock.Mesh.Sections)
 				for (FBRRVertex& V : S.Vertices) V.Position.Z = FMath::Max(V.Position.Z, Box.Min.Z - 10.f); // sat in the ground
 			for (int32 S = 0; S < Rock.Mesh.Sections.Num(); ++S) B.Mesh.Sections[S].Vertices.Append(Rock.Mesh.Sections[S].Vertices);
+			break;
+		}
+		case EPropKind::Landmark:
+		{
+			// Its colours: the upper part's (roof, nose) and the lower's (walls, body).
+			TArray<int32> Up, Low;
+			for (const int32 I : All)
+			{
+				const float Z = Local((Tris[I].V[0].Position + Tris[I].V[1].Position + Tris[I].V[2].Position) / 3.f).Z;
+				(Z > Box.Min.Z + E.Z * 0.5f ? Up : Low).Add(I);
+			}
+			BuildLandmark(Place.Shape.ToUpper(), B, Box, Along, Up.IsEmpty() ? Colour : MeanColour(World, Tris, Up), Low.IsEmpty() ? Colour : MeanColour(World, Tris, Low));
 			break;
 		}
 		case EPropKind::Structure:

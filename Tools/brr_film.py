@@ -13,6 +13,11 @@ Usage:
       Cuts it together at the original's timings over its sound: the filmed race shots (30 a
       second), the title cards and the inserts from their own frames, upscaled (title cards
       smoothed as flat art by the engine's BRR::SmoothPixelArt, see -run=BRRUpscaleFrames).
+  Tools/upscale/.venv/Scripts/python -I Tools/brr_film.py upscale <frames_dir> <model.pth> <out_dir>
+      Every frame through a 4x model (the victory video's comic panels: 4x-UltraSharp keeps their
+      lines whole), to 1920x1200.
+  python Tools/brr_film.py encode <frames_dir> <fps> <audio.wav> <out.mp4>
+      The frames as a 1080p video over the sound (the remastered victory video).
   Tools/upscale/.venv/Scripts/python -I Tools/brr_film.py homevideo <plan.json> <frames_dir> <model.pth> <out_dir>
       The filmed inserts upscaled, but left looking like home video: the model's 4x (the project's
       Remacri) of the deblocked frame only half way over a plain smooth upscale, the camera's grain put back, its colour
@@ -223,11 +228,36 @@ def homevideo(plan_json, frames_dir, model_path, out_dir):
     print(f'{n} insert frames into {out_dir}')
 
 
+def upscale_all(frames_dir, model_path, out_dir):
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import torch
+    import upscale_textures as up
+    model = up.load_model(model_path)
+    os.makedirs(out_dir, exist_ok=True)
+    files = sorted(glob.glob(os.path.join(frames_dir, 'frame_*.png')))
+    for f in files:
+        with torch.no_grad():
+            big = up.run(model, np.asarray(Image.open(f).convert('RGB')))
+        Image.fromarray(big).resize((1920, 1200), Image.LANCZOS).save(os.path.join(out_dir, os.path.basename(f)))
+    print(f'{len(files)} frames into {out_dir}')
+
+
+def encode(frames_dir, fps, audio, out):
+    import imageio_ffmpeg
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), '-y', '-framerate', str(fps), '-i', os.path.join(frames_dir, 'frame_%04d.png'), '-i', audio,
+                    '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease:flags=lanczos,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p',
+                    '-r', '30', '-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-c:a', 'aac', '-b:a', '192k', out], check=True)
+    print(out)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest='cmd', required=True)
     a = sub.add_parser('shots'); a.add_argument('frames'); a.add_argument('out')
     a = sub.add_parser('plan'); a.add_argument('shots'); a.add_argument('out')
+    a = sub.add_parser('upscale'); a.add_argument('frames'); a.add_argument('model'); a.add_argument('out')
+    a = sub.add_parser('encode'); a.add_argument('frames'); a.add_argument('fps'); a.add_argument('audio'); a.add_argument('out')
     a = sub.add_parser('homevideo'); a.add_argument('plan'); a.add_argument('frames'); a.add_argument('model'); a.add_argument('out')
     a = sub.add_parser('assemble'); a.add_argument('plan'); a.add_argument('frames'); a.add_argument('film'); a.add_argument('audio'); a.add_argument('out')
     args = p.parse_args()
@@ -235,6 +265,10 @@ def main():
         shots(args.frames, args.out)
     elif args.cmd == 'plan':
         plan(args.shots, args.out)
+    elif args.cmd == 'upscale':
+        upscale_all(args.frames, args.model, args.out)
+    elif args.cmd == 'encode':
+        encode(args.frames, args.fps, args.audio, args.out)
     elif args.cmd == 'homevideo':
         homevideo(args.plan, args.frames, args.model, args.out)
     else:

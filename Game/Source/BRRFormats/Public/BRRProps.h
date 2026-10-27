@@ -12,7 +12,7 @@ namespace BRR
 	// Building: its box-like parts kept crisp and detailed (cornice, plinth, corners, a roof's
 	// plant); Structure: what a car drives on or through (ramps, platforms, bridges, tunnels),
 	// kept exactly as the race has it, never rounded.
-	enum class EPropKind : uint8 { None, Tyres, Cone, Haybale, Fence, Barrier, Lamp, Pole, Rock, Sign, Building, Structure };
+	enum class EPropKind : uint8 { None, Tyres, Cone, Haybale, Fence, Barrier, Lamp, Pole, Rock, Sign, Building, Structure, Landmark };
 
 	// What a decor shape (FBRRPlacement::Shape) is, as furniture.
 	BRRFORMATS_API EPropKind PropKindOf(const FString& Shape);

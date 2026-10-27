@@ -114,6 +114,7 @@ namespace
 	{
 	public:
 		FString Path;
+		TFunction<void(ABRRFrontEndGameMode&)> Then;
 		double Elapsed = 0;
 
 		virtual bool Load() override
@@ -150,8 +151,10 @@ namespace
 		void Finish()
 		{
 			ABRRFrontEndGameMode& M = *Menu;
+			TFunction<void(ABRRFrontEndGameMode&)> Next = MoveTemp(Then);
 			M.StopMovie();
 			M.Pop();
+			if (Next) Next(M);
 		}
 		virtual void OnBox(int32) override { Finish(); }
 		virtual void OnBack() override { Finish(); }
@@ -159,6 +162,16 @@ namespace
 
 	TSharedRef<FBRRMenuScreen> MakeVideo(const FString& Path, TFunction<void(ABRRFrontEndGameMode&)> Then = nullptr)
 	{
+		// The remastered look's own version, where it has been made (Tools/brr_film.py): the
+		// intro's Saved/Remaster/Intro.mp4, the victory's Victory.mp4.
+		const FString Remastered = FPaths::ProjectSavedDir() / TEXT("Remaster") / (Path.EndsWith(TEXT(".MVI")) ? TEXT("Victory.mp4") : TEXT("Intro.mp4"));
+		if (BRRArt::SmoothWanted() && FPaths::FileExists(Remastered))
+		{
+			TSharedRef<FMovieScreen> Movie = MakeShared<FMovieScreen>();
+			Movie->Path = Remastered;
+			Movie->Then = MoveTemp(Then);
+			return Movie;
+		}
 		TSharedRef<FVideoScreen> S = MakeShared<FVideoScreen>();
 		S->Path = Path;
 		S->Then = MoveTemp(Then);
@@ -839,20 +852,9 @@ void BRRMenu::Open(ABRRFrontEndGameMode& Menu)
 		G->bIntroShown = true;
 		if (!FParse::Param(FCommandLine::Get(), TEXT("nointro")) && !FParse::Param(FCommandLine::Get(), TEXT("BRRMenuWalk")))
 		{
-			// The remastered look's own, where it has been made (Tools/brr_film.py); else the original.
-			const FString Remastered = FPaths::ProjectSavedDir() / TEXT("Remaster/Intro.mp4");
-			if (BRRArt::SmoothWanted() && FPaths::FileExists(Remastered))
-			{
-				TSharedRef<FMovieScreen> Movie = MakeShared<FMovieScreen>();
-				Movie->Path = Remastered;
-				Menu.Push(Movie);
-			}
-			else
-			{
-				FString Intro = Menu.DataDir() / TEXT("../VIDEO/INTROSND.RPL");
-				FPaths::CollapseRelativeDirectories(Intro);
-				Menu.Push(MakeVideo(Intro));
-			}
+			FString Intro = Menu.DataDir() / TEXT("../VIDEO/INTROSND.RPL");
+			FPaths::CollapseRelativeDirectories(Intro);
+			Menu.Push(MakeVideo(Intro)); // the remastered look's own where there is one
 		}
 	}
 	if (!G->bRaceFromMenu) return;
