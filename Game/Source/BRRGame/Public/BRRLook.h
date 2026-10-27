@@ -28,6 +28,7 @@ class APostProcessVolume;
 class ASkyAtmosphere;
 class ASkyLight;
 class AVolumetricCloud;
+class UMaterialInstanceDynamic;
 class UMaterialParameterCollection;
 class UStaticMesh;
 
@@ -46,8 +47,23 @@ public:
 	bool IsRemastered() const { return bRemastered; }
 
 	// The race's weather and hour (ABRRWeather): the sun this many degrees up (its bearing the
-	// level's own), this bright against a clear day's, and the mist's density.
-	void SetMood(float SunElevation, float SunBrightness, float MistDensity);
+	// level's own) and this bright against a clear day's, the mist's density, how overcast the
+	// clouds stand, and how soaked the ground lies (MPC_BRR.Wetness: the ground blend darkens and
+	// polishes; the classic look reads none of it).
+	struct FBRRMood
+	{
+		float SunElevation = 35.f;   // degrees
+		float SunBrightness = 1.f;   // against a clear day
+		float MistDensity = 0.002f;  // fog density
+		float CloudCoverage = 0.3f;  // 0 a few wisps .. 1 overcast
+		float Wetness = 0.f;         // 0 dry .. 1 soaked
+	};
+	void SetMood(const FBRRMood& Mood);
+
+	// Fires after Apply switches the look (classic <-> remastered), with the new state: the race
+	// re-syncs what it keeps per look (its lights; the dual-look wrecks and decor).
+	DECLARE_MULTICAST_DELEGATE_OneParam(FOnBRRLookChanged, bool /*bRemastered*/);
+	FOnBRRLookChanged OnLookChanged;
 
 	// Which upscaler the remastered look runs ("DLSS" or "TSR").
 	FString Upscaler() const;
@@ -70,6 +86,8 @@ private:
 	TObjectPtr<ASkyLight> SkyLight;
 	UPROPERTY()
 	TObjectPtr<AVolumetricCloud> Clouds;
+	UPROPERTY()
+	TObjectPtr<UMaterialInstanceDynamic> CloudMID; // the engine cloud material, so the mood can drive its coverage
 	UPROPERTY()
 	TObjectPtr<AExponentialHeightFog> Fog;
 	UPROPERTY()

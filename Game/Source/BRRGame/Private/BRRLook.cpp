@@ -16,6 +16,7 @@
 #include "EngineUtils.h"
 #include "HAL/IConsoleManager.h"
 #include "Kismet/KismetMaterialLibrary.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "Engine/Engine.h"
@@ -58,7 +59,10 @@ void ABRRLook::Build(const FVector& SunDirection, UMaterialParameterCollection* 
 	if (UMaterialInterface* CloudMaterial = LoadObject<UMaterialInterface>(nullptr,
 		TEXT("/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst.m_SimpleVolumetricCloud_Inst")))
 	{
-		Clouds->GetComponentByClass<UVolumetricCloudComponent>()->SetMaterial(CloudMaterial);
+		// Dynamic, so the weather can set how overcast it stands (Cloud_GlobalCoverage/Density
+		// are the engine material's own parameters).
+		CloudMID = UMaterialInstanceDynamic::Create(CloudMaterial, this);
+		Clouds->GetComponentByClass<UVolumetricCloudComponent>()->SetMaterial(CloudMID);
 	}
 
 	Fog = World->SpawnActor<AExponentialHeightFog>(AExponentialHeightFog::StaticClass(), FTransform::Identity, Params);
@@ -97,16 +101,27 @@ void ABRRLook::Build(const FVector& SunDirection, UMaterialParameterCollection* 
 	P.VignetteIntensity = 0.25f;
 }
 
-void ABRRLook::SetMood(float SunElevation, float SunBrightness, float MistDensity)
+void ABRRLook::SetMood(const FBRRMood& Mood)
 {
 	if (Sun)
 	{
 		FRotator R = Sun->GetActorRotation();
-		R.Pitch = -FMath::Clamp(SunElevation, 2.f, 85.f);
+		R.Pitch = -FMath::Clamp(Mood.SunElevation, 2.f, 85.f);
 		Sun->SetActorRotation(R);
-		Sun->GetLightComponent()->SetIntensity(10.f * SunBrightness);
+		ULightComponent* Light = Sun->GetLightComponent();
+		Light->SetIntensity(10.f * Mood.SunBrightness);
+		// A low sun is a warm one: 3,200 K at dawn or dusk up to daylight's 6,500 K by mid-morning.
+		Light->SetUseTemperature(true);
+		Light->SetTemperature(FMath::Lerp(3200.f, 6500.f, FMath::Clamp((Mood.SunElevation - 10.f) / 25.f, 0.f, 1.f)));
 	}
-	if (Fog) Fog->GetComponent()->SetFogDensity(MistDensity);
+	if (Fog) Fog->GetComponent()->SetFogDensity(Mood.MistDensity);
+	if (CloudMID)
+	{
+		CloudMID->SetScalarParameterValue(TEXT("Cloud_GlobalCoverage"), FMath::Clamp(Mood.CloudCoverage, 0.05f, 0.98f));
+		CloudMID->SetScalarParameterValue(TEXT("Cloud_GlobalDensity"), FMath::Lerp(0.2f, 0.6f, Mood.CloudCoverage));
+	}
+	// The soaked ground: the materials' blend darkens and polishes by it (classic reads none).
+	if (Collection) UKismetMaterialLibrary::SetScalarParameterValue(GetWorld(), Collection, TEXT("Wetness"), Mood.Wetness);
 	if (SkyLight) SkyLight->GetLightComponent()->RecaptureSky();
 }
 
@@ -130,6 +145,7 @@ void ABRRLook::Apply(bool bInRemastered, bool bInPathTracing, bool bInFrameGener
 	bInFrameGeneration = bInRemastered && bInFrameGeneration;
 	if (bApplied && bInRemastered == bRemastered && bInPathTracing == bPathTracing && bInFrameGeneration == bFrameGeneration
 		&& bInNativeResolution == bNativeResolution) return;
+	const bool bLookChanged = !bApplied || bInRemastered != bRemastered;
 	bApplied = true;
 	bFrameGeneration = bInFrameGeneration;
 	bNativeResolution = bInNativeResolution;
@@ -199,4 +215,5 @@ void ABRRLook::Apply(bool bInRemastered, bool bInPathTracing, bool bInFrameGener
 	SetCVar(TEXT("r.PathTracing.Denoiser"), bPathTracing ? 1 : 0); // the engine's NNE denoiser, on the gathered samples
 	SetCVar(TEXT("r.PathTracing.ProgressDisplay"), 0);
 	if (GEngine) GEngine->Exec(World, bPathTracing ? TEXT("ShowFlag.PathTracing 1") : TEXT("ShowFlag.PathTracing 0"));
+	if (bLookChanged) OnLookChanged.Broadcast(bRemastered);
 }

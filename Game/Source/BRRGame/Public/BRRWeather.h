@@ -36,6 +36,10 @@ public:
 	// What was drawn, for the log and the menus.
 	FString Describe() const;
 
+	// The drawn hour and rain, for whoever lights by them (the race's head and lamp lights).
+	float SunElevationDegrees() const { return SunElevation; }
+	float RainStrength() const { return Kind == EFall::Rain ? Strength : 0.f; }
+
 private:
 	UPROPERTY()
 	TObjectPtr<UProceduralMeshComponent> Fall;

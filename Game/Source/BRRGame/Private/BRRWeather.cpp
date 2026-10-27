@@ -61,7 +61,18 @@ void ABRRWeather::Build(const FString& Level, ABRRLook* Look)
 	const float Sun = 1.f - 0.75f * Strength;
 	const float WindAngle = Random.FRandRange(0.f, 2.f * PI), WindSpeed = Random.FRandRange(100.f, 600.f) * (0.4f + Strength);
 	Wind = FVector(FMath::Cos(WindAngle), FMath::Sin(WindAngle), 0) * WindSpeed;
-	if (Look) Look->SetMood(SunElevation, Sun, Mist);
+	if (Look)
+	{
+		// The sky wears the weather: overcast with the fall's strength and the mist, and the
+		// ground soaked when it rains (snow lands dry: the ground is already white).
+		ABRRLook::FBRRMood Mood;
+		Mood.SunElevation = SunElevation;
+		Mood.SunBrightness = Sun;
+		Mood.MistDensity = Mist;
+		Mood.CloudCoverage = FMath::Clamp(0.15f + 0.8f * Strength + (Mist - 0.002f) * 8.f, 0.1f, 0.95f);
+		Mood.Wetness = Kind == EFall::Rain ? Strength : 0.f;
+		Look->SetMood(Mood);
+	}
 
 	// The box of drops, built once: all four corners of a quad sit on the drop's point, and the
 	// material (M_BRR_Rain / M_BRR_Snow) falls, wraps and spreads them in the shader. The only

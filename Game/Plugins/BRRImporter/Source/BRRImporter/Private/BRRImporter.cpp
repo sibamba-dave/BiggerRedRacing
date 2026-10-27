@@ -392,12 +392,17 @@ namespace
 		ToTangent->Input.Connect(0, World);
 		ToTangent->TransformSourceType = TRANSFORMSOURCE_World;
 		ToTangent->TransformType = TRANSFORM_Tangent;
+		UMaterialExpression* Wet = MakeCollectionValue(Mat, Collection, TEXT("Wetness"), -1400, 2000);
 		const TCHAR* On = TEXT("float on = R > 0.5 ? saturate(1 - (Z - 4000) / 12000) : 0;\n");
 		TArray<TTuple<FName, UMaterialExpression*, int32>> Common = {
 			MakeTuple(FName(TEXT("R")), Remaster, 0), MakeTuple(FName(TEXT("Z")), Depth, 0), MakeTuple(FName(TEXT("T")), (UMaterialExpression*)Sample, 0) };
 		TArray<TTuple<FName, UMaterialExpression*, int32>> ColourInputs = Common;
 		ColourInputs.Add(MakeTuple(FName(TEXT("C")), Colour, ColourOutput));
-		UMaterialExpressionCustom* NewColour = MakeCustomOutputs(Mat, FString(On) + TEXT("return C.rgb * lerp(1, T.a * 2, on * 0.55);"), CMOT_Float3, ColourInputs, 1700);
+		ColourInputs.Add(MakeTuple(FName(TEXT("Wet")), Wet, 0));
+		// Rain-soaked ground reads darker; the darkening rides `on`, so the classic look (R = 0)
+		// never sees it.
+		UMaterialExpressionCustom* NewColour = MakeCustomOutputs(Mat, FString(On) +
+			TEXT("return C.rgb * lerp(1, T.a * 2, on * 0.55) * lerp(1.0, 0.62, Wet * on);"), CMOT_Float3, ColourInputs, 1700);
 		TArray<TTuple<FName, UMaterialExpression*, int32>> DetailInputs = Common;
 		DetailInputs.Add(MakeTuple(FName(TEXT("D")), Detail, 0));
 		DetailInputs.Add(MakeTuple(FName(TEXT("G")), (UMaterialExpression*)ToTangent, 0));
@@ -471,16 +476,21 @@ namespace
 		};
 		UMaterialExpression* Rough = Scalar(TEXT("Roughness"), 0.75f, 1000);
 		UMaterialExpression* Shine = Scalar(TEXT("Specular"), 0.35f, 1100);
+		UMaterialExpression* Wet = MakeCollectionValue(Mat, Collection, TEXT("Wetness"), -800, 1200);
 		auto Part = [&](const TCHAR* Code, ECustomMaterialOutputType Type, int32 Y)
 		{
 			return MakeCustomOutputs(Mat, FString::Printf(TEXT("int k = (int)K;\n%s"), Code), Type,
 				{ MakeTuple(FName(TEXT("C")), Colour, ColourOutput), MakeTuple(FName(TEXT("R")), Remaster, 0), MakeTuple(FName(TEXT("K")), (UMaterialExpression*)Kind, 0),
-				  MakeTuple(FName(TEXT("Rough")), Rough, 0), MakeTuple(FName(TEXT("Shine")), Shine, 0), MakeTuple(FName(TEXT("D")), Detail, 0) }, Y);
+				  MakeTuple(FName(TEXT("Rough")), Rough, 0), MakeTuple(FName(TEXT("Shine")), Shine, 0), MakeTuple(FName(TEXT("D")), Detail, 0),
+				  MakeTuple(FName(TEXT("Wet")), Wet, 0) }, Y);
 		};
 		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return C.rgb * (1 - R) + (k == 3 ? C.rgb * 16.0 : 0);"), CMOT_Float3, 0), TEXT(""), MP_EmissiveColor);
 		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return C.rgb * R * (k == 1 ? 0.35 : k == 3 ? 0.02 : 1.0);"), CMOT_Float3, 100), TEXT(""), MP_BaseColor);
 		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return R * (k == 1 || k == 2 ? 0.5 : Shine);"), CMOT_Float1, 200), TEXT(""), MP_Specular);
-		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return k == 1 ? 0.03 : k == 2 ? 0.1 : k == 3 ? 0.55 : saturate(Rough + (D.w - 0.5));"), CMOT_Float1, 300), TEXT(""), MP_Roughness);
+		// Rain polishes what it soaks (Wet rides R: the classic look stays matte-unlit).
+		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT(
+			"float r = k == 1 ? 0.03 : k == 2 ? 0.1 : k == 3 ? 0.55 : saturate(Rough + (D.w - 0.5));\n"
+			"return lerp(r, min(r, 0.25), Wet * R);"), CMOT_Float1, 300), TEXT(""), MP_Roughness);
 
 		UMaterialExpression* ToTangent = MakeRipples(Mat);
 		UMaterialExpressionCustom* Normal = MakeCustomOutputs(Mat, TEXT("return K == 1 ? normalize(N) : R > 0.5 ? normalize(D.xyz) : float3(0, 0, 1);"), CMOT_Float3,
@@ -511,10 +521,12 @@ namespace
 				Racer.DefaultValue = FLinearColor(0, 0, 0, 0);
 				Collection->VectorParameters.Add(Racer);
 			}
-			for (const TCHAR* Name : { TEXT("WeatherVelX"), TEXT("WeatherVelY"), TEXT("WeatherFall") })
+			for (const TCHAR* Name : { TEXT("WeatherVelX"), TEXT("WeatherVelY"), TEXT("WeatherFall"), TEXT("Wetness") })
 			{
-				// The falling weather's drift and fall speeds (cm/s), set once per race
-				// (ABRRWeather): M_BRR_Rain and M_BRR_Snow move every drop in the shader.
+				// The falling weather's drift and fall speeds (cm/s) and how soaked the ground
+				// lies (0..1), set once per race (ABRRWeather / ABRRLook::SetMood): M_BRR_Rain and
+				// M_BRR_Snow move every drop in the shader, and the ground blend darkens and
+				// polishes by the wetness. All are remaster-gated where read.
 				FCollectionScalarParameter P;
 				P.ParameterName = Name;
 				P.DefaultValue = 0.f;
