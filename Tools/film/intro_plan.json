@@ -1,0 +1,1681 @@
+{
+ "fps": 15,
+ "frames": 3300,
+ "shots": [
+  {
+   "start": 0,
+   "end": 40,
+   "kind": "title",
+   "ground": null
+  },
+  {
+   "start": 40,
+   "end": 70,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT1",
+   "camera": "chase",
+   "racer": 0,
+   "id": 1
+  },
+  {
+   "start": 70,
+   "end": 78,
+   "kind": "title",
+   "ground": null
+  },
+  {
+   "start": 78,
+   "end": 106,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER1",
+   "camera": "side",
+   "racer": 1,
+   "id": 3
+  },
+  {
+   "start": 106,
+   "end": 120,
+   "kind": "title",
+   "ground": null
+  },
+  {
+   "start": 120,
+   "end": 136,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT2",
+   "camera": "trackside",
+   "racer": 2,
+   "id": 5
+  },
+  {
+   "start": 136,
+   "end": 174,
+   "kind": "title",
+   "ground": null
+  },
+  {
+   "start": 174,
+   "end": 208,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT3",
+   "camera": "high",
+   "racer": 3,
+   "id": 7
+  },
+  {
+   "start": 208,
+   "end": 225,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER2",
+   "camera": "front",
+   "racer": 4,
+   "id": 8
+  },
+  {
+   "start": 225,
+   "end": 243,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF1",
+   "camera": "chase",
+   "racer": 5,
+   "id": 9
+  },
+  {
+   "start": 243,
+   "end": 254,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER3",
+   "camera": "side",
+   "racer": 0,
+   "id": 10
+  },
+  {
+   "start": 254,
+   "end": 264,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER1",
+   "camera": "trackside",
+   "racer": 1,
+   "id": 11
+  },
+  {
+   "start": 264,
+   "end": 270,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER2",
+   "camera": "high",
+   "racer": 2,
+   "id": 12
+  },
+  {
+   "start": 270,
+   "end": 276,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF2",
+   "camera": "front",
+   "racer": 3,
+   "id": 13
+  },
+  {
+   "start": 276,
+   "end": 282,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "CITY1",
+   "camera": "chase",
+   "racer": 4,
+   "id": 14
+  },
+  {
+   "start": 282,
+   "end": 288,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT1",
+   "camera": "side",
+   "racer": 5,
+   "id": 15
+  },
+  {
+   "start": 288,
+   "end": 294,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT2",
+   "camera": "trackside",
+   "racer": 0,
+   "id": 16
+  },
+  {
+   "start": 294,
+   "end": 312,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT3",
+   "camera": "high",
+   "racer": 1,
+   "id": 17
+  },
+  {
+   "start": 312,
+   "end": 329,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF1",
+   "camera": "front",
+   "racer": 2,
+   "id": 18
+  },
+  {
+   "start": 329,
+   "end": 347,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER3",
+   "camera": "chase",
+   "racer": 3,
+   "id": 19
+  },
+  {
+   "start": 347,
+   "end": 366,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER1",
+   "camera": "side",
+   "racer": 4,
+   "id": 20
+  },
+  {
+   "start": 366,
+   "end": 383,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF2",
+   "camera": "trackside",
+   "racer": 5,
+   "id": 21
+  },
+  {
+   "start": 383,
+   "end": 389,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "CITY1",
+   "camera": "high",
+   "racer": 0,
+   "id": 22
+  },
+  {
+   "start": 389,
+   "end": 395,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER2",
+   "camera": "front",
+   "racer": 1,
+   "id": 23
+  },
+  {
+   "start": 395,
+   "end": 401,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT1",
+   "camera": "chase",
+   "racer": 2,
+   "id": 24
+  },
+  {
+   "start": 401,
+   "end": 407,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT2",
+   "camera": "side",
+   "racer": 3,
+   "id": 25
+  },
+  {
+   "start": 407,
+   "end": 413,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT3",
+   "camera": "trackside",
+   "racer": 4,
+   "id": 26
+  },
+  {
+   "start": 413,
+   "end": 419,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER3",
+   "camera": "high",
+   "racer": 5,
+   "id": 27
+  },
+  {
+   "start": 419,
+   "end": 457,
+   "kind": "live",
+   "ground": null
+  },
+  {
+   "start": 457,
+   "end": 493,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER1",
+   "camera": "front",
+   "racer": 0,
+   "id": 29
+  },
+  {
+   "start": 493,
+   "end": 524,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF1",
+   "camera": "chase",
+   "racer": 1,
+   "id": 30
+  },
+  {
+   "start": 524,
+   "end": 561,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER2",
+   "camera": "side",
+   "racer": 2,
+   "id": 31
+  },
+  {
+   "start": 561,
+   "end": 592,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF2",
+   "camera": "trackside",
+   "racer": 3,
+   "id": 32
+  },
+  {
+   "start": 592,
+   "end": 609,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER3",
+   "camera": "high",
+   "racer": 4,
+   "id": 33
+  },
+  {
+   "start": 609,
+   "end": 625,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "CITY1",
+   "camera": "front",
+   "racer": 5,
+   "id": 34
+  },
+  {
+   "start": 625,
+   "end": 642,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT1",
+   "camera": "chase",
+   "racer": 0,
+   "id": 35
+  },
+  {
+   "start": 642,
+   "end": 659,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT2",
+   "camera": "side",
+   "racer": 1,
+   "id": 36
+  },
+  {
+   "start": 659,
+   "end": 676,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT3",
+   "camera": "trackside",
+   "racer": 2,
+   "id": 37
+  },
+  {
+   "start": 676,
+   "end": 693,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER1",
+   "camera": "high",
+   "racer": 3,
+   "id": 38
+  },
+  {
+   "start": 693,
+   "end": 708,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF1",
+   "camera": "front",
+   "racer": 4,
+   "id": 39
+  },
+  {
+   "start": 708,
+   "end": 724,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF2",
+   "camera": "chase",
+   "racer": 5,
+   "id": 40
+  },
+  {
+   "start": 724,
+   "end": 742,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "CITY1",
+   "camera": "side",
+   "racer": 0,
+   "id": 41
+  },
+  {
+   "start": 742,
+   "end": 776,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT1",
+   "camera": "trackside",
+   "racer": 1,
+   "id": 42
+  },
+  {
+   "start": 776,
+   "end": 792,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER2",
+   "camera": "high",
+   "racer": 2,
+   "id": 43
+  },
+  {
+   "start": 792,
+   "end": 808,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT2",
+   "camera": "front",
+   "racer": 3,
+   "id": 44
+  },
+  {
+   "start": 808,
+   "end": 825,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT3",
+   "camera": "chase",
+   "racer": 4,
+   "id": 45
+  },
+  {
+   "start": 825,
+   "end": 838,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER3",
+   "camera": "side",
+   "racer": 5,
+   "id": 46
+  },
+  {
+   "start": 838,
+   "end": 871,
+   "kind": "live",
+   "ground": null
+  },
+  {
+   "start": 871,
+   "end": 875,
+   "kind": "title",
+   "ground": null
+  },
+  {
+   "start": 875,
+   "end": 883,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF1",
+   "camera": "trackside",
+   "racer": 0,
+   "id": 49
+  },
+  {
+   "start": 883,
+   "end": 891,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF2",
+   "camera": "high",
+   "racer": 1,
+   "id": 50
+  },
+  {
+   "start": 891,
+   "end": 898,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER1",
+   "camera": "front",
+   "racer": 2,
+   "id": 51
+  },
+  {
+   "start": 898,
+   "end": 903,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "CITY1",
+   "camera": "chase",
+   "racer": 3,
+   "id": 52
+  },
+  {
+   "start": 903,
+   "end": 921,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT1",
+   "camera": "side",
+   "racer": 4,
+   "id": 53
+  },
+  {
+   "start": 921,
+   "end": 957,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT2",
+   "camera": "trackside",
+   "racer": 5,
+   "id": 54
+  },
+  {
+   "start": 957,
+   "end": 976,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER2",
+   "camera": "high",
+   "racer": 0,
+   "id": 55
+  },
+  {
+   "start": 976,
+   "end": 994,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT3",
+   "camera": "front",
+   "racer": 1,
+   "id": 56
+  },
+  {
+   "start": 994,
+   "end": 1019,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER3",
+   "camera": "chase",
+   "racer": 2,
+   "id": 57
+  },
+  {
+   "start": 1019,
+   "end": 1038,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER1",
+   "camera": "side",
+   "racer": 3,
+   "id": 58
+  },
+  {
+   "start": 1038,
+   "end": 1056,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF1",
+   "camera": "trackside",
+   "racer": 4,
+   "id": 59
+  },
+  {
+   "start": 1056,
+   "end": 1076,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER2",
+   "camera": "high",
+   "racer": 5,
+   "id": 60
+  },
+  {
+   "start": 1076,
+   "end": 1094,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF2",
+   "camera": "front",
+   "racer": 0,
+   "id": 61
+  },
+  {
+   "start": 1094,
+   "end": 1113,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "CITY1",
+   "camera": "chase",
+   "racer": 1,
+   "id": 62
+  },
+  {
+   "start": 1113,
+   "end": 1131,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT1",
+   "camera": "side",
+   "racer": 2,
+   "id": 63
+  },
+  {
+   "start": 1131,
+   "end": 1149,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER3",
+   "camera": "trackside",
+   "racer": 3,
+   "id": 64
+  },
+  {
+   "start": 1149,
+   "end": 1186,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT2",
+   "camera": "high",
+   "racer": 4,
+   "id": 65
+  },
+  {
+   "start": 1186,
+   "end": 1205,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT3",
+   "camera": "front",
+   "racer": 5,
+   "id": 66
+  },
+  {
+   "start": 1205,
+   "end": 1222,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF1",
+   "camera": "chase",
+   "racer": 0,
+   "id": 67
+  },
+  {
+   "start": 1222,
+   "end": 1240,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER1",
+   "camera": "side",
+   "racer": 1,
+   "id": 68
+  },
+  {
+   "start": 1240,
+   "end": 1259,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER2",
+   "camera": "trackside",
+   "racer": 2,
+   "id": 69
+  },
+  {
+   "start": 1259,
+   "end": 1271,
+   "kind": "title",
+   "ground": null
+  },
+  {
+   "start": 1271,
+   "end": 1279,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF2",
+   "camera": "high",
+   "racer": 3,
+   "id": 71
+  },
+  {
+   "start": 1279,
+   "end": 1293,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "CITY1",
+   "camera": "front",
+   "racer": 4,
+   "id": 72
+  },
+  {
+   "start": 1293,
+   "end": 1297,
+   "kind": "title",
+   "ground": null
+  },
+  {
+   "start": 1297,
+   "end": 1305,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT1",
+   "camera": "chase",
+   "racer": 5,
+   "id": 74
+  },
+  {
+   "start": 1305,
+   "end": 1313,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT2",
+   "camera": "side",
+   "racer": 0,
+   "id": 75
+  },
+  {
+   "start": 1313,
+   "end": 1319,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT3",
+   "camera": "trackside",
+   "racer": 1,
+   "id": 76
+  },
+  {
+   "start": 1319,
+   "end": 1325,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF1",
+   "camera": "high",
+   "racer": 2,
+   "id": 77
+  },
+  {
+   "start": 1325,
+   "end": 1360,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER3",
+   "camera": "front",
+   "racer": 3,
+   "id": 78
+  },
+  {
+   "start": 1360,
+   "end": 1395,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF2",
+   "camera": "chase",
+   "racer": 4,
+   "id": 79
+  },
+  {
+   "start": 1395,
+   "end": 1430,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER1",
+   "camera": "side",
+   "racer": 5,
+   "id": 80
+  },
+  {
+   "start": 1430,
+   "end": 1434,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "CITY1",
+   "camera": "trackside",
+   "racer": 0,
+   "id": 81
+  },
+  {
+   "start": 1434,
+   "end": 1463,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT1",
+   "camera": "high",
+   "racer": 1,
+   "id": 82
+  },
+  {
+   "start": 1463,
+   "end": 1483,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER2",
+   "camera": "front",
+   "racer": 2,
+   "id": 83
+  },
+  {
+   "start": 1483,
+   "end": 1500,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT2",
+   "camera": "chase",
+   "racer": 3,
+   "id": 84
+  },
+  {
+   "start": 1500,
+   "end": 1518,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT3",
+   "camera": "side",
+   "racer": 4,
+   "id": 85
+  },
+  {
+   "start": 1518,
+   "end": 1535,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF1",
+   "camera": "trackside",
+   "racer": 5,
+   "id": 86
+  },
+  {
+   "start": 1535,
+   "end": 1553,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER3",
+   "camera": "high",
+   "racer": 0,
+   "id": 87
+  },
+  {
+   "start": 1553,
+   "end": 1571,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF2",
+   "camera": "front",
+   "racer": 1,
+   "id": 88
+  },
+  {
+   "start": 1571,
+   "end": 1589,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "CITY1",
+   "camera": "chase",
+   "racer": 2,
+   "id": 89
+  },
+  {
+   "start": 1589,
+   "end": 1608,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT1",
+   "camera": "side",
+   "racer": 3,
+   "id": 90
+  },
+  {
+   "start": 1608,
+   "end": 1626,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT2",
+   "camera": "trackside",
+   "racer": 4,
+   "id": 91
+  },
+  {
+   "start": 1626,
+   "end": 1646,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER1",
+   "camera": "high",
+   "racer": 5,
+   "id": 92
+  },
+  {
+   "start": 1646,
+   "end": 1665,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT3",
+   "camera": "front",
+   "racer": 0,
+   "id": 93
+  },
+  {
+   "start": 1665,
+   "end": 1683,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF1",
+   "camera": "chase",
+   "racer": 1,
+   "id": 94
+  },
+  {
+   "start": 1683,
+   "end": 1699,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF2",
+   "camera": "side",
+   "racer": 2,
+   "id": 95
+  },
+  {
+   "start": 1699,
+   "end": 1717,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER2",
+   "camera": "trackside",
+   "racer": 3,
+   "id": 96
+  },
+  {
+   "start": 1717,
+   "end": 1735,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "CITY1",
+   "camera": "high",
+   "racer": 4,
+   "id": 97
+  },
+  {
+   "start": 1735,
+   "end": 1741,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER3",
+   "camera": "front",
+   "racer": 5,
+   "id": 98
+  },
+  {
+   "start": 1741,
+   "end": 1747,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT1",
+   "camera": "chase",
+   "racer": 0,
+   "id": 99
+  },
+  {
+   "start": 1747,
+   "end": 1753,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER1",
+   "camera": "side",
+   "racer": 1,
+   "id": 100
+  },
+  {
+   "start": 1753,
+   "end": 1759,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT2",
+   "camera": "trackside",
+   "racer": 2,
+   "id": 101
+  },
+  {
+   "start": 1759,
+   "end": 1765,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER2",
+   "camera": "high",
+   "racer": 3,
+   "id": 102
+  },
+  {
+   "start": 1765,
+   "end": 1800,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT3",
+   "camera": "front",
+   "racer": 4,
+   "id": 103
+  },
+  {
+   "start": 1800,
+   "end": 1831,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF1",
+   "camera": "chase",
+   "racer": 5,
+   "id": 104
+  },
+  {
+   "start": 1831,
+   "end": 1866,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER3",
+   "camera": "side",
+   "racer": 0,
+   "id": 105
+  },
+  {
+   "start": 1866,
+   "end": 1893,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF2",
+   "camera": "trackside",
+   "racer": 1,
+   "id": 106
+  },
+  {
+   "start": 1893,
+   "end": 1930,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "CITY1",
+   "camera": "high",
+   "racer": 2,
+   "id": 107
+  },
+  {
+   "start": 1930,
+   "end": 1948,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER1",
+   "camera": "front",
+   "racer": 3,
+   "id": 108
+  },
+  {
+   "start": 1948,
+   "end": 1966,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT1",
+   "camera": "chase",
+   "racer": 4,
+   "id": 109
+  },
+  {
+   "start": 1966,
+   "end": 1986,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER2",
+   "camera": "side",
+   "racer": 5,
+   "id": 110
+  },
+  {
+   "start": 1986,
+   "end": 2004,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT2",
+   "camera": "trackside",
+   "racer": 0,
+   "id": 111
+  },
+  {
+   "start": 2004,
+   "end": 2021,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT3",
+   "camera": "high",
+   "racer": 1,
+   "id": 112
+  },
+  {
+   "start": 2021,
+   "end": 2039,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER3",
+   "camera": "front",
+   "racer": 2,
+   "id": 113
+  },
+  {
+   "start": 2039,
+   "end": 2056,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF1",
+   "camera": "chase",
+   "racer": 3,
+   "id": 114
+  },
+  {
+   "start": 2056,
+   "end": 2073,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER1",
+   "camera": "side",
+   "racer": 4,
+   "id": 115
+  },
+  {
+   "start": 2073,
+   "end": 2092,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF2",
+   "camera": "trackside",
+   "racer": 5,
+   "id": 116
+  },
+  {
+   "start": 2092,
+   "end": 2110,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "CITY1",
+   "camera": "high",
+   "racer": 0,
+   "id": 117
+  },
+  {
+   "start": 2110,
+   "end": 2130,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER2",
+   "camera": "front",
+   "racer": 1,
+   "id": 118
+  },
+  {
+   "start": 2130,
+   "end": 2148,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT1",
+   "camera": "chase",
+   "racer": 2,
+   "id": 119
+  },
+  {
+   "start": 2148,
+   "end": 2168,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER3",
+   "camera": "side",
+   "racer": 3,
+   "id": 120
+  },
+  {
+   "start": 2168,
+   "end": 2174,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT2",
+   "camera": "trackside",
+   "racer": 4,
+   "id": 121
+  },
+  {
+   "start": 2174,
+   "end": 2180,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT3",
+   "camera": "high",
+   "racer": 5,
+   "id": 122
+  },
+  {
+   "start": 2180,
+   "end": 2186,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF1",
+   "camera": "front",
+   "racer": 0,
+   "id": 123
+  },
+  {
+   "start": 2186,
+   "end": 2192,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER1",
+   "camera": "chase",
+   "racer": 1,
+   "id": 124
+  },
+  {
+   "start": 2192,
+   "end": 2198,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER2",
+   "camera": "side",
+   "racer": 2,
+   "id": 125
+  },
+  {
+   "start": 2198,
+   "end": 2260,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER3",
+   "camera": "trackside",
+   "racer": 3,
+   "id": 126
+  },
+  {
+   "start": 2260,
+   "end": 2319,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF2",
+   "camera": "high",
+   "racer": 4,
+   "id": 127
+  },
+  {
+   "start": 2319,
+   "end": 2378,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER1",
+   "camera": "front",
+   "racer": 5,
+   "id": 128
+  },
+  {
+   "start": 2378,
+   "end": 2434,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "CITY1",
+   "camera": "chase",
+   "racer": 0,
+   "id": 129
+  },
+  {
+   "start": 2434,
+   "end": 2453,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER2",
+   "camera": "side",
+   "racer": 1,
+   "id": 130
+  },
+  {
+   "start": 2453,
+   "end": 2470,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT1",
+   "camera": "trackside",
+   "racer": 2,
+   "id": 131
+  },
+  {
+   "start": 2470,
+   "end": 2490,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER3",
+   "camera": "high",
+   "racer": 3,
+   "id": 132
+  },
+  {
+   "start": 2490,
+   "end": 2507,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT2",
+   "camera": "front",
+   "racer": 4,
+   "id": 133
+  },
+  {
+   "start": 2507,
+   "end": 2526,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER1",
+   "camera": "chase",
+   "racer": 5,
+   "id": 134
+  },
+  {
+   "start": 2526,
+   "end": 2624,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT3",
+   "camera": "side",
+   "racer": 0,
+   "id": 135
+  },
+  {
+   "start": 2624,
+   "end": 2720,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER2",
+   "camera": "trackside",
+   "racer": 1,
+   "id": 136
+  },
+  {
+   "start": 2720,
+   "end": 2816,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF1",
+   "camera": "high",
+   "racer": 2,
+   "id": 137
+  },
+  {
+   "start": 2816,
+   "end": 2902,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER3",
+   "camera": "front",
+   "racer": 3,
+   "id": 138
+  },
+  {
+   "start": 2902,
+   "end": 2914,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER1",
+   "camera": "chase",
+   "racer": 4,
+   "id": 139
+  },
+  {
+   "start": 2914,
+   "end": 2921,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER2",
+   "camera": "side",
+   "racer": 5,
+   "id": 140
+  },
+  {
+   "start": 2921,
+   "end": 2938,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF2",
+   "camera": "trackside",
+   "racer": 0,
+   "id": 141
+  },
+  {
+   "start": 2938,
+   "end": 2956,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "CITY1",
+   "camera": "high",
+   "racer": 1,
+   "id": 142
+  },
+  {
+   "start": 2956,
+   "end": 2976,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER3",
+   "camera": "front",
+   "racer": 2,
+   "id": 143
+  },
+  {
+   "start": 2976,
+   "end": 2995,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT1",
+   "camera": "chase",
+   "racer": 3,
+   "id": 144
+  },
+  {
+   "start": 2995,
+   "end": 3013,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER1",
+   "camera": "side",
+   "racer": 4,
+   "id": 145
+  },
+  {
+   "start": 3013,
+   "end": 3031,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT2",
+   "camera": "trackside",
+   "racer": 5,
+   "id": 146
+  },
+  {
+   "start": 3031,
+   "end": 3050,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER2",
+   "camera": "high",
+   "racer": 0,
+   "id": 147
+  },
+  {
+   "start": 3050,
+   "end": 3068,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "DIRT3",
+   "camera": "front",
+   "racer": 1,
+   "id": 148
+  },
+  {
+   "start": 3068,
+   "end": 3086,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF1",
+   "camera": "chase",
+   "racer": 2,
+   "id": 149
+  },
+  {
+   "start": 3086,
+   "end": 3106,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER3",
+   "camera": "side",
+   "racer": 3,
+   "id": 150
+  },
+  {
+   "start": 3106,
+   "end": 3124,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "RUF2",
+   "camera": "trackside",
+   "racer": 4,
+   "id": 151
+  },
+  {
+   "start": 3124,
+   "end": 3144,
+   "kind": "race",
+   "ground": "water",
+   "circuit": "WATER1",
+   "camera": "high",
+   "racer": 5,
+   "id": 152
+  },
+  {
+   "start": 3144,
+   "end": 3162,
+   "kind": "race",
+   "ground": "land",
+   "circuit": "CITY1",
+   "camera": "front",
+   "racer": 0,
+   "id": 153
+  },
+  {
+   "start": 3162,
+   "end": 3300,
+   "kind": "title",
+   "ground": null
+  }
+ ],
+ "circuits": {
+  "DIRT1": [
+   1,
+   15,
+   24,
+   35,
+   42,
+   53,
+   63,
+   74,
+   82,
+   90,
+   99,
+   109,
+   119,
+   131,
+   144
+  ],
+  "WATER1": [
+   3,
+   11,
+   20,
+   29,
+   38,
+   51,
+   58,
+   68,
+   80,
+   92,
+   100,
+   108,
+   115,
+   124,
+   128,
+   134,
+   139,
+   145,
+   152
+  ],
+  "DIRT2": [
+   5,
+   16,
+   25,
+   36,
+   44,
+   54,
+   65,
+   75,
+   84,
+   91,
+   101,
+   111,
+   121,
+   133,
+   146
+  ],
+  "DIRT3": [
+   7,
+   17,
+   26,
+   37,
+   45,
+   56,
+   66,
+   76,
+   85,
+   93,
+   103,
+   112,
+   122,
+   135,
+   148
+  ],
+  "WATER2": [
+   8,
+   12,
+   23,
+   31,
+   43,
+   55,
+   60,
+   69,
+   83,
+   96,
+   102,
+   110,
+   118,
+   125,
+   130,
+   136,
+   140,
+   147
+  ],
+  "RUF1": [
+   9,
+   18,
+   30,
+   39,
+   49,
+   59,
+   67,
+   77,
+   86,
+   94,
+   104,
+   114,
+   123,
+   137,
+   149
+  ],
+  "WATER3": [
+   10,
+   19,
+   27,
+   33,
+   46,
+   57,
+   64,
+   78,
+   87,
+   98,
+   105,
+   113,
+   120,
+   126,
+   132,
+   138,
+   143,
+   150
+  ],
+  "RUF2": [
+   13,
+   21,
+   32,
+   40,
+   50,
+   61,
+   71,
+   79,
+   88,
+   95,
+   106,
+   116,
+   127,
+   141,
+   151
+  ],
+  "CITY1": [
+   14,
+   22,
+   34,
+   41,
+   52,
+   62,
+   72,
+   81,
+   89,
+   97,
+   107,
+   117,
+   129,
+   142,
+   153
+  ]
+ }
+}

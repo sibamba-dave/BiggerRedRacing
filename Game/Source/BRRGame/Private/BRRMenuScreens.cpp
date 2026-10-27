@@ -1,4 +1,5 @@
 #include "BRRMenuScreens.h"
+#include "BRRArt.h"
 
 #include "BRRAudio.h"
 #include "BRRFrontEnd.h"
@@ -6,6 +7,8 @@
 #include "BRRVideo.h"
 #include "BRRWorld.h"
 #include "Misc/Paths.h"
+#include "CanvasItem.h"
+#include "Engine/Canvas.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
@@ -100,6 +103,55 @@ namespace
 			TFunction<void(ABRRFrontEndGameMode&)> Next = MoveTemp(Then);
 			M.Pop();
 			if (Next) Next(M);
+		}
+		virtual void OnBox(int32) override { Finish(); }
+		virtual void OnBack() override { Finish(); }
+	};
+
+	// --- the remastered intro: a movie (Saved/Remaster/Intro.mp4, Tools/brr_film.py) over the
+	// whole screen with its sound; any key or click skips it.
+	class FMovieScreen : public FBRRMenuScreen
+	{
+	public:
+		FString Path;
+		double Elapsed = 0;
+
+		virtual bool Load() override
+		{
+			Scn.Boxes.Add({ 0, 0, 0, 320, 200 }); // anywhere: skip
+			return Menu->PlayMovie(Path);
+		}
+		virtual void Enter() override
+		{
+			Elapsed = 0;
+			GMusicLoop = -1;
+			BRRAudio::StopMusic();
+		}
+		virtual void Tick(float DeltaSeconds) override
+		{
+			Elapsed += DeltaSeconds;
+			// Never started (it would not open) or over.
+			if (!Menu->IsMoviePlaying() || (Elapsed > 8.0 && !Menu->MovieTexture())) Finish();
+		}
+		virtual void Draw(FBRRMenuPainter& P) override
+		{
+			UTexture* T = Menu->MovieTexture();
+			if (!P.Canvas || !T || !T->GetResource()) return;
+			// Black, then the picture as large as fits at 16:9.
+			const double W = P.Canvas->ClipX, H = P.Canvas->ClipY;
+			FCanvasTileItem Black(FVector2D::ZeroVector, FVector2D(W, H), FLinearColor::Black);
+			P.Canvas->DrawItem(Black);
+			const double Fit = FMath::Min(W / 16.0, H / 9.0);
+			const FVector2D Size(16.0 * Fit, 9.0 * Fit);
+			FCanvasTileItem Picture((FVector2D(W, H) - Size) * 0.5, T->GetResource(), Size, FLinearColor::White);
+			Picture.BlendMode = SE_BLEND_Opaque;
+			P.Canvas->DrawItem(Picture);
+		}
+		void Finish()
+		{
+			ABRRFrontEndGameMode& M = *Menu;
+			M.StopMovie();
+			M.Pop();
 		}
 		virtual void OnBox(int32) override { Finish(); }
 		virtual void OnBack() override { Finish(); }
@@ -787,9 +839,20 @@ void BRRMenu::Open(ABRRFrontEndGameMode& Menu)
 		G->bIntroShown = true;
 		if (!FParse::Param(FCommandLine::Get(), TEXT("nointro")) && !FParse::Param(FCommandLine::Get(), TEXT("BRRMenuWalk")))
 		{
-			FString Intro = Menu.DataDir() / TEXT("../VIDEO/INTROSND.RPL");
-			FPaths::CollapseRelativeDirectories(Intro);
-			Menu.Push(MakeVideo(Intro));
+			// The remastered look's own, where it has been made (Tools/brr_film.py); else the original.
+			const FString Remastered = FPaths::ProjectSavedDir() / TEXT("Remaster/Intro.mp4");
+			if (BRRArt::SmoothWanted() && FPaths::FileExists(Remastered))
+			{
+				TSharedRef<FMovieScreen> Movie = MakeShared<FMovieScreen>();
+				Movie->Path = Remastered;
+				Menu.Push(Movie);
+			}
+			else
+			{
+				FString Intro = Menu.DataDir() / TEXT("../VIDEO/INTROSND.RPL");
+				FPaths::CollapseRelativeDirectories(Intro);
+				Menu.Push(MakeVideo(Intro));
+			}
 		}
 	}
 	if (!G->bRaceFromMenu) return;

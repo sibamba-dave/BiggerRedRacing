@@ -11,7 +11,8 @@ A UE 5.8 rebuild of *Big Red Racing* (Big Red Software / Domark, 1996). Phase A 
   - `Source/BRRFormats` – parsers for the original file formats (runtime, no engine deps beyond Core)
   - `Source/BRRGame` – gameplay: the race game mode (`ABRRRaceGameMode`, default for every map),
     the player's Chaos car fitted to the original's handling (`ABRRVehiclePawn`, see
-    `Docs/Handling.md`), ghost opponents (`ABRRGhostCar`) and an interim text HUD
+    `Docs/Handling.md`; a boat, hovercraft or helicopter, with nothing that rolls, runs on the
+    original's own physics instead, `FBRRRace::TickSimulated`), ghost opponents (`ABRRGhostCar`) and an interim text HUD
   - `Plugins/BRRImporter` – editor plugin that bakes the original data into `Content/BRR/<LEVEL>/`
     (textures, unlit materials, terrain/decor/vehicle meshes, a map with the grid). Local only: the
     output is derived from your copy of the game and is gitignored.
@@ -164,8 +165,10 @@ no real detail this way - there is none in the source for a model to find.
 That detail comes instead from CC0 PBR materials (ambientCG): dirt, grass, sand, snow, rock,
 asphalt and the moon's dust. `Tools/fetch_ground.py` downloads them and packs each into
 `Tools/ground/<kind>.png` (git-ignored): its normal, its roughness, and its brightness held to a
-mean of one half. The import makes them one texture array (`T_BRR_Ground`) and tags every terrain
-triangle with its kind (`FBRRWorld::GroundOf`, in UV1). The surface types are handling, not looks,
+mean of one half. The import makes them one texture array (`T_BRR_Ground`) and gives every terrain
+triangle the kinds at its three corners (`FBRRWorld::GroundOf` per triangle, then each corner the
+kind most of the ground around it is, rounded off twice; UV1-3), which the material blends across
+the triangle by weight and by each material's height, so the kinds meet along curves. The surface types are handling, not looks,
 and the palette art is stylised, so the level's theme decides first (the moon is dust, SNOW
 snow), then the colour the original paints the triangle (green grass, grey made ground or rock,
 the rest earth). The remastered look lays the kind's material in the world every 3 m: its
@@ -188,14 +191,35 @@ The classic look keeps it all exactly (`ABRRLook` shows `BRRRemasterOnly` actors
   every corner, curves between them by up to 60 cm, and stays exactly the original on the track,
   the ramps and the liquids, so wheels, decals and water sit where they did. Nanite tessellates it,
   and the ground materials displace it by a few centimetres (`M_BRR_TexturedHD`).
-- Water (`SM_<L>_WaterHD`): the open water is UE's single layer water in the level's own water colour,
-  over a sand bed (`SM_<L>_WaterBedHD`) sunk from nothing at the bank to 4.5 m, three cells out.
-  Ice and lava are still the terrain's.
+- Water (`SM_<L>_WaterHD`): the open water is UE's single layer water in the level's own water colour.
+  Its bed is the refined terrain itself, let down (`FBRRWorld::ShoreSinkAt`, Catmull-Rom between the
+  corners) by 80 cm at the shore and 1.5 m more a cell out, to 4.5 m; the water reaches a cell over
+  the banks at its level, so the shore is where the smooth banks cross it, not the original's
+  triangle edges. The dry track and the ramps keep their height. Ice and lava are still the terrain's.
 - Round wheels (`SM_<V>_Wheel<n>_HD`): the six- or eight-sided tyres subdivided and put back on
   their circle.
 - Ground detail (`ABRRScatter`): grass tufts, pebbles and rocks within 25 m of the track, coloured
   by the ground under each, placed when the race starts (a few hundred thousand, in well under a
   tenth of a second); procedural shapes from the import (`SM_BRR_Grass<n>`, `SM_BRR_Stone<n>`).
+- Wakes (`ABRRWake`, `M_BRR_Foam`): every boat on open water leaves churned water behind it and two
+  arms spreading at the Kelvin angle, throws spray off its bow at speed, and splashes where an arm
+  runs into the bank. Dust (`ABRRDust`, `M_BRR_Haze`): a car on dirt, sand or moon dust leaves pale
+  clouds that spread, drift and thin out over a few seconds. The original's own puffs and splashes
+  (`M_BRR_Effect`) are unlit at a sunlit brightness and stand on the surface instead of half under it.
+- Interface art (`BRRArt`, `BRR::SmoothPixelArt`): the fonts and the HUD's sprites are traced (each
+  colour's outline, one-pixel steps cut into slopes, square corners kept) and redrawn at up to 8x;
+  pictures keep their pixels. `brr.SmoothArt 0` keeps the original's pixels in this look too.
+
+### The remastered intro
+`Tools/brr_film.py` rebuilds the intro: the original's cut, its race shots filmed again in the
+engine. `shots` finds the cuts in the decoded intro and sorts them into race shots (on water or
+land), title cards and the filmed inserts; `plan` gives each race shot a circuit and a camera
+(`Tools/film/`, kept: timings only); the game films a circuit's shots with
+`-BRRFilm=Tools/film/intro_plan.json -BRRFilmOut=<dir> -BRRAutopilot` on its map (`ABRRFilm`: a fixed
+30 frames a second, the ghosts racing as recorded); `-run=BRRUpscaleFrames` redraws the title cards
+as flat art; `assemble` cuts it all together over the original's sound into
+`Saved/Remaster/Intro.mp4` (ffmpeg from `pip install imageio-ffmpeg`), which the remastered look
+then plays instead of the original. The result holds the original's sound and stays out of git.
 
 ## Reference captures of the original
 The original runs in DOSBox-X for side-by-side checks. Put the portable 64-bit build in

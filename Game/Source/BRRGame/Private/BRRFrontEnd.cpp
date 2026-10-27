@@ -1,5 +1,8 @@
 #include "BRRFrontEnd.h"
 #include "BRRArt.h"
+#include "MediaPlayer.h"
+#include "MediaSoundComponent.h"
+#include "MediaTexture.h"
 
 #include "BRRAudio.h"
 #include "BRRGameInstance.h"
@@ -304,6 +307,54 @@ void ABRRFrontEndGameMode::ShowPicture(const FBRRImage& Picture)
 	UTexture2D* T = MakeTexture(Picture);
 	BackdropMaterial->SetTextureParameterValue(TEXT("Atlas"), T);
 	BackdropMaterial->SetTextureParameterValue(TEXT("AtlasHD"), T);
+}
+
+bool ABRRFrontEndGameMode::PlayMovie(const FString& Path)
+{
+	if (!FPaths::FileExists(Path)) return false;
+	if (!MoviePlayer)
+	{
+		MoviePlayer = NewObject<UMediaPlayer>(this);
+		MoviePlayer->PlayOnOpen = true;
+		MoviePlayer->SetLooping(false);
+		MovieOut = NewObject<UMediaTexture>(this);
+		MovieOut->AutoClear = true;
+		MovieOut->SetMediaPlayer(MoviePlayer);
+		MovieOut->UpdateResource();
+		MovieSound = NewObject<UMediaSoundComponent>(this, TEXT("MovieSound"));
+		MovieSound->bIsUISound = true;
+		MovieSound->SetMediaPlayer(MoviePlayer);
+		MovieSound->RegisterComponentWithWorld(GetWorld());
+		MovieSound->Start();
+	}
+	bMovieStarted = false;
+	// The whole window, not the menus' 4:3.
+	if (Camera) Camera->GetCameraComponent()->bConstrainAspectRatio = false;
+	return MoviePlayer->OpenFile(Path);
+}
+
+void ABRRFrontEndGameMode::StopMovie()
+{
+	if (MoviePlayer) MoviePlayer->Close();
+	bMovieStarted = false;
+	if (Camera) Camera->GetCameraComponent()->bConstrainAspectRatio = true;
+}
+
+bool ABRRFrontEndGameMode::IsMoviePlaying()
+{
+	if (!MoviePlayer) return false;
+	if (MoviePlayer->IsPlaying())
+	{
+		bMovieStarted = true;
+		return true;
+	}
+	// Opening: not started yet. Started and stopped: the end.
+	return !bMovieStarted && (MoviePlayer->IsPreparing() || !MoviePlayer->GetUrl().IsEmpty());
+}
+
+UTexture* ABRRFrontEndGameMode::MovieTexture() const
+{
+	return MovieOut;
 }
 
 void ABRRFrontEndGameMode::ShowFrame(const FBRRImage& Frame)

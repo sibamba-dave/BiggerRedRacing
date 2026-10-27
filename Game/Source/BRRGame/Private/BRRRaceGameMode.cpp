@@ -17,6 +17,9 @@
 #include "BRRScatter.h"
 #include "BRRWake.h"
 #include "BRRDust.h"
+#include "BRRFilm.h"
+#include "Misc/App.h"
+#include "GameFramework/HUD.h"
 #include "BRRWrecks.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Camera/CameraActor.h"
@@ -256,6 +259,22 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 	Wake->Build(World);
 	Dust = GetWorld()->SpawnActor<ABRRDust>();
 	Dust->Build(World);
+	FString FilmPlan, FilmOut;
+	if (FParse::Value(FCommandLine::Get(), TEXT("BRRFilm="), FilmPlan))
+	{
+		// Filming the remastered intro (ABRRFilm): a fixed 30 frames a second, however slow.
+		if (!FParse::Value(FCommandLine::Get(), TEXT("BRRFilmOut="), FilmOut)) FilmOut = FPaths::ProjectSavedDir() / TEXT("Film");
+		Film = GetWorld()->SpawnActor<ABRRFilm>();
+		if (Film->Load(FilmPlan, FilmOut, LevelName))
+		{
+			FApp::SetUseFixedTimeStep(true);
+			FApp::SetFixedDeltaTime(ABRRFilm::FrameSeconds);
+		}
+		else
+		{
+			FPlatformMisc::RequestExit(false, TEXT("BRRFilm: nothing to film"));
+		}
+	}
 	DrawRange = LoadObject<UMaterialParameterCollection>(nullptr, TEXT("/Game/BRR/Materials/MPC_BRR.MPC_BRR"));
 	Look = GetWorld()->SpawnActor<ABRRLook>();
 	Look->Build(World.SunDirection, DrawRange);
@@ -514,15 +533,20 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 		Sprites->Update(*Race, Facing, GetWorld()->GetTimeSeconds());
 	}
 	if (AnimDecor) AnimDecor->Update(GetWorld()->GetTimeSeconds());
+	// Every racer as drawn this frame: the ghosts between their ticks, the player where it is.
+	TArray<FTransform> Drawn;
+	for (int32 R = 0; R < Race->NumRacers(); ++R)
+	{
+		Drawn.Add(R == Race->PlayerIndex() ? PlayerCar->GetBodyOriginTransform()
+			: FTransform(FQuat::Slerp(PrevPose[R].GetRotation(), CurrPose[R].GetRotation(), Alpha), FMath::Lerp(PrevPose[R].GetLocation(), CurrPose[R].GetLocation(), Alpha)));
+	}
+	if (Film)
+	{
+		if (APlayerController* PC = GetWorld()->GetFirstPlayerController(); PC && PC->MyHUD) PC->MyHUD->bShowHUD = false;
+		Film->Update(Drawn, Race->HasStarted() ? Race->RaceTime() : -1.0, RaceCamera);
+	}
 	if (Wake)
 	{
-		// Every racer as drawn this frame: the ghosts between their ticks, the player where it is.
-		TArray<FTransform> Drawn;
-		for (int32 R = 0; R < Race->NumRacers(); ++R)
-		{
-			Drawn.Add(R == Race->PlayerIndex() ? PlayerCar->GetBodyOriginTransform()
-				: FTransform(FQuat::Slerp(PrevPose[R].GetRotation(), CurrPose[R].GetRotation(), Alpha), FMath::Lerp(PrevPose[R].GetLocation(), CurrPose[R].GetLocation(), Alpha)));
-		}
 		Wake->Update(Drawn, DeltaSeconds, Look && Look->IsRemastered());
 		if (Dust && RaceCamera)
 		{

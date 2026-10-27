@@ -6,6 +6,6 @@ public class BRRGame : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new[] { "Core", "CoreUObject", "Engine", "BRRFormats" });
-		PrivateDependencyModuleNames.AddRange(new[] { "ChaosVehicles", "InputCore", "PhysicsCore", "ProceduralMeshComponent", "AudioMixer" });
+		PrivateDependencyModuleNames.AddRange(new[] { "ChaosVehicles", "InputCore", "PhysicsCore", "ProceduralMeshComponent", "AudioMixer", "Json", "MediaAssets" });
 	}
 }

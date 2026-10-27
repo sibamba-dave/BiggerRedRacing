@@ -100,6 +100,12 @@ public:
 	void ShowPicture(const FBRRImage& Picture);
 	// A video's frame on the backdrop, through one texture updated in place.
 	void ShowFrame(const FBRRImage& Frame);
+	// The remastered intro (Tools/brr_film.py, Saved/Remaster/Intro.mp4): a movie with its sound,
+	// drawn by its screen from MovieTexture. Playing until it ends or StopMovie; false if it cannot open.
+	bool PlayMovie(const FString& Path);
+	void StopMovie();
+	bool IsMoviePlaying();
+	class UTexture* MovieTexture() const;
 	// bArt: interface art (fonts, sprites), smoothed in the remastered look (BRRArt).
 	UTexture2D* MakeTexture(const FBRRImage& Image, bool bArt = false);
 	bool bArtSmooth = false;
@@ -139,6 +145,13 @@ private:
 	TObjectPtr<UTexture2D> PointerTexture;
 	UPROPERTY()
 	TObjectPtr<UTexture2D> FrameTexture;
+	UPROPERTY()
+	TObjectPtr<class UMediaPlayer> MoviePlayer;
+	UPROPERTY()
+	TObjectPtr<class UMediaTexture> MovieOut;
+	UPROPERTY()
+	TObjectPtr<class UMediaSoundComponent> MovieSound;
+	bool bMovieStarted = false;
 
 	void LoadFonts();
 	// -BRRMenuWalk="0,3,..." presses those boxes a second apart and shoots each screen

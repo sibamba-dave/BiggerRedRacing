@@ -1,0 +1,936 @@
+{
+ "fps": 15,
+ "frames": 3300,
+ "shots": [
+  {
+   "start": 0,
+   "end": 40,
+   "kind": "title",
+   "ground": null
+  },
+  {
+   "start": 40,
+   "end": 70,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 70,
+   "end": 78,
+   "kind": "title",
+   "ground": null
+  },
+  {
+   "start": 78,
+   "end": 106,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 106,
+   "end": 120,
+   "kind": "title",
+   "ground": null
+  },
+  {
+   "start": 120,
+   "end": 136,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 136,
+   "end": 174,
+   "kind": "title",
+   "ground": null
+  },
+  {
+   "start": 174,
+   "end": 208,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 208,
+   "end": 225,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 225,
+   "end": 243,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 243,
+   "end": 254,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 254,
+   "end": 264,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 264,
+   "end": 270,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 270,
+   "end": 276,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 276,
+   "end": 282,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 282,
+   "end": 288,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 288,
+   "end": 294,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 294,
+   "end": 312,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 312,
+   "end": 329,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 329,
+   "end": 347,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 347,
+   "end": 366,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 366,
+   "end": 383,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 383,
+   "end": 389,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 389,
+   "end": 395,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 395,
+   "end": 401,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 401,
+   "end": 407,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 407,
+   "end": 413,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 413,
+   "end": 419,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 419,
+   "end": 457,
+   "kind": "live",
+   "ground": null
+  },
+  {
+   "start": 457,
+   "end": 493,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 493,
+   "end": 524,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 524,
+   "end": 561,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 561,
+   "end": 592,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 592,
+   "end": 609,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 609,
+   "end": 625,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 625,
+   "end": 642,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 642,
+   "end": 659,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 659,
+   "end": 676,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 676,
+   "end": 693,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 693,
+   "end": 708,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 708,
+   "end": 724,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 724,
+   "end": 742,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 742,
+   "end": 776,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 776,
+   "end": 792,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 792,
+   "end": 808,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 808,
+   "end": 825,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 825,
+   "end": 838,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 838,
+   "end": 871,
+   "kind": "live",
+   "ground": null
+  },
+  {
+   "start": 871,
+   "end": 875,
+   "kind": "title",
+   "ground": null
+  },
+  {
+   "start": 875,
+   "end": 883,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 883,
+   "end": 891,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 891,
+   "end": 898,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 898,
+   "end": 903,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 903,
+   "end": 921,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 921,
+   "end": 957,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 957,
+   "end": 976,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 976,
+   "end": 994,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 994,
+   "end": 1019,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 1019,
+   "end": 1038,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 1038,
+   "end": 1056,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1056,
+   "end": 1076,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 1076,
+   "end": 1094,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1094,
+   "end": 1113,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1113,
+   "end": 1131,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1131,
+   "end": 1149,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 1149,
+   "end": 1186,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1186,
+   "end": 1205,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1205,
+   "end": 1222,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1222,
+   "end": 1240,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 1240,
+   "end": 1259,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 1259,
+   "end": 1271,
+   "kind": "title",
+   "ground": null
+  },
+  {
+   "start": 1271,
+   "end": 1279,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1279,
+   "end": 1293,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1293,
+   "end": 1297,
+   "kind": "title",
+   "ground": null
+  },
+  {
+   "start": 1297,
+   "end": 1305,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1305,
+   "end": 1313,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1313,
+   "end": 1319,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1319,
+   "end": 1325,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1325,
+   "end": 1360,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 1360,
+   "end": 1395,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1395,
+   "end": 1430,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 1430,
+   "end": 1434,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1434,
+   "end": 1463,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1463,
+   "end": 1483,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 1483,
+   "end": 1500,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1500,
+   "end": 1518,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1518,
+   "end": 1535,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1535,
+   "end": 1553,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 1553,
+   "end": 1571,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1571,
+   "end": 1589,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1589,
+   "end": 1608,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1608,
+   "end": 1626,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1626,
+   "end": 1646,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 1646,
+   "end": 1665,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1665,
+   "end": 1683,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1683,
+   "end": 1699,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1699,
+   "end": 1717,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 1717,
+   "end": 1735,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1735,
+   "end": 1741,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 1741,
+   "end": 1747,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1747,
+   "end": 1753,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 1753,
+   "end": 1759,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1759,
+   "end": 1765,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 1765,
+   "end": 1800,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1800,
+   "end": 1831,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1831,
+   "end": 1866,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 1866,
+   "end": 1893,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1893,
+   "end": 1930,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1930,
+   "end": 1948,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 1948,
+   "end": 1966,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 1966,
+   "end": 1986,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 1986,
+   "end": 2004,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 2004,
+   "end": 2021,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 2021,
+   "end": 2039,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 2039,
+   "end": 2056,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 2056,
+   "end": 2073,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 2073,
+   "end": 2092,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 2092,
+   "end": 2110,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 2110,
+   "end": 2130,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 2130,
+   "end": 2148,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 2148,
+   "end": 2168,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 2168,
+   "end": 2174,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 2174,
+   "end": 2180,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 2180,
+   "end": 2186,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 2186,
+   "end": 2192,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 2192,
+   "end": 2198,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 2198,
+   "end": 2260,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 2260,
+   "end": 2319,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 2319,
+   "end": 2378,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 2378,
+   "end": 2434,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 2434,
+   "end": 2453,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 2453,
+   "end": 2470,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 2470,
+   "end": 2490,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 2490,
+   "end": 2507,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 2507,
+   "end": 2526,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 2526,
+   "end": 2624,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 2624,
+   "end": 2720,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 2720,
+   "end": 2816,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 2816,
+   "end": 2902,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 2902,
+   "end": 2914,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 2914,
+   "end": 2921,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 2921,
+   "end": 2938,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 2938,
+   "end": 2956,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 2956,
+   "end": 2976,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 2976,
+   "end": 2995,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 2995,
+   "end": 3013,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 3013,
+   "end": 3031,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 3031,
+   "end": 3050,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 3050,
+   "end": 3068,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 3068,
+   "end": 3086,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 3086,
+   "end": 3106,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 3106,
+   "end": 3124,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 3124,
+   "end": 3144,
+   "kind": "race",
+   "ground": "water"
+  },
+  {
+   "start": 3144,
+   "end": 3162,
+   "kind": "race",
+   "ground": "land"
+  },
+  {
+   "start": 3162,
+   "end": 3300,
+   "kind": "title",
+   "ground": null
+  }
+ ]
+}
