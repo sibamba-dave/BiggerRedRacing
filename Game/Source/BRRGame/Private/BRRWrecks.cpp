@@ -41,7 +41,7 @@ UProceduralMeshComponent* ABRRWrecks::MakeComponent(const FBRRMesh& Mesh, bool b
 		Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Comp->SetVisibility(false);
 	}
-	Comp->SetCastShadow(false);
+	Comp->SetCastShadow(true); // a standing crate throws a shadow like any solid prop (classic has no shadows at all)
 	Comp->RegisterComponent();
 	Components.Add(Comp);
 	return Comp;

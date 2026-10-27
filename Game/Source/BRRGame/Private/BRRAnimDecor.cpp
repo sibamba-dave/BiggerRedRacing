@@ -34,7 +34,7 @@ void ABRRAnimDecor::Build(const FBRRWorld& World, const FString& Level)
 				Comp->SetupAttachment(GetRootComponent());
 				BRR::FillLevelMesh(Comp, BRRArt::LookMesh(Step), false, MaterialFor);
 				Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				Comp->SetCastShadow(false);
+				Comp->SetCastShadow(true); // grounded like the wrecks (classic has no shadows at all)
 				Comp->SetVisibility(false);
 				Comp->RegisterComponent();
 				Components.Add(Comp);
