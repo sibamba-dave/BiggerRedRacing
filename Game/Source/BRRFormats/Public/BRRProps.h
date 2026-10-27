@@ -32,6 +32,14 @@ namespace BRR
 	};
 	BRRFORMATS_API TArray<FBRRFlag> FindFlags(const FBRRWorld& World);
 
+	// A lamp post's glowing head - the rebuilt lamp's panel (BuildProps) - for the race to hang a
+	// real light under when the hour is dark or the rain heavy (the remastered look).
+	struct FBRRLampHead
+	{
+		FVector3f Head;
+	};
+	BRRFORMATS_API TArray<FBRRLampHead> FindLamps(const FBRRWorld& World);
+
 	// The crowd's people (ABRRCrowd), in this game's country manner: Variant 0 overalls, plaid shirt
 	// and a straw cowboy hat over a beard; 1 plaid shirt, jeans and a trucker cap; 2 overalls and a
 	// mullet, a can held up; 3 sat in a lawn chair by a cooler, in a cap. Feet at the origin, facing

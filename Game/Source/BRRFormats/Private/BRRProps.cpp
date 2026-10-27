@@ -266,6 +266,36 @@ TArray<BRR::FBRRFlag> BRR::FindFlags(const FBRRWorld& World)
 	return Flags;
 }
 
+TArray<BRR::FBRRLampHead> BRR::FindLamps(const FBRRWorld& World)
+{
+	TArray<FBRRLampHead> Lamps;
+	TArray<FTri> Tris;
+	for (int32 S = 0; S < World.Decor.Sections.Num(); ++S)
+		for (int32 T = 0; T + 2 < World.Decor.Sections[S].Vertices.Num(); T += 3) Tris.Add({ &World.Decor.Sections[S].Vertices[T], S, Tris.Num() });
+	if (Tris.IsEmpty()) return Lamps;
+	const TMap<int32, TArray<TArray<int32>>> Groups = GroupDecor(World, Tris, [&](int32 P) { return PropKindOf(World.Placements[P].Shape) == EPropKind::Lamp; });
+	for (const TPair<int32, TArray<TArray<int32>>>& Group : Groups)
+	{
+		const FBRRPlacement& Place = World.Placements[Group.Key];
+		const FQuat4f Rot = FQuat4f(Place.Rotation);
+		const FVector3f Origin = FVector3f(Place.Location);
+		FBox3f Box(ForceInit);
+		for (const TArray<int32>& Piece : Group.Value)
+			for (const int32 I : Piece) for (int32 K = 0; K < 3; ++K) Box += Rot.UnrotateVector(Tris[I].V[K].Position - Origin);
+		const FVector3f E = Box.GetSize(), C = Box.GetCenter();
+		// The same fit BuildProps asks of a lamp; one kept as the original gets no light either.
+		if (!(E.Z > 200.f && FMath::Min(E.X, E.Y) < 600.f)) continue;
+		const bool bAlongX = E.X >= E.Y;
+		const float Long = bAlongX ? E.X : E.Y, H = E.Z;
+		const FQuat4f Along = bAlongX ? FQuat4f::Identity : FQuat4f(FVector3f::UpVector, PI * 0.5f);
+		// Exactly where BuildProps puts the glowing panel, under the arm's end.
+		const FVector3f Foot(C.X, C.Y, Box.Min.Z);
+		const FVector3f Reach = Along.RotateVector(FVector3f(FMath::Max(Long * 0.45f, H * 0.18f), 0, 0));
+		Lamps.Add({ Origin + Rot.RotateVector(Foot + FVector3f(0, 0, H * 0.9f) + Reach + FVector3f(0, 0, -13.f)) });
+	}
+	return Lamps;
+}
+
 void BRR::MakeSpectator(int32 Variant, FBRRMesh& OutShirt, FBRRMesh& OutRest)
 {
 	FBuilder Shirt(Variant * 13 + 1), Rest(Variant * 13 + 2);

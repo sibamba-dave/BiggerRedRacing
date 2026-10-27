@@ -11,6 +11,8 @@
 #include "AudioDevice.h"
 #include "BRRVehiclePawn.h"
 #include "BRRAnimDecor.h"
+#include "Components/PointLightComponent.h"
+#include "Components/SpotLightComponent.h"
 #include "BRRLook.h"
 #include "BRRPhoto.h"
 #include "BRRSprites.h"
@@ -18,6 +20,7 @@
 #include "BRRWake.h"
 #include "BRRDust.h"
 #include "BRRFilm.h"
+#include "BRRProps.h"
 #include "BRRWeather.h"
 #include "BRRCrowd.h"
 #include "Misc/App.h"
@@ -303,15 +306,13 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 	Weather = GetWorld()->SpawnActor<ABRRWeather>();
 	Weather->Build(LevelName, Look);
 	Crowd = GetWorld()->SpawnActor<ABRRCrowd>();
+	TArray<FVector> Routes;
+	for (int32 R = 0; R < Race->NumRacers(); ++R)
 	{
-		TArray<FVector> Routes;
-		for (int32 R = 0; R < Race->NumRacers(); ++R)
-		{
-			const TArray<FVector> Path = Race->GhostPath(R);
-			for (int32 I = 0; I < Path.Num(); I += 8) Routes.Add(Path[I]); // a point every few metres is plenty
-		}
-		Crowd->Build(World, Routes);
+		const TArray<FVector> Path = Race->GhostPath(R);
+		for (int32 I = 0; I < Path.Num(); I += 8) Routes.Add(Path[I]); // a point every few metres is plenty
 	}
+	Crowd->Build(World, Routes);
 	Photo = GetWorld()->SpawnActor<ABRRPhoto>();
 	FParse::Value(FCommandLine::Get(), TEXT("BRRPhoto="), PhotoAt);
 	Sprites = GetWorld()->SpawnActor<ABRRSprites>();
@@ -371,9 +372,122 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 			Ghosts[R] = Ghost;
 		}
 	}
+	BuildRaceLights(World, Routes);
+	if (Look) Look->OnLookChanged.AddUObject(this, &ABRRRaceGameMode::HandleLookChanged);
 	UE_LOG(LogBRRRace, Display, TEXT("%s: %d racers, player %s on block %d, %d laps"), *LevelName, N, *PlayerVehicle,
 		Race->PlayerIndex(), Race->Laps());
 	return PlayerCar != nullptr;
+}
+
+void ABRRRaceGameMode::AddCarLights(UStaticMeshComponent* Body, bool bShadowed)
+{
+	if (!Body || !Body->GetStaticMesh()) return;
+	// On the lamp domes AddVehicleLamps raises: 38% up the body, 32% out, on the front and back faces.
+	const FBox Box = Body->GetStaticMesh()->GetBounds().GetBox();
+	const FVector E = Box.GetSize();
+	const double Z = Box.Min.Z + E.Z * 0.38, YMid = Box.GetCenter().Y;
+	for (const double Side : { -1.0, 1.0 })
+	{
+		USpotLightComponent* Head = NewObject<USpotLightComponent>(Body->GetOwner());
+		Head->SetupAttachment(Body);
+		Head->SetRelativeLocation(FVector(Box.Max.X + 2, YMid + Side * E.Y * 0.32, Z));
+		Head->SetIntensityUnits(ELightUnits::Candelas);
+		Head->SetIntensity(12000.f);
+		Head->SetUseTemperature(true);
+		Head->SetTemperature(4500.f);
+		Head->SetAttenuationRadius(6000.f);
+		Head->SetInnerConeAngle(18.f);
+		Head->SetOuterConeAngle(35.f);
+		Head->SetCastShadows(bShadowed);
+		Head->SetVisibility(false);
+		Head->RegisterComponent();
+		CarLights.Add(Head);
+		UPointLightComponent* Tail = NewObject<UPointLightComponent>(Body->GetOwner());
+		Tail->SetupAttachment(Body);
+		Tail->SetRelativeLocation(FVector(Box.Min.X - 2, YMid + Side * E.Y * 0.32, Z));
+		Tail->SetIntensityUnits(ELightUnits::Candelas);
+		Tail->SetIntensity(120.f);
+		Tail->SetLightColor(FColor(255, 30, 20));
+		Tail->SetAttenuationRadius(400.f);
+		Tail->SetCastShadows(false);
+		Tail->SetVisibility(false);
+		Tail->RegisterComponent();
+		CarLights.Add(Tail);
+	}
+}
+
+void ABRRRaceGameMode::BuildRaceLights(const FBRRWorld& World, const TArray<FVector>& Routes)
+{
+	bDarkRace = Weather && (Weather->SunElevationDegrees() < 15.f || Weather->RainStrength() > 0.4f);
+	AddCarLights(PlayerCar ? PlayerCar->BodyMesh.Get() : nullptr, /*bShadowed=*/true);
+	for (ABRRGhostCar* Ghost : Ghosts) if (Ghost) AddCarLights(Ghost->BodyMesh.Get(), false);
+
+	// The gantry's own glow: a small light per state, showing and hiding with its mesh.
+	static const FColor GantryColours[4] = { FColor(255, 40, 30), FColor(255, 120, 30), FColor(255, 170, 40), FColor(40, 220, 60) };
+	for (int32 K = 0; K < StartLights.Num(); ++K)
+	{
+		AStaticMeshActor* State = Cast<AStaticMeshActor>(StartLights[K]);
+		if (!State || !State->GetStaticMeshComponent()) continue;
+		UPointLightComponent* Glow = NewObject<UPointLightComponent>(State);
+		Glow->SetupAttachment(State->GetStaticMeshComponent());
+		Glow->SetRelativeLocation(FVector(0, 0, 0));
+		Glow->SetWorldLocation(State->GetStaticMeshComponent()->Bounds.Origin);
+		Glow->SetIntensityUnits(ELightUnits::Candelas);
+		Glow->SetIntensity(400.f);
+		Glow->SetLightColor(GantryColours[K]);
+		Glow->SetAttenuationRadius(900.f);
+		Glow->SetCastShadows(false);
+		Glow->RegisterComponent();
+	}
+
+	// A spot under each lamp post's head, the ones nearest where the racing goes first.
+	TArray<BRR::FBRRLampHead> Lamps = BRR::FindLamps(World);
+	if (!Lamps.IsEmpty())
+	{
+		auto NearestSq = [&Routes](const FVector3f& P)
+		{
+			double Best = TNumericLimits<double>::Max();
+			for (int32 I = 0; I < Routes.Num(); I += 4) Best = FMath::Min(Best, FVector::DistSquared2D(Routes[I], FVector(P)));
+			return Best;
+		};
+		Lamps.Sort([&](const BRR::FBRRLampHead& A, const BRR::FBRRLampHead& B) { return NearestSq(A.Head) < NearestSq(B.Head); });
+		LampPosts = GetWorld()->SpawnActor<AActor>();
+		USceneComponent* Root = NewObject<USceneComponent>(LampPosts);
+		LampPosts->SetRootComponent(Root);
+		Root->RegisterComponent();
+		for (int32 I = 0; I < FMath::Min(Lamps.Num(), 48); ++I)
+		{
+			USpotLightComponent* Spot = NewObject<USpotLightComponent>(LampPosts);
+			Spot->SetupAttachment(Root);
+			Spot->SetWorldLocation(FVector(Lamps[I].Head) + FVector(0, 0, -6));
+			Spot->SetWorldRotation(FRotator(-90, 0, 0)); // straight down
+			Spot->SetIntensityUnits(ELightUnits::Candelas);
+			Spot->SetIntensity(3000.f);
+			Spot->SetUseTemperature(true);
+			Spot->SetTemperature(3400.f);
+			Spot->SetAttenuationRadius(1200.f);
+			Spot->SetInnerConeAngle(35.f);
+			Spot->SetOuterConeAngle(60.f);
+			Spot->SetCastShadows(false);
+			Spot->RegisterComponent();
+		}
+		UE_LOG(LogBRRRace, Display, TEXT("%s: %d lamp posts lit (of %d)"), *LevelName, FMath::Min(Lamps.Num(), 48), Lamps.Num());
+	}
+	SyncRaceLights();
+}
+
+void ABRRRaceGameMode::SyncRaceLights()
+{
+	// Lit only in the remastered look, and only when the hour is dark or the rain heavy. (The
+	// gantry's glow stays with its mesh: a light does nothing to the classic look's unlit world.)
+	const bool bOn = bDarkRace && Look && Look->IsRemastered();
+	for (ULightComponent* L : CarLights) if (L) L->SetVisibility(bOn);
+	if (LampPosts) LampPosts->SetActorHiddenInGame(!bOn);
+}
+
+void ABRRRaceGameMode::HandleLookChanged(bool)
+{
+	SyncRaceLights();
 }
 
 void ABRRRaceGameMode::Tick(float DeltaSeconds)
@@ -707,7 +821,7 @@ void ABRRRaceGameMode::UpdateStartLights()
 	for (int32 K = 0; K < StartLights.Num(); ++K)
 	{
 		AStaticMeshActor* Lights = Cast<AStaticMeshActor>(StartLights[K]);
-		if (Lights) Lights->GetStaticMeshComponent()->SetVisibility(K == State);
+		if (Lights) Lights->GetStaticMeshComponent()->SetVisibility(K == State, /*bPropagateToChildren=*/true); // the glow rides along
 	}
 }
 

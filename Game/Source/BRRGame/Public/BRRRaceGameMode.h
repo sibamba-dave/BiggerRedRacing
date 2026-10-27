@@ -112,6 +112,19 @@ private:
 	TObjectPtr<UMaterialParameterCollection> DrawRange;
 	float LastDrawDistance = -1.f; // the last written MPC DrawDistance; -1 forces the first write
 
+	// The remastered look's real lights, lit when the race runs at dawn, dusk or in heavy rain:
+	// every car's head and tail lamps (the player's headlamps shadowed, nothing else), a spot
+	// under each lamp post's head (BRR::FindLamps), and the gantry's own glow.
+	UPROPERTY()
+	TArray<TObjectPtr<class ULightComponent>> CarLights;
+	UPROPERTY()
+	TObjectPtr<AActor> LampPosts;
+	bool bDarkRace = false;
+	void AddCarLights(class UStaticMeshComponent* Body, bool bShadowed);
+	void BuildRaceLights(const FBRRWorld& World, const TArray<FVector>& Routes);
+	void SyncRaceLights();
+	void HandleLookChanged(bool bRemastered);
+
 	// The billboards, turned to the camera every frame.
 	UPROPERTY()
 	TObjectPtr<ABRRSprites> Sprites;
