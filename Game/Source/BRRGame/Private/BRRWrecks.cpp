@@ -59,6 +59,10 @@ UProceduralMeshComponent* ABRRWrecks::MakeComponent(const FBRRMesh& Mesh, EPart 
 void ABRRWrecks::Build(const TArray<FBRRWreck>& Wrecks, const FString& Level)
 {
 	LevelName = Level;
+	// The debris' shape and surface, held by the actor so the GC keeps them with the race (and
+	// loaded now, not at the first knock, which hitched waiting on the mesh).
+	DebrisMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	DebrisPlain = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
 	static const IConsoleVariable* Look = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.Look"));
 	LookSet = Look && Look->GetInt() != 0 ? 1 : 0;
 	for (const FBRRWreck& W : Wrecks)
@@ -113,8 +117,10 @@ void ABRRWrecks::OnPieceHit(UPrimitiveComponent* HitComponent, AActor* OtherActo
 
 void ABRRWrecks::SpawnDebris(const FPiece& P)
 {
-	static UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
-	static UMaterialInterface* Plain = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+	// Members, not function statics: a cached raw pointer dangles after a map reload and the
+	// second race's first knock-over crashed on it.
+	UStaticMesh* Cube = DebrisMesh.Get();
+	UMaterialInterface* Plain = DebrisPlain.Get();
 	if (!Cube || !Plain || Debris.Num() >= 40) return;
 	const FBoxSphereBounds Bounds = P.Collision->Bounds;
 	FRandomStream Rnd(P.Instance * 7919 + 11);

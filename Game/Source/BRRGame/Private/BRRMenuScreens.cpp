@@ -206,14 +206,17 @@ namespace
 				G->StartChampionship();
 				if (G->Champ.bActive) Menu->Push(MakeGlobe(true));
 				break;
-			case 3: OnBack(); break;
+			case 3: UKismetSystemLibrary::QuitGame(Menu, nullptr, EQuitPreference::Quit, false); break;
 			case 4: Menu->Push(MakeOptions()); break;
 			default: break;
 			}
 		}
 		virtual void OnBack() override
 		{
-			UKismetSystemLibrary::QuitGame(Menu, nullptr, EQuitPreference::Quit, false);
+			// Escape never quits from here outright - it was far too easy to lose the game to a
+			// stray press. It moves the focus onto QUIT; quitting takes a deliberate confirm.
+			const int32 Quit = FocusOrder.IndexOfByKey(3);
+			if (Quit != INDEX_NONE) Focus = Quit;
 		}
 	};
 

@@ -62,6 +62,10 @@ private:
 		double Die = 0;
 	};
 	TArray<FDebris> Debris;
+	UPROPERTY()
+	TObjectPtr<class UStaticMesh> DebrisMesh;
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> DebrisPlain;
 	void SpawnDebris(const FPiece& P);
 	void UpdateDebris();
 	enum class EPart : uint8 { Collision, Drawn };

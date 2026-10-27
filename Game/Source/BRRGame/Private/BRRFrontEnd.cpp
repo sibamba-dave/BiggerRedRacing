@@ -14,6 +14,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Canvas.h"
+#include "Engine/GameViewportClient.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/Texture2D.h"
@@ -187,8 +188,17 @@ void ABRRFrontEndGameMode::StartPlay()
 	if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
 	{
 		PC->SetViewTarget(Camera);
+		// The menus take the mouse: a visible cursor that is never captured or locked (the
+		// project's capture-on-launch default swallowed it, so hover and click never arrived).
 		PC->bShowMouseCursor = true;
-		PC->SetInputMode(FInputModeGameAndUI().SetHideCursorDuringCapture(false));
+		PC->bEnableClickEvents = true;
+		PC->bEnableMouseOverEvents = true;
+		PC->SetInputMode(FInputModeGameAndUI().SetHideCursorDuringCapture(false).SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock));
+		if (UGameViewportClient* Viewport = GetWorld()->GetGameViewport())
+		{
+			Viewport->SetMouseCaptureMode(EMouseCaptureMode::NoCapture);
+			Viewport->SetMouseLockMode(EMouseLockMode::DoNotLock);
+		}
 	}
 
 	// The front end's music: CD track 2, round and round.
@@ -198,6 +208,8 @@ void ABRRFrontEndGameMode::StartPlay()
 		{
 			SoundOutput->Start();
 			BRRAudio::PlayMusic(2, 2);
+			FString Dump; // -BRRAudioDump=<wav>: the menus' sound, by ear or by numbers (as the race has it)
+			if (FParse::Value(FCommandLine::Get(), TEXT("BRRAudioDump="), Dump)) BRRAudio::DumpTo(Dump, 12.f);
 		}
 	}
 	G->ApplySettings();

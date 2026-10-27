@@ -167,17 +167,20 @@ namespace
 				E.Opposite.Add(T[(K + 2) % 3]);
 			}
 		}
-		// The creases, and each point's neighbours and creased neighbours.
-		TArray<TArray<int32>> Ring, CreaseRing;
+		// The creases, and each point's neighbours, creased neighbours and open-boundary neighbours.
+		TArray<TArray<int32>> Ring, CreaseRing, BoundaryRing;
 		Ring.SetNum(Points.Num());
 		CreaseRing.SetNum(Points.Num());
+		BoundaryRing.SetNum(Points.Num());
 		for (TPair<uint64, FEdge>& Pair : Edges)
 		{
 			FEdge& E = Pair.Value;
-			E.bCrease = E.Faces.Num() != 2 || (FaceNormal[E.Faces[0]] | FaceNormal[E.Faces[1]]) < CosCrease;
+			const bool bOpen = E.Faces.Num() != 2;
+			E.bCrease = bOpen || (FaceNormal[E.Faces[0]] | FaceNormal[E.Faces[1]]) < CosCrease;
 			Ring[E.A].AddUnique(E.B);
 			Ring[E.B].AddUnique(E.A);
 			if (E.bCrease) { CreaseRing[E.A].AddUnique(E.B); CreaseRing[E.B].AddUnique(E.A); }
+			if (bOpen) { BoundaryRing[E.A].AddUnique(E.B); BoundaryRing[E.B].AddUnique(E.A); }
 		}
 		// The new points: the old moved (even), one on every edge (odd).
 		TArray<FVector3f> Even;
@@ -188,6 +191,16 @@ namespace
 			if (Creases >= 3) { Even[P] = Points[P]; continue; }          // a corner
 			if (Creases == 2)                                               // along a crease
 			{
+				// An open sheet's corner - a banner's, a sign's, a painted decal's - is where two
+				// boundary edges meet at an angle: pinned, or the rounding below turns every flat
+				// rectangle into an oval pillow. A straight run of boundary still smooths, and a
+				// closed body (no open edges) never comes this way.
+				if (BoundaryRing[P].Num() == 2)
+				{
+					const FVector3f D0 = (Points[BoundaryRing[P][0]] - Points[P]).GetSafeNormal();
+					const FVector3f D1 = (Points[BoundaryRing[P][1]] - Points[P]).GetSafeNormal();
+					if ((D0 | D1) > -0.766f) { Even[P] = Points[P]; continue; } // sharper than ~140 degrees
+				}
 				Even[P] = Points[P] * 0.75f + (Points[CreaseRing[P][0]] + Points[CreaseRing[P][1]]) * 0.125f;
 				continue;
 			}
@@ -526,6 +539,20 @@ TArray<BRR::FBRRScatter> BRR::ScatterGround(const FBRRWorld& World, double Reach
 		default: return 0.f;
 		}
 	};
+	// The water's level by cell (the highest water surface in or beside it): nothing grows out of
+	// the river - a tuft on a low bank cell stood in the drawn water (a play test).
+	TArray<float> WaterLevel;
+	WaterLevel.Init(-1e9f, Rows * Cols);
+	for (const FBRRMeshSection& S : World.Terrain.Sections)
+		for (int32 T = 0; T + 2 < S.Vertices.Num(); T += 3)
+		{
+			if (World.LiquidOf(S.Vertices[T].Land) == EBRRLiquid::None) continue;
+			const FVector3f Mid = (S.Vertices[T].Position + S.Vertices[T + 1].Position + S.Vertices[T + 2].Position) / 3.f;
+			const FIntPoint C = CellOf(Mid);
+			for (int32 R = FMath::Max(C.X - 1, 0); R <= FMath::Min(C.X + 1, Rows - 1); ++R)
+				for (int32 Col = FMath::Max(C.Y - 1, 0); Col <= FMath::Min(C.Y + 1, Cols - 1); ++Col)
+					WaterLevel[R * Cols + Col] = FMath::Max(WaterLevel[R * Cols + Col], Mid.Z);
+		}
 	const uint32 LevelSeed = GetTypeHash(World.LevelName);
 	int32 Triangle = 0;
 	for (const FBRRMeshSection& S : World.Terrain.Sections)
@@ -558,6 +585,7 @@ TArray<BRR::FBRRScatter> BRR::ScatterGround(const FBRRWorld& World, double Reach
 					const double Sink = World.ShoreSinkAt(P.X, P.Y);
 					if (Sink > 10.0) continue; // the banks let down into the water
 					P.Z += float(World.RefinedOffsetAt(P.X, P.Y) - Sink);
+					if (P.Z < WaterLevel[CellOf(P).X * Cols + CellOf(P).Y] + 40.f) continue; // under (or awash in) the water
 					FColor Under = V[0].Color;
 					if (Page)
 					{

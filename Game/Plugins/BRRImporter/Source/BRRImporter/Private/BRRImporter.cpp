@@ -476,8 +476,10 @@ namespace
 			P->DefaultValue = Default;
 			return P;
 		};
-		UMaterialExpression* Rough = Scalar(TEXT("Roughness"), 0.75f, 1000);
-		UMaterialExpression* Shine = Scalar(TEXT("Specular"), 0.35f, 1100);
+		// The ground's default: matte. 0.75 / 0.35 read as polished stone under Lumen's
+		// reflections (a play test: "far too shiny"); dirt, grass and rock scatter almost all.
+		UMaterialExpression* Rough = Scalar(TEXT("Roughness"), 0.9f, 1000);
+		UMaterialExpression* Shine = Scalar(TEXT("Specular"), 0.22f, 1100);
 		UMaterialExpression* Wet = MakeCollectionValue(Mat, Collection, TEXT("Wetness"), -800, 1200);
 		auto Part = [&](const TCHAR* Code, ECustomMaterialOutputType Type, int32 Y)
 		{
@@ -491,8 +493,8 @@ namespace
 		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return R * (k == 1 || k == 2 ? 0.5 : Shine);"), CMOT_Float1, 200), TEXT(""), MP_Specular);
 		// Rain polishes what it soaks (Wet rides R: the classic look stays matte-unlit).
 		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT(
-			"float r = k == 1 ? 0.03 : k == 2 ? 0.1 : k == 3 ? 0.55 : saturate(Rough + (D.w - 0.5));\n"
-			"return lerp(r, min(r, 0.25), Wet * R);"), CMOT_Float1, 300), TEXT(""), MP_Roughness);
+			"float r = k == 1 ? 0.03 : k == 2 ? 0.1 : k == 3 ? 0.55 : saturate(Rough + (D.w - 0.5) * 0.5);\n"
+			"return lerp(r, min(r, 0.5), Wet * R);"), CMOT_Float1, 300), TEXT(""), MP_Roughness);
 
 		UMaterialExpression* ToTangent = MakeRipples(Mat);
 		UMaterialExpressionCustom* Normal = MakeCustomOutputs(Mat, TEXT("return K == 1 ? normalize(N) : R > 0.5 ? normalize(D.xyz) : float3(0, 0, 1);"), CMOT_Float3,
@@ -835,7 +837,7 @@ namespace
 			Out->AbsorptionCoefficients.Connect(0, MakeCustom(Mat, TEXT("return float3(0.45, 0.09, 0.06) + (1 - C.rgb) * 0.05;"), CMOT_Float3, { { TEXT("C"), Tint } }));
 			Out->PhaseG.Connect(0, MakeCustom(Mat, TEXT("return 0.1;"), CMOT_Float1, {}));
 			UMaterialEditingLibrary::ConnectMaterialProperty(Tint, TEXT(""), MP_BaseColor);
-			UMaterialEditingLibrary::ConnectMaterialProperty(MakeCustom(Mat, TEXT("return 0.04;"), CMOT_Float1, {}), TEXT(""), MP_Roughness);
+			UMaterialEditingLibrary::ConnectMaterialProperty(MakeCustom(Mat, TEXT("return 0.07;"), CMOT_Float1, {}), TEXT(""), MP_Roughness);
 			UMaterialEditingLibrary::ConnectMaterialProperty(MakeCustom(Mat, TEXT("return 0.5;"), CMOT_Float1, {}), TEXT(""), MP_Specular);
 			UMaterialEditingLibrary::ConnectMaterialProperty(MakeRipples(Mat), TEXT(""), MP_Normal);
 			{
@@ -849,7 +851,7 @@ namespace
 					"const float4 W[3] = { float4(0.8, 0.6, 1700.0, 0.55), float4(-0.5, 0.87, 1100.0, 0.8), float4(0.2, -0.98, 700.0, 1.1) };\n"
 					"float h = 0;\n"
 					"for (int i = 0; i < 3; i++) h += sin(dot(W[i].xy, P.xy) * 6.2831853 / W[i].z - T * W[i].w);\n"
-					"return float3(0, 0, h * (4.0 + 6.0 * Wet));"), CMOT_Float3,
+					"return float3(0, 0, h * (1.8 + 3.0 * Wet));"), CMOT_Float3,
 					{ { TEXT("P"), WavePos }, { TEXT("T"), WaveTime }, { TEXT("Wet"), Wet } });
 				UMaterialEditingLibrary::ConnectMaterialProperty(Waves, TEXT(""), MP_WorldPositionOffset);
 			}
@@ -1298,7 +1300,10 @@ namespace
 	// The remastered look's round versions (BRR::SubdivideSmooth, twice: 16 triangles for one):
 	// folds sharper than these stay creases - a car's panel lines, a building's corners - and the
 	// rest (an inflatable's tubes, a tree's crown, a rock) comes out smooth.
-	constexpr float BodyCrease = 50.f, DecorCrease = 50.f;
+	// A body's crease: only folds sharper than this stay hard. At 50 every 90-degree box edge was
+	// kept, so the cars stayed boxes (a play test); at 100 the panels round into each other and
+	// only the true folds - wheel arches, the windscreen's base - hold their line.
+	constexpr float BodyCrease = 100.f, DecorCrease = 50.f;
 	FBRRMesh Smoothed(const FBRRMesh& Mesh, float MaxAngle)
 	{
 		FBRRMesh Out = Mesh;
@@ -1450,6 +1455,35 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 	for (int32 I = 0; I < Rebuilt.Num() && I < PropTriangles.Num(); ++I) Rebuilt[I] = Rebuilt[I] || PropTriangles[I];
 	UStaticMesh* DecorHD = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_DecorHD"), *Level),
 		BRR::SubdivideSmooth(BRR::WithoutPlants(World.Decor, Rebuilt), 2, DecorCrease), false, ESurface::Ground, true);
+	// What the decor collides as, in both looks: the original's scenery without its plants, and
+	// a trunk for each tree. The original's broad flat crowns made a car stop a crown's width
+	// short of a tree (a play test); a trunk is what a car actually meets.
+	UStaticMesh* DecorSolid = nullptr;
+	{
+		FBRRMesh Solid = BRR::WithoutPlants(World.Decor, PlantTriangles);
+		FBRRMeshSection& Trunks = Solid.Sections.AddDefaulted_GetRef();
+		for (const BRR::FBRRTree& Tree : Trees)
+		{
+			const float R = FMath::Clamp(Tree.Radius * 0.12f, 18.f, 55.f), H = FMath::Max(Tree.Height * 0.6f, 150.f);
+			constexpr int32 Sides = 8;
+			for (int32 K = 0; K < Sides; ++K)
+			{
+				const float A0 = 2.f * PI * K / Sides, A1 = 2.f * PI * (K + 1) / Sides;
+				const FVector3f P0 = Tree.Base + FVector3f(FMath::Cos(A0) * R, FMath::Sin(A0) * R, -30.f);
+				const FVector3f P1 = Tree.Base + FVector3f(FMath::Cos(A1) * R, FMath::Sin(A1) * R, -30.f);
+				const FVector3f Up(0, 0, H + 30.f);
+				for (const FVector3f& P : { P0, P1 + Up, P1, P0, P0 + Up, P1 + Up })
+				{
+					FBRRVertex V;
+					V.Position = P;
+					V.Color = Tree.Trunk;
+					Trunks.Vertices.Add(V);
+				}
+			}
+		}
+		if (Trunks.Vertices.IsEmpty()) Solid.Sections.Pop();
+		DecorSolid = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_DecorSolid"), *Level), Solid, true, ESurface::Ground, false);
+	}
 	UE_LOG(LogBRRImport, Display, TEXT("%s: %d pieces of furniture rebuilt (%d triangles)"), *Level, PropCount, Props.NumTriangles());
 	UStaticMesh* PropsHD = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_PropsHD"), *Level), Props, false, ESurface::Ground, true);
 	FBRRMesh Grown;
@@ -1538,7 +1572,17 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 	}
 	if (AStaticMeshActor* Original = SpawnMeshActor(Map, Decor, FTransform::Identity, TEXT("Decor")))
 	{
-		if (DecorHD) Original->Tags.Add(TEXT("BRRClassicOnly")); // hidden in the remastered look, still solid
+		if (DecorHD) Original->Tags.Add(TEXT("BRRClassicOnly")); // hidden in the remastered look
+		// Drawn only: the decor collides as DecorSolid (below), trees as their trunks.
+		if (DecorSolid) Original->GetStaticMeshComponent()->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+	}
+	if (AStaticMeshActor* Solid = SpawnMeshActor(Map, DecorSolid, FTransform::Identity, TEXT("DecorSolid")))
+	{
+		Solid->GetStaticMeshComponent()->SetVisibility(false);
+		Solid->GetStaticMeshComponent()->SetHiddenInGame(true);
+		Solid->GetStaticMeshComponent()->SetCastShadow(false);
+		Solid->GetStaticMeshComponent()->SetVisibleInRayTracing(false);
+		Solid->GetStaticMeshComponent()->bAffectDistanceFieldLighting = false;
 	}
 	for (const TPair<UStaticMesh*, const TCHAR*>& Drawn : { MakeTuple(DecorHD, TEXT("DecorHD")), MakeTuple(TreesHD, TEXT("TreesHD")), MakeTuple(PropsHD, TEXT("PropsHD")) })
 	{

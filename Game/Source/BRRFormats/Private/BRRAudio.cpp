@@ -78,6 +78,8 @@ namespace
 	};
 	TUniquePtr<FReverb> GReverb;
 	float GReverbTarget = 0.f, GReverbLevel = 0.f;
+	bool GSpeaking = false;      // a speech voice is live (Mixer::mix): the music and the wash step aside
+	float GMusicDuck = 1.f;      // eased music gain under speech
 	TArray<int16_t> GScratch;          // audio thread only
 	FString GDumpPath;                 // DumpTo: where, how much, and what so far
 	int32 GDumpFrames = 0;
@@ -165,6 +167,9 @@ namespace
 	// Audio thread, under GLock: the music into Out, resampled linearly to the output rate.
 	void RenderMusic(float* Out, int32 Frames)
 	{
+		// The music steps aside while the commentator speaks (the mixer ducks only the effects;
+		// the music is ours), easing so nothing pumps.
+		GMusicDuck += ((GSpeaking ? 0.35f : 1.f) - GMusicDuck) * FMath::Min(Frames / 1024.f, 1.f);
 		for (int32 I = 0; I < Frames; ++I)
 		{
 			const TSharedPtr<FTrack>& T = GInIntro ? GIntro : GLoop;
@@ -181,8 +186,8 @@ namespace
 			}
 			const float A = float(GMusicPos - F);
 			const int16* P = T->Pcm.GetData() + F * 2;
-			Out[I * 2] += (P[0] + (P[2] - P[0]) * A) / 32768.f * GMusicVolume;
-			Out[I * 2 + 1] += (P[1] + (P[3] - P[1]) * A) / 32768.f * GMusicVolume;
+			Out[I * 2] += (P[0] + (P[2] - P[0]) * A) / 32768.f * GMusicVolume * GMusicDuck;
+			Out[I * 2 + 1] += (P[1] + (P[3] - P[1]) * A) / 32768.f * GMusicVolume * GMusicDuck;
 			GMusicPos += double(T->Rate) / GRate;
 		}
 	}
@@ -215,6 +220,7 @@ namespace bigred
 		// As mixer.cpp, minus the music (BRRAudio mixes it, at its own volume). Runs with GLock held.
 		bool speaking = false;
 		for (const Voice& v : voices_) if (v.active && v.speech) speaking = true;
+		GSpeaking = speaking; // the music and the tunnel wash read it (GLock is held)
 		const int32_t duck0 = duck_;
 		if (speaking) duck_ = duck_ - kDuckAttack < kDuckGain ? kDuckGain : duck_ - kDuckAttack;
 		else duck_ = duck_ + kDuckRelease > 256 ? 256 : duck_ + kDuckRelease;
@@ -275,14 +281,20 @@ namespace bigred
 		}
 		if (slot < 0 && (loop || p.speech))
 		{
-			uint32_t oldest = 0xffffffffu;
-			for (int i = 0; i < kVoices; ++i)
+			// Steal the oldest one-shot - but never the commentator mid-line for a mere loop:
+			// speech is only stolen when nothing else can be, or by newer speech.
+			for (const bool bSpareSpeech : { true, false })
 			{
-				if (voices_[i].active && !voices_[i].loop && voices_[i].generation < oldest)
+				uint32_t oldest = 0xffffffffu;
+				for (int i = 0; i < kVoices; ++i)
 				{
-					oldest = voices_[i].generation;
-					slot = i;
+					if (voices_[i].active && !voices_[i].loop && !(bSpareSpeech && voices_[i].speech) && voices_[i].generation < oldest)
+					{
+						oldest = voices_[i].generation;
+						slot = i;
+					}
 				}
+				if (slot >= 0 || (bSpareSpeech && !p.speech)) break; // only speech may take speech
 			}
 		}
 		if (slot < 0) return id;
@@ -383,8 +395,9 @@ namespace BRRAudio
 			GMixFn(GMixer.get(), GScratch.GetData(), Frames);
 			const float Gain = GEffectsVolume / 32768.f;
 			// The tunnel wash: a small Schroeder reverb on the effects only, eased toward the
-			// race's setting. At zero, and once the tail has died, the mix is bit-identical dry.
-			GReverbLevel += (GReverbTarget - GReverbLevel) * 0.05f;
+			// race's setting - and mostly out of the way while the commentator speaks. At zero,
+			// and once the tail has died, the mix is bit-identical dry.
+			GReverbLevel += (GReverbTarget * (GSpeaking ? 0.25f : 1.f) - GReverbLevel) * 0.05f;
 			if (GReverbLevel > 0.001f)
 			{
 				if (!GReverb)
@@ -451,6 +464,8 @@ namespace BRRAudio
 	void StopEffects()
 	{
 		if (GMixer) GMixer->stop_all();
+		// A race's wash never follows into the menus: the target would otherwise stand stale.
+		GReverbTarget = 0.f;
 	}
 
 	void PlayOnce(const FString& DataDir, const FString& Dir, const FString& Name, float Volume)
