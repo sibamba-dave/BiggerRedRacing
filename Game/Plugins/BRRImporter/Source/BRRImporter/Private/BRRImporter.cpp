@@ -186,6 +186,9 @@ namespace
 		Texture->SRGB = bColour;
 		Texture->LODGroup = TEXTUREGROUP_World;
 		Texture->MipGenSettings = TMGS_FromTextureGroup;
+		// The pages are 1024x768: without this they get no mips at all (and never stream), so far
+		// terrain shimmered. Stretch, not pad: the materials sample 0..1.
+		Texture->PowerOfTwoMode = ETexturePowerOfTwoSetting::StretchToPowerOfTwo;
 		Texture->CompressionSettings = TC_Default;
 		Texture->PostEditChange();
 		SaveAsset(Texture);
