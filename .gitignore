@@ -34,3 +34,5 @@ Tools/upscale/
 
 # CC0 ground materials, fetched and packed by Tools/fetch_ground.py
 Tools/ground/
+
+Tools/bench/results/

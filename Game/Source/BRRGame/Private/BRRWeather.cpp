@@ -29,7 +29,9 @@ ABRRWeather::ABRRWeather()
 void ABRRWeather::Build(const FString& Level, ABRRLook* Look)
 {
 	Material = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BRR/Materials/M_BRR_Haze.M_BRR_Haze"), nullptr, LOAD_NoWarn | LOAD_Quiet);
-	Random.Initialize(int32(FDateTime::Now().GetTicks() & 0x7FFFFFFF));
+	int32 Seed = 0;
+	if (FParse::Value(FCommandLine::Get(), TEXT("BRRWeatherSeed="), Seed)) Random.Initialize(Seed); // a pinned draw, for benches and comparisons
+	else Random.Initialize(int32(FDateTime::Now().GetTicks() & 0x7FFFFFFF));
 	int32 Mode = CVarWeather.GetValueOnGameThread();
 	FParse::Value(FCommandLine::Get(), TEXT("BRRWeather="), Mode); // the race is built before -ExecCmds run
 	const FString L = Level.ToUpper();
