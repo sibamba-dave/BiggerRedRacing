@@ -182,9 +182,9 @@ void ABRRWake::Update(const TArray<FTransform>& Poses, float DeltaSeconds, bool 
 			for (int32 Side = 0; Side < 2; ++Side)
 			{
 				if (Crumb.Landed[Side] > 0) continue;
-				const double Reach = HalfBeam + Crumb.Age * Crumb.Speed * KelvinSpread;
-				if (Reach > MaxReach) continue;
-				const FVector Arm = Crumb.Position + Crumb.Right * (Side ? Reach : -Reach);
+				const double Out = HalfBeam + Crumb.Age * Crumb.Speed * KelvinSpread;
+				if (Out > MaxReach) continue;
+				const FVector Arm = Crumb.Position + Crumb.Right * (Side ? Out : -Out);
 				float ArmLevel = float(Crumb.Position.Z - 5.0);
 				LevelAt(Arm, ArmLevel);
 				if (GroundAt(Arm) > ArmLevel + 2.0)

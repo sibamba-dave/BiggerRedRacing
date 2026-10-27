@@ -32,6 +32,7 @@ private:
 	float SpriteHeight(const TArray<TObjectPtr<UTexture2D>>& Sheet, int32 Index) const;
 
 	bool bTriedLoad = false;
+	bool bArtSmooth = false; // the art was made smoothed (BRRArt), for the look then
 
 	UPROPERTY()
 	TArray<TObjectPtr<UTexture2D>> Game;     // GAMESVGA.SPR

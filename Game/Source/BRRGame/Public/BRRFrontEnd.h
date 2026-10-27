@@ -100,7 +100,9 @@ public:
 	void ShowPicture(const FBRRImage& Picture);
 	// A video's frame on the backdrop, through one texture updated in place.
 	void ShowFrame(const FBRRImage& Frame);
-	UTexture2D* MakeTexture(const FBRRImage& Image);
+	// bArt: interface art (fonts, sprites), smoothed in the remastered look (BRRArt).
+	UTexture2D* MakeTexture(const FBRRImage& Image, bool bArt = false);
+	bool bArtSmooth = false;
 	const FBRRMenuFont& Font(int32 Index) const; // 0/1 SML_ALPH, 2..6 WIBS1..5
 	double Seconds() const { return Clock; }
 

@@ -1,4 +1,5 @@
 #include "BRRRaceHUD.h"
+#include "BRRArt.h"
 
 #include "BRRArchive.h"
 #include "BRRRaceGameMode.h"
@@ -31,6 +32,11 @@ UTexture2D* ABRRRaceHUD::MakeTexture(const FBRRImage& Image)
 bool ABRRRaceHUD::LoadArtwork()
 {
 	bTriedLoad = true;
+	bArtSmooth = BRRArt::SmoothWanted();
+	Game.Reset();
+	GameInset.Reset();
+	Alphabet.Reset();
+	MapTexture = nullptr;
 	const ABRRRaceGameMode* Mode = GetWorld()->GetAuthGameMode<ABRRRaceGameMode>();
 	const FString DataDir = BRR::GetDataDir();
 	if (!Mode || DataDir.IsEmpty()) return false;
@@ -52,7 +58,7 @@ bool ABRRRaceHUD::LoadArtwork()
 	{
 		for (const FBRRImage& I : Images)
 		{
-			Game.Add(MakeTexture(I));
+			Game.Add(BRRArt::MakeTexture(I, bArtSmooth));
 			// Where each glyph's drawing starts inside its image, so the original's measured
 			// positions can be met exactly.
 			FIntPoint Inset(I.Width, I.Height);
@@ -77,10 +83,10 @@ bool ABRRRaceHUD::LoadArtwork()
 		FrameTexel = Texel(Bar, [](const FColor& C) { return -int32(C.R) - C.G - C.B; });
 	}
 	if (BRR::LoadSprites(DataDir, TEXT("ALWAYS.WAP"), TEXT("SML_ALPH.SPR"), LevelPalette, Images, Error))
-		for (const FBRRImage& I : Images) Alphabet.Add(MakeTexture(I));
+		for (const FBRRImage& I : Images) Alphabet.Add(BRRArt::MakeTexture(I, bArtSmooth));
 	if (BRR::LoadTopMap(DataDir, Mode->GetLevelName(), LevelPalette, TopMap, Error))
 	{
-		MapTexture = MakeTexture(TopMap.Image);
+		MapTexture = BRRArt::MakeTexture(TopMap.Image, bArtSmooth);
 		MapInset = FIntPoint(TopMap.Image.Width, TopMap.Image.Height);
 		for (int32 Y = 0; Y < TopMap.Image.Height; ++Y)
 		{
@@ -99,25 +105,27 @@ bool ABRRRaceHUD::LoadArtwork()
 
 float ABRRRaceHUD::SpriteWidth(const TArray<TObjectPtr<UTexture2D>>& Sheet, int32 Index) const
 {
-	return Sheet.IsValidIndex(Index) && Sheet[Index] ? Sheet[Index]->GetSizeX() : 0.f;
+	return Sheet.IsValidIndex(Index) && Sheet[Index] ? BRRArt::Size(Sheet[Index]).X : 0.f;
 }
 
 float ABRRRaceHUD::SpriteHeight(const TArray<TObjectPtr<UTexture2D>>& Sheet, int32 Index) const
 {
-	return Sheet.IsValidIndex(Index) && Sheet[Index] ? Sheet[Index]->GetSizeY() : 0.f;
+	return Sheet.IsValidIndex(Index) && Sheet[Index] ? BRRArt::Size(Sheet[Index]).Y : 0.f;
 }
 
 float ABRRRaceHUD::Sprite(const TArray<TObjectPtr<UTexture2D>>& Sheet, int32 Index, float X, float Y, float Scale, float Alpha)
 {
 	if (!Sheet.IsValidIndex(Index) || !Sheet[Index]) return X;
 	UTexture2D* T = Sheet[Index];
+	const FVector2D Size = BRRArt::Size(T);
 	FCanvasTileItem Tile(FVector2D(FMath::RoundToFloat(X), FMath::RoundToFloat(Y)), T->GetResource(),
-		FVector2D(T->GetSizeX() * Scale, T->GetSizeY() * Scale), FLinearColor(1, 1, 1, Alpha));
+		Size * Scale, FLinearColor(1, 1, 1, Alpha));
 	// The artwork's alpha is all or nothing (palette index 0); a translucent blend would mix the
-	// edges with the world behind, which the original's 8-bit screen never could.
-	Tile.BlendMode = Alpha < 1.f ? SE_BLEND_Translucent : SE_BLEND_Masked;
+	// edges with the world behind, which the original's 8-bit screen never could. Smoothed
+	// (the remastered look), its edges are soft, and blended.
+	Tile.BlendMode = Alpha < 1.f || BRRArt::IsSmooth(T) ? SE_BLEND_Translucent : SE_BLEND_Masked;
 	Canvas->DrawItem(Tile);
-	return X + T->GetSizeX() * Scale;
+	return X + Size.X * Scale;
 }
 
 float ABRRRaceHUD::TextWidth(const FString& S, float Scale) const
@@ -134,11 +142,11 @@ float ABRRRaceHUD::Text(const FString& S, float X, float Y, float Scale, const F
 		const int32 G = BRR::InterfaceGlyph(C);
 		if (!Alphabet.IsValidIndex(G) || !Alphabet[G]) continue;
 		UTexture2D* T = Alphabet[G];
-		FCanvasTileItem Tile(FVector2D(FMath::RoundToFloat(X), FMath::RoundToFloat(Y)), T->GetResource(),
-			FVector2D(T->GetSizeX() * Scale, T->GetSizeY() * Scale), Tint);
-		Tile.BlendMode = SE_BLEND_Masked;
+		const FVector2D Size = BRRArt::Size(T);
+		FCanvasTileItem Tile(FVector2D(FMath::RoundToFloat(X), FMath::RoundToFloat(Y)), T->GetResource(), Size * Scale, Tint);
+		Tile.BlendMode = BRRArt::IsSmooth(T) ? SE_BLEND_Translucent : SE_BLEND_Masked;
 		Canvas->DrawItem(Tile);
-		X += T->GetSizeX() * Scale; // the 8-pixel cell, no gap: as the original sets it
+		X += Size.X * Scale; // the 8-pixel cell, no gap: as the original sets it
 	}
 	return X;
 }
@@ -154,6 +162,7 @@ void ABRRRaceHUD::DrawHUD()
 	const ABRRRaceGameMode* Mode = GetWorld()->GetAuthGameMode<ABRRRaceGameMode>();
 	const FBRRRace* Race = Mode ? Mode->GetRace() : nullptr;
 	if (!Race || !Canvas) return;
+	if (bTriedLoad && bArtSmooth != BRRArt::SmoothWanted()) bTriedLoad = false; // the look changed: its art
 	if (!bTriedLoad) LoadArtwork();
 	if (Game.Num() <= MissedCheck) return;
 
@@ -172,8 +181,8 @@ void ABRRRaceHUD::DrawHUD()
 	{
 		const float Mx = (2.f - MapInset.X) * K, My = (2.f - MapInset.Y) * K;
 		FCanvasTileItem Map(FVector2D(Mx, My), MapTexture->GetResource(),
-			FVector2D(MapTexture->GetSizeX() * K, MapTexture->GetSizeY() * K), FLinearColor::White);
-		Map.BlendMode = SE_BLEND_Masked; // opaque, as the original's 8-bit map
+			BRRArt::Size(MapTexture) * K, FLinearColor::White);
+		Map.BlendMode = BRRArt::IsSmooth(MapTexture) ? SE_BLEND_Translucent : SE_BLEND_Masked; // opaque, as the original's 8-bit map
 		Canvas->DrawItem(Map);
 		auto Dot = [&](int32 R)
 		{

@@ -1,4 +1,5 @@
 #include "BRRFrontEnd.h"
+#include "BRRArt.h"
 
 #include "BRRAudio.h"
 #include "BRRGameInstance.h"
@@ -51,10 +52,10 @@ namespace
 void FBRRMenuPainter::Image(UTexture2D* Texture, double X, double Y, double W, double H, FLinearColor Tint)
 {
 	if (!Texture || !Canvas) return;
-	if (W < 0) W = Texture->GetSizeX();
-	if (H < 0) H = Texture->GetSizeY();
+	if (W < 0) W = BRRArt::Size(Texture).X;
+	if (H < 0) H = BRRArt::Size(Texture).Y;
 	FCanvasTileItem Tile(ToScreen(X, Y), Texture->GetResource(), FVector2D(W * Scale.X, H * Scale.Y), Tint);
-	Tile.BlendMode = SE_BLEND_Masked;
+	Tile.BlendMode = BRRArt::IsSmooth(Texture) ? SE_BLEND_Translucent : SE_BLEND_Masked;
 	Canvas->DrawItem(Tile);
 }
 
@@ -248,6 +249,8 @@ void ABRRFrontEndGameMode::LoadFonts()
 	const FString Dir = DataDir();
 	FString Error;
 	BRR::LoadPalette(Dir, TEXT("ALWAYS.WAP"), TEXT("DEFAULT.COL"), DefaultPalette, Error);
+	bArtSmooth = BRRArt::SmoothWanted();
+	Fonts.Reset();
 	Fonts.SetNum(7);
 	auto Load = [&](int32 Slot, const TCHAR* Member)
 	{
@@ -257,7 +260,7 @@ void ABRRFrontEndGameMode::LoadFonts()
 		F.Height = 0;
 		for (const FBRRImage& G : Glyphs)
 		{
-			F.Glyphs.Add(G.Width > 0 && G.Height > 0 ? MakeTexture(G) : nullptr);
+			F.Glyphs.Add(G.Width > 0 && G.Height > 0 ? MakeTexture(G, true) : nullptr);
 			F.Sizes.Add(FIntPoint(G.Width, G.Height));
 			F.Height = FMath::Max(F.Height, G.Height);
 		}
@@ -273,8 +276,15 @@ const FBRRMenuFont& ABRRFrontEndGameMode::Font(int32 Index) const
 	return Fonts[FMath::Clamp(Index, 0, Fonts.Num() - 1)];
 }
 
-UTexture2D* ABRRFrontEndGameMode::MakeTexture(const FBRRImage& Image)
+UTexture2D* ABRRFrontEndGameMode::MakeTexture(const FBRRImage& Image, bool bArt)
 {
+	if (bArt)
+	{
+		// Interface art (a font, a sprite): smoothed in the remastered look (BRRArt).
+		UTexture2D* Art = BRRArt::MakeTexture(Image, BRRArt::SmoothWanted());
+		if (Art) Textures.Add(Art);
+		return Art;
+	}
 	UTexture2D* T = UTexture2D::CreateTransient(Image.Width, Image.Height, PF_B8G8R8A8);
 	if (!T) return nullptr;
 	T->Filter = TF_Nearest;
@@ -327,7 +337,7 @@ void ABRRFrontEndGameMode::Push(TSharedRef<FBRRMenuScreen> Screen)
 	if (!Screen->Load()) return;
 	if (Screen->SpriteTextures.IsEmpty())
 	{
-		for (const FBRRImage& I : Screen->Scn.Sprites) Screen->SpriteTextures.Add(I.Width > 0 ? MakeTexture(I) : nullptr);
+		for (const FBRRImage& I : Screen->Scn.Sprites) Screen->SpriteTextures.Add(I.Width > 0 ? MakeTexture(I, true) : nullptr);
 	}
 	if (TSharedPtr<FBRRMenuScreen> Old = Top()) Old->Leave();
 	Stack.Add(Screen);
@@ -350,7 +360,7 @@ void ABRRFrontEndGameMode::Replace(TSharedRef<FBRRMenuScreen> Screen)
 	if (!Screen->Load()) return;
 	if (Screen->SpriteTextures.IsEmpty())
 	{
-		for (const FBRRImage& I : Screen->Scn.Sprites) Screen->SpriteTextures.Add(I.Width > 0 ? MakeTexture(I) : nullptr);
+		for (const FBRRImage& I : Screen->Scn.Sprites) Screen->SpriteTextures.Add(I.Width > 0 ? MakeTexture(I, true) : nullptr);
 	}
 	if (!Stack.IsEmpty())
 	{
@@ -395,6 +405,17 @@ void ABRRFrontEndGameMode::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	Clock += DeltaSeconds;
+	if (bArtSmooth != BRRArt::SmoothWanted())
+	{
+		// The look changed (the graphics menu): the fonts and the screens' sprites in its art.
+		bArtSmooth = BRRArt::SmoothWanted();
+		LoadFonts();
+		for (const TSharedRef<FBRRMenuScreen>& S : Stack)
+		{
+			S->SpriteTextures.Reset();
+			for (const FBRRImage& I : S->Scn.Sprites) S->SpriteTextures.Add(I.Width > 0 ? MakeTexture(I, true) : nullptr);
+		}
+	}
 	HandleInput();
 	UpdateWalk();
 	if (TSharedPtr<FBRRMenuScreen> S = Top()) S->Tick(DeltaSeconds);
