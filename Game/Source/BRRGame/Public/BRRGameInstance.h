@@ -85,6 +85,10 @@ public:
 	// --- settings
 	float SoundVolume = 1.f, MusicVolume = 0.6f;
 	bool bCommentary = true;
+	// The sound menu's finer mix: everything, the engines and the commentator (against the
+	// rest of the effects), the music stepping aside for speech, and the tunnels' echo.
+	float MasterVolume = 1.f, EngineVolume = 1.f, SpeechVolume = 1.f;
+	bool bMusicDuck = true, bTunnelEcho = true;
 	int32 Look = 1;          // brr.Look
 	int32 ViewCells = 16;    // brr.ViewCells (the classic look's view distance)
 	bool bNativeResolution = false; // brr.DLAA: the remastered look at full resolution, not upscaled

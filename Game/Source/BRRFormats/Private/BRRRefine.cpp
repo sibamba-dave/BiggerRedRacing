@@ -381,27 +381,45 @@ void BRR::SplitWater(const FBRRWorld& World, const FBRRMesh& Refined, FBRRMesh& 
 	}
 	FBRRMeshSection& Shore = OutWater.Sections.AddDefaulted_GetRef();
 	if (OutWater.Sections.Num() > 1) Shore.Atlas = OutWater.Sections[0].Atlas;
-	for (const FBRRMeshSection& S : World.Terrain.Sections)
+	// Two rings of triangles out from the water, at its level, wherever the bank comes down
+	// near it: the drawn shore is then where the smooth refined bank rises out of a flat sheet -
+	// a curve - and never the water mesh's own edge, which runs on the original's 10 m grid (a
+	// play test: "many jagged edges"). Cliffs (every corner well above the water) stay dry.
+	TSet<const FBRRVertex*> Taken;
+	for (int32 Ring = 0; Ring < 2; ++Ring)
 	{
-		for (int32 T = 0; T + 2 < S.Vertices.Num(); T += 3)
+		TMap<FIntPoint, float> Next;
+		for (const FBRRMeshSection& S : World.Terrain.Sections)
 		{
-			if (IsWater(S.Vertices[T].Land)) continue;
-			float Z = TNumericLimits<float>::Max();
-			bool bSunk = false;
-			for (int32 K = 0; K < 3; ++K)
+			for (int32 T = 0; T + 2 < S.Vertices.Num(); T += 3)
 			{
-				const FVector3f& P = S.Vertices[T + K].Position;
-				if (const float* L = Level.Find(CornerOf(P))) Z = FMath::Min(Z, *L);
-				bSunk |= World.ShoreSinkAt(P.X, P.Y) > 1.0;
-			}
-			if (Z == TNumericLimits<float>::Max() || !bSunk) continue;
-			for (int32 K = 0; K < 3; ++K)
-			{
-				FBRRVertex V = S.Vertices[T + K];
-				V.Position.Z = Z;
-				Shore.Vertices.Add(V);
+				if (IsWater(S.Vertices[T].Land) || Taken.Contains(&S.Vertices[T])) continue;
+				float Z = TNumericLimits<float>::Max();
+				bool bNear = false;
+				for (int32 K = 0; K < 3; ++K)
+				{
+					const FVector3f& P = S.Vertices[T + K].Position;
+					if (const float* L = Level.Find(CornerOf(P))) Z = FMath::Min(Z, *L);
+				}
+				if (Z == TNumericLimits<float>::Max()) continue;
+				for (int32 K = 0; K < 3; ++K)
+				{
+					const FVector3f& P = S.Vertices[T + K].Position;
+					const double Ground = P.Z + World.RefinedOffsetAt(P.X, P.Y) - World.ShoreSinkAt(P.X, P.Y);
+					bNear |= Ground < Z + 60.0;
+				}
+				if (!bNear) continue;
+				Taken.Add(&S.Vertices[T]);
+				for (int32 K = 0; K < 3; ++K)
+				{
+					FBRRVertex V = S.Vertices[T + K];
+					V.Position.Z = Z;
+					Shore.Vertices.Add(V);
+					Next.FindOrAdd(CornerOf(S.Vertices[T + K].Position), Z);
+				}
 			}
 		}
+		for (const TPair<FIntPoint, float>& N : Next) if (!Level.Contains(N.Key)) Level.Add(N.Key, N.Value);
 	}
 	if (Shore.Vertices.IsEmpty()) OutWater.Sections.Pop();
 }

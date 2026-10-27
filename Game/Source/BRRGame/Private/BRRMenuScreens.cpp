@@ -540,53 +540,138 @@ namespace
 		virtual void OnBack() override { OnBox(1); }
 	};
 
-	// --- SOUNDSCN: the volumes and the commentary --------------------------------------------
-	// mbox 0/1 the CD (music) volume -/+, 2/3 the effects', 10..17 and 20..27 their eight steps,
-	// 28 the commentary, 4 OK (and the corner).
+	// --- the sound: a list of its own on LANDSCN's picture -----------------------------------
+	// The original's SOUNDSCN had two eight-step sliders and the commentary; the remaster mixes
+	// more: everything, the music, the effects, the engines and the commentator apart (0 is off),
+	// whether the music steps aside for speech, and the tunnels' echo. Every slider's steps are
+	// boxes of their own, so a click sets it where it lands.
 	class FSoundScreen : public FBRRMenuScreen
 	{
 	public:
+		enum ERow { Master, Music, Effects, Engines, Commentary, Duck, Echo, Count };
+		static constexpr int32 OkId = 100, StepIds = 1000, Steps = 10;
+		static constexpr double Top = 40, Pitch = 16, LabelX = 28, ValueX = 172, StepW = 10;
+		static bool IsSlider(int32 Row) { return Row <= Commentary; }
+
+		void Layout()
+		{
+			Scn.Boxes.Reset();
+			FocusOrder.Reset();
+			for (int32 R = 0; R < Count; ++R)
+			{
+				const int32 Y = int32(Top + R * Pitch) - 3;
+				Scn.Boxes.Add({ R, 20, Y, int32(ValueX) - 24, int32(Pitch) });
+				if (IsSlider(R))
+					for (int32 S = 0; S <= Steps; ++S) Scn.Boxes.Add({ StepIds + R * 16 + S, int32(ValueX + S * StepW) - 4, Y, int32(StepW), int32(Pitch) });
+				else Scn.Boxes.Add({ R, int32(ValueX) - 4, Y, 120, int32(Pitch) });
+				FocusOrder.Add(R);
+			}
+			Scn.Boxes.Add({ OkId, 140, int32(Top + Count * Pitch) + 4, 40, 12 });
+			FocusOrder.Add(OkId);
+			Focus = FMath::Clamp(Focus, 0, FocusOrder.Num() - 1);
+		}
 		virtual bool Load() override
 		{
-			FocusOrder = { 4, 28 };
-			if (!LoadScreen(*this, TEXT("SOUNDSCN"))) return false;
-			// The script places no sprites: the game draws BUTTONS.SPR's on the boxes (frames 0
-			// plus, 5 minus, 10 OK).
-			Scn.AniSprites.Add({ 1, 5, 103, 50 });
-			Scn.AniSprites.Add({ 1, 0, 236, 50 });
-			Scn.AniSprites.Add({ 1, 5, 103, 93 });
-			Scn.AniSprites.Add({ 1, 0, 236, 93 });
-			Scn.AniSprites.Add({ 1, 10, 265, 155 });
+			if (!LoadScreen(*this, TEXT("LANDSCN"))) return false;
+			Scn.Texts.Reset();
+			Scn.AniSprites.Reset();
+			Scn.Keys.Reset();
+			Layout();
 			return true;
 		}
-		static int32 Step(float V) { return FMath::Clamp(FMath::RoundToInt(V * 8.f), 0, 8); }
+		float* Volume(int32 Row) const
+		{
+			UBRRGameInstance* G = Menu->Game();
+			switch (Row)
+			{
+			case Master: return &G->MasterVolume;
+			case Music: return &G->MusicVolume;
+			case Effects: return &G->SoundVolume;
+			case Engines: return &G->EngineVolume;
+			case Commentary: return &G->SpeechVolume;
+			default: return nullptr;
+			}
+		}
+		int32 StepOf(int32 Row) const
+		{
+			if (Row == Commentary && !Menu->Game()->bCommentary) return 0;
+			const float* V = Volume(Row);
+			return V ? FMath::Clamp(FMath::RoundToInt(*V * Steps), 0, Steps) : 0;
+		}
+		void SetStep(int32 Row, int32 S)
+		{
+			UBRRGameInstance* G = Menu->Game();
+			S = FMath::Clamp(S, 0, Steps);
+			if (float* V = Volume(Row)) *V = S / float(Steps);
+			if (Row == Commentary) G->bCommentary = S > 0; // 0 is the original's OFF
+			G->ApplySettings();
+		}
+		void Change(int32 Row, int32 Dir)
+		{
+			UBRRGameInstance* G = Menu->Game();
+			if (IsSlider(Row)) { SetStep(Row, StepOf(Row) + Dir); return; }
+			if (Row == Duck) G->bMusicDuck = !G->bMusicDuck;
+			else if (Row == Echo) G->bTunnelEcho = !G->bTunnelEcho;
+			G->ApplySettings();
+		}
+		static const TCHAR* Label(int32 Row)
+		{
+			switch (Row)
+			{
+			case Master: return TEXT("MASTER VOLUME");
+			case Music: return TEXT("MUSIC");
+			case Effects: return TEXT("EFFECTS");
+			case Engines: return TEXT("ENGINES");
+			case Commentary: return TEXT("COMMENTARY");
+			case Duck: return TEXT("MUSIC DIPS FOR SPEECH");
+			default: return TEXT("TUNNEL ECHO");
+			}
+		}
 		virtual void Draw(FBRRMenuPainter& P) override
 		{
 			UBRRGameInstance* G = Menu->Game();
-			const int32 Music = Step(G->MusicVolume), Effects = Step(G->SoundVolume);
-			for (const FBRRScnBox& B : Scn.Boxes)
+			const int32 Focused = FocusOrder.IsValidIndex(Focus) ? FocusOrder[Focus] : -1;
+			P.Text(TEXT("SOUND"), 140, 14, 5, 5, Scn.Palette);
+			for (int32 R = 0; R < Count; ++R)
 			{
-				const bool bMusicStep = B.Id >= 10 && B.Id <= 17 && B.Id - 10 < Music;
-				const bool bEffectStep = B.Id >= 20 && B.Id <= 27 && B.Id - 20 < Effects;
-				if (bMusicStep || bEffectStep) P.Box(B.X + 1, B.Y + B.H - 6, B.W - 2, 4, FLinearColor(1.f, 0.85f, 0.1f, 0.85f));
+				const double Y = Top + R * Pitch;
+				const int32 Ramp = R == Focused ? FBRRMenuPainter::FocusRamp : -1;
+				P.Text(Label(R), LabelX, Y, 0, Ramp, Scn.Palette);
+				if (IsSlider(R))
+				{
+					const int32 S = StepOf(R);
+					P.Box(ValueX, Y + 1, Steps * StepW, 6, FLinearColor(1.f, 1.f, 1.f, 0.25f));
+					P.Box(ValueX, Y + 1, S * StepW, 6, FLinearColor(1.f, 0.85f, 0.1f, 0.9f));
+					P.Text(S == 0 ? FString(TEXT("OFF")) : FString::Printf(TEXT("%d%%"), S * 10), ValueX + Steps * StepW + 8, Y, 0, Ramp, Scn.Palette);
+				}
+				else
+				{
+					const bool bOn = R == Duck ? G->bMusicDuck : G->bTunnelEcho;
+					const FString V = bOn ? TEXT("ON") : TEXT("OFF");
+					P.Text(R == Focused ? FString::Printf(TEXT("< %s >"), *V) : V, R == Focused ? ValueX - 16 : ValueX, Y, 0, Ramp, Scn.Palette);
+				}
 			}
-			P.Text(G->bCommentary ? TEXT("ON") : TEXT("OFF"), 200, 140, 5, 5, Scn.Palette);
+			P.Text(TEXT("OK"), 152, Top + Count * Pitch + 6, 0, Focused == OkId ? FBRRMenuPainter::FocusRamp : -1, Scn.Palette);
+			if (Focused == Echo && !G->Look) P.Text(TEXT("THE REMASTERED LOOK ONLY"), 28, 186, 0, -1, Scn.Palette);
 		}
 		virtual void OnBox(int32 Id) override
 		{
-			UBRRGameInstance* G = Menu->Game();
-			auto Nudge = [](float& V, int32 By) { V = FMath::Clamp((FMath::RoundToInt(V * 8.f) + By) / 8.f, 0.f, 1.f); };
-			if (Id == 0) Nudge(G->MusicVolume, -1);
-			else if (Id == 1) Nudge(G->MusicVolume, 1);
-			else if (Id == 2) Nudge(G->SoundVolume, -1);
-			else if (Id == 3) Nudge(G->SoundVolume, 1);
-			else if (Id >= 10 && Id <= 17) G->MusicVolume = (Id - 9) / 8.f;
-			else if (Id >= 20 && Id <= 27) G->SoundVolume = (Id - 19) / 8.f;
-			else if (Id == 28) G->bCommentary = !G->bCommentary;
-			else if (Id == 4) { OnBack(); return; }
-			G->ApplySettings();
+			if (Id == OkId) { OnBack(); return; }
+			if (Id >= StepIds)
+			{
+				const int32 Row = (Id - StepIds) / 16;
+				const int32 Index = FocusOrder.IndexOfByKey(Row);
+				if (Index != INDEX_NONE) Focus = Index;
+				SetStep(Row, (Id - StepIds) % 16);
+				return;
+			}
+			Change(Id, 1);
 		}
-		virtual void OnLeftRight(int32 Dir) override { OnBox(Dir < 0 ? 0 : 1); }
+		virtual void OnLeftRight(int32 Dir) override
+		{
+			const int32 Focused = FocusOrder.IsValidIndex(Focus) ? FocusOrder[Focus] : -1;
+			if (Focused >= 0 && Focused < Count) Change(Focused, Dir);
+		}
 		virtual void OnBack() override
 		{
 			Menu->Game()->SaveSettings();
@@ -616,9 +701,16 @@ namespace
 		int32 PageIndex = 0;
 		TArray<FIntPoint> Resolutions;
 
-		static TArray<int32> RowsOf(int32 P)
+		// Only the rows that do something in the look chosen: the view distance is the classic
+		// look's; upscaling, frame generation, HDR and motion blur the remastered look's (a play
+		// test: a row captioned for the other look read as broken).
+		static TArray<int32> RowsOf(int32 P, bool bRemastered)
 		{
-			if (P == 0) return { Page, Look, Window, Resolution, VSync, FrameLimit, Upscaling, FrameGen, Hdr, MotionBlur, ViewDistance };
+			if (P == 0)
+			{
+				if (bRemastered) return { Page, Look, Window, Resolution, VSync, FrameLimit, Upscaling, FrameGen, Hdr, MotionBlur };
+				return { Page, Look, Window, Resolution, VSync, FrameLimit, ViewDistance };
+			}
 			if (P == 1) return { Page, Quality, Shadows, GlobalIllumination, Reflections, Textures, Effects, PostProcessing, Foliage, Shading, DrawDistance, AntiAliasing };
 			return { Page, Weather, Crowds, GroundDetail, WakesDust, SmoothArt };
 		}
@@ -626,7 +718,7 @@ namespace
 		{
 			Scn.Boxes.Reset();
 			FocusOrder.Reset();
-			const TArray<int32> Rows = RowsOf(PageIndex);
+			const TArray<int32> Rows = RowsOf(PageIndex, Menu->Game()->Look != 0);
 			for (int32 I = 0; I < Rows.Num(); ++I)
 			{
 				Scn.Boxes.Add({ Rows[I], 20, int32(Top + I * Pitch) - 2, 280, int32(Pitch) });
@@ -770,7 +862,7 @@ namespace
 			const int32 Focused = FocusOrder.IsValidIndex(Focus) ? FocusOrder[Focus] : -1;
 			P.Box(16, 4, 288, 192, FLinearColor(0.f, 0.f, 0.f, 0.6f));
 			P.Text(TEXT("GRAPHICS"), 160 - FBRRMenuPainter::TextWidth(Menu, TEXT("GRAPHICS"), 3) * 0.5, 6, 3, -1, Scn.Palette, 1);
-			const TArray<int32> Rows = RowsOf(PageIndex);
+			const TArray<int32> Rows = RowsOf(PageIndex, G->Look != 0);
 			for (int32 I = 0; I < Rows.Num(); ++I)
 			{
 				const int32 Row = Rows[I];
@@ -793,9 +885,8 @@ namespace
 			// What the focused row is for, where it does nothing in the look now chosen.
 			const TCHAR* Note = nullptr;
 			UGameUserSettings* S = Settings();
-			if (Focused == ViewDistance && G->Look) Note = TEXT("THE CLASSIC LOOK'S VIEW DISTANCE");
-			else if (Focused > ViewDistance && !G->Look) Note = TEXT("THE REMASTERED LOOK ONLY");
-			else if ((Focused == Upscaling || Focused == FrameGen || Focused == MotionBlur) && !G->Look) Note = TEXT("THE REMASTERED LOOK ONLY");
+			if (Focused > ViewDistance && !G->Look) Note = TEXT("THE REMASTERED LOOK ONLY");
+			else if (Focused == Hdr && S && !S->SupportsHDRDisplayOutput()) Note = TEXT("THIS DISPLAY HAS NO HDR");
 			else if (Focused == GlobalIllumination && S && S->GetGlobalIlluminationQuality() < 2) Note = TEXT("LUMEN NEEDS HIGH OR ABOVE");
 			else if (Focused == Quality && S && S->GetOverallScalabilityLevel() >= 0 && S->GetOverallScalabilityLevel() < 2) Note = TEXT("LUMEN NEEDS HIGH OR ABOVE");
 			else if (Focused == Resolution && S && S->GetFullscreenMode() == EWindowMode::WindowedFullscreen) Note = TEXT("BORDERLESS USES THE DESKTOP'S");
@@ -811,7 +902,7 @@ namespace
 			switch (Row)
 			{
 			case Page: PageIndex = Step(PageIndex, 3); Layout(); return;
-			case Look: G->Look = G->Look ? 0 : 1; break;
+			case Look: G->Look = G->Look ? 0 : 1; Layout(); break;
 			case Window:
 				if (S)
 				{
@@ -854,7 +945,7 @@ namespace
 				break;
 			case Upscaling: G->bNativeResolution = !G->bNativeResolution; break;
 			case FrameGen: if (HasFrameGeneration()) G->bFrameGeneration = !G->bFrameGeneration; break;
-			case Hdr: if (S && S->SupportsHDRDisplayOutput()) S->EnableHDRDisplayOutput(!S->IsHDREnabled()); break;
+			case Hdr: if (S && S->SupportsHDRDisplayOutput()) { S->EnableHDRDisplayOutput(!S->IsHDREnabled()); bUserSettings = true; } break;
 			case MotionBlur: G->bMotionBlur = !G->bMotionBlur; break;
 			case ViewDistance: G->ViewCells = FMath::Clamp(G->ViewCells + Dir * 2, BRR::ViewCellsMin, BRR::ViewCellsMax); break;
 			case Quality: if (S) { S->SetOverallScalabilityLevel(Step(FMath::Clamp(S->GetOverallScalabilityLevel(), 0, 4), 5)); bUserSettings = true; } break;

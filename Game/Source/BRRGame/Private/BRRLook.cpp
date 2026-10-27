@@ -14,6 +14,7 @@
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "GameFramework/GameUserSettings.h"
 #include "HAL/IConsoleManager.h"
 #include "Kismet/KismetMaterialLibrary.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -212,6 +213,13 @@ void ABRRLook::Apply(bool bInRemastered, bool bInPathTracing, bool bInFrameGener
 	SetCVar(TEXT("r.Lumen.HardwareRayTracing"), bRemastered ? 1 : 0);
 	SetCVar(TEXT("r.Shadow.Virtual.Enable"), bRemastered ? 1 : 0);
 	SetCVar(TEXT("r.AntiAliasingMethod"), bRemastered ? 4 : 0);
+	// HDR output only in the remastered look, as the player set it; classic's palette needs the
+	// plain 8-bit output (the saved setting is left alone, so the next remaster restores it).
+	if (HasCVar(TEXT("r.HDR.EnableHDROutput")))
+	{
+		const UGameUserSettings* Settings = GEngine ? GEngine->GetGameUserSettings() : nullptr;
+		SetCVar(TEXT("r.HDR.EnableHDROutput"), bRemastered && Settings && Settings->IsHDREnabled() ? 1 : 0);
+	}
 	SetCVar(TEXT("r.AmbientOcclusionLevels"), bRemastered ? -1 : 0); // classic: SSAO darkened the emissive palette around every object
 	// Upscaling from two thirds of the resolution (DLSS / TSR "quality"), or none (brr.DLAA: DLSS at
 	// 100% is DLAA - the plugin has no switch of its own for it). With NVIDIA's plugins: DLSS Super

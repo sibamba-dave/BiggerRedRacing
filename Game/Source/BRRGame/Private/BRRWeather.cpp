@@ -51,7 +51,9 @@ void ABRRWeather::Build(const FBRRWorld& World, const FString& Level, ABRRLook* 
 
 	// The hour: dawn or dusk a quarter of the time, a high sun another, the rest between.
 	const float Hour = Random.FRand();
-	SunElevation = Hour < 0.25f ? Random.FRandRange(5.f, 14.f) : Hour < 0.75f ? Random.FRandRange(20.f, 45.f) : Random.FRandRange(50.f, 70.f);
+	// Dusk races stop short of night: a sun below ~10 degrees left them too dark to race (a
+	// play test), so the low hours start at 10.
+	SunElevation = Hour < 0.25f ? Random.FRandRange(10.f, 15.f) : Hour < 0.75f ? Random.FRandRange(20.f, 45.f) : Random.FRandRange(50.f, 70.f);
 
 	// What falls, as the country has it.
 	float RainChance = 0.22f, SnowChance = 0.f, MistChance = 0.22f;
@@ -68,7 +70,7 @@ void ABRRWeather::Build(const FBRRWorld& World, const FString& Level, ABRRLook* 
 	Strength = Kind == EFall::None ? 0.f : Mode == 2 ? Random.FRandRange(0.7f, 1.f) : FMath::Square(Random.FRandRange(0.35f, 1.f));
 	Mist = Random.FRand() < MistChance ? Random.FRandRange(0.008f, 0.035f) : 0.002f;
 	Mist += Strength * 0.02f;
-	const float Sun = 1.f - 0.75f * Strength;
+	const float Sun = 1.f - 0.5f * Strength; // a downpour dims the day, never to night
 	const float WindAngle = Random.FRandRange(0.f, 2.f * PI), WindSpeed = Random.FRandRange(100.f, 600.f) * (0.4f + Strength);
 	Wind = FVector(FMath::Cos(WindAngle), FMath::Sin(WindAngle), 0) * WindSpeed;
 	// The sky wears the weather: overcast with the fall's strength and the mist, and the
@@ -145,7 +147,7 @@ bool ABRRWeather::Advance(float DeltaSeconds, ABRRLook* Look)
 	if (!Look || SunDriftPerSecond == 0.f) return false;
 	constexpr float DarkDegrees = 15.f; // the race's lamp threshold (BuildRaceLights)
 	const float Before = Mood.SunElevation;
-	Mood.SunElevation = FMath::Clamp(Mood.SunElevation + SunDriftPerSecond * DeltaSeconds, 3.f, 75.f);
+	Mood.SunElevation = FMath::Clamp(Mood.SunElevation + SunDriftPerSecond * DeltaSeconds, 9.f, 75.f); // the drift stops before night
 	SunElevation = Mood.SunElevation;
 	SinceMood += DeltaSeconds;
 	if (SinceMood >= 4.f) // the sky-light recapture is not free: a nudge every few seconds reads smooth

@@ -26,6 +26,11 @@ void UBRRGameInstance::Init()
 	GConfig->GetFloat(ConfigSection, TEXT("SoundVolume"), SoundVolume, GGameUserSettingsIni);
 	GConfig->GetFloat(ConfigSection, TEXT("MusicVolume"), MusicVolume, GGameUserSettingsIni);
 	GConfig->GetBool(ConfigSection, TEXT("Commentary"), bCommentary, GGameUserSettingsIni);
+	GConfig->GetFloat(ConfigSection, TEXT("MasterVolume"), MasterVolume, GGameUserSettingsIni);
+	GConfig->GetFloat(ConfigSection, TEXT("EngineVolume"), EngineVolume, GGameUserSettingsIni);
+	GConfig->GetFloat(ConfigSection, TEXT("SpeechVolume"), SpeechVolume, GGameUserSettingsIni);
+	GConfig->GetBool(ConfigSection, TEXT("MusicDuck"), bMusicDuck, GGameUserSettingsIni);
+	GConfig->GetBool(ConfigSection, TEXT("TunnelEcho"), bTunnelEcho, GGameUserSettingsIni);
 	GConfig->GetInt(ConfigSection, TEXT("Look"), Look, GGameUserSettingsIni);
 	GConfig->GetInt(ConfigSection, TEXT("ViewCells"), ViewCells, GGameUserSettingsIni);
 	GConfig->GetBool(ConfigSection, TEXT("NativeResolution"), bNativeResolution, GGameUserSettingsIni);
@@ -45,8 +50,11 @@ void UBRRGameInstance::ApplySettings() const
 	{
 		if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(Name)) V->Set(*Value, ECVF_SetByGameSetting);
 	};
-	Set(TEXT("brr.SoundVolume"), FString::SanitizeFloat(SoundVolume));
-	Set(TEXT("brr.MusicVolume"), FString::SanitizeFloat(MusicVolume));
+	// The master volume rides both buses (the race re-sends them every frame from these).
+	Set(TEXT("brr.SoundVolume"), FString::SanitizeFloat(SoundVolume * MasterVolume));
+	Set(TEXT("brr.MusicVolume"), FString::SanitizeFloat(MusicVolume * MasterVolume));
+	Set(TEXT("brr.TunnelEcho"), bTunnelEcho ? TEXT("1") : TEXT("0"));
+	BRRAudio::SetMix(EngineVolume, SpeechVolume, bMusicDuck);
 	Set(TEXT("brr.Commentary"), bCommentary ? TEXT("1") : TEXT("0"));
 	Set(TEXT("brr.Look"), FString::FromInt(Look));
 	Set(TEXT("brr.ViewCells"), FString::FromInt(ViewCells));
@@ -58,7 +66,7 @@ void UBRRGameInstance::ApplySettings() const
 	Set(TEXT("brr.GroundDetail"), FString::FromInt(GroundDetail));
 	Set(TEXT("brr.Effects"), bEffects ? TEXT("1") : TEXT("0"));
 	Set(TEXT("brr.SmoothArt"), bSmoothArt ? TEXT("1") : TEXT("0"));
-	BRRAudio::SetVolumes(SoundVolume, MusicVolume);
+	BRRAudio::SetVolumes(SoundVolume * MasterVolume, MusicVolume * MasterVolume);
 }
 
 void UBRRGameInstance::RecordTimes(FBRRRaceResult& R, const FString& InVehicle) const
@@ -93,6 +101,11 @@ void UBRRGameInstance::SaveSettings() const
 	GConfig->SetFloat(ConfigSection, TEXT("SoundVolume"), SoundVolume, GGameUserSettingsIni);
 	GConfig->SetFloat(ConfigSection, TEXT("MusicVolume"), MusicVolume, GGameUserSettingsIni);
 	GConfig->SetBool(ConfigSection, TEXT("Commentary"), bCommentary, GGameUserSettingsIni);
+	GConfig->SetFloat(ConfigSection, TEXT("MasterVolume"), MasterVolume, GGameUserSettingsIni);
+	GConfig->SetFloat(ConfigSection, TEXT("EngineVolume"), EngineVolume, GGameUserSettingsIni);
+	GConfig->SetFloat(ConfigSection, TEXT("SpeechVolume"), SpeechVolume, GGameUserSettingsIni);
+	GConfig->SetBool(ConfigSection, TEXT("MusicDuck"), bMusicDuck, GGameUserSettingsIni);
+	GConfig->SetBool(ConfigSection, TEXT("TunnelEcho"), bTunnelEcho, GGameUserSettingsIni);
 	GConfig->SetInt(ConfigSection, TEXT("Look"), Look, GGameUserSettingsIni);
 	GConfig->SetInt(ConfigSection, TEXT("ViewCells"), ViewCells, GGameUserSettingsIni);
 	GConfig->SetBool(ConfigSection, TEXT("NativeResolution"), bNativeResolution, GGameUserSettingsIni);

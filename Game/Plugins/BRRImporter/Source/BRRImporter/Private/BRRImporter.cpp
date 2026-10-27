@@ -493,12 +493,18 @@ namespace
 		UMaterialExpression* WorldPos = Make(UMaterialExpressionWorldPosition::StaticClass(), -1100, 800);
 		UMaterialExpression* Time = Make(UMaterialExpressionTime::StaticClass(), -1100, 900);
 		UMaterialExpressionCustom* Ripples = MakeCustomOutputs(Mat, TEXT(
-			"const float4 W[4] = { float4(0.8, 0.6, 520, 0.9), float4(-0.5, 0.87, 310, 1.3), float4(0.2, -0.98, 190, 1.7), float4(-0.93, -0.36, 110, 2.3) };\n"
+			// Seven trains at unrelated angles and lengths, over a position warped by a slow
+			// field: four plain trains read as regular stripes under a headlight at night (a
+			// play test: "banded").
+			"const float4 W[7] = { float4(0.8, 0.6, 523, 0.9), float4(-0.5, 0.87, 311, 1.3), float4(0.2, -0.98, 193, 1.7), float4(-0.93, -0.36, 113, 2.3),\n"
+			"                      float4(0.38, 0.92, 71, 2.9), float4(-0.71, -0.7, 47, 3.7), float4(0.99, -0.12, 29, 4.6) };\n"
+			"float2 q = P.xy + float2(sin(P.y * 0.0031 + T * 0.13), cos(P.x * 0.0027 - T * 0.11)) * 140.0;\n"
 			"float2 g = 0;\n"
-			"for (int i = 0; i < 4; i++)\n"
+			"for (int i = 0; i < 7; i++)\n"
 			"{\n"
 			"  float k = 6.2831853 / W[i].z;\n"
-			"  g += W[i].xy * (0.045 * cos(dot(W[i].xy, P.xy) * k - T * W[i].w));\n"
+			"  float a = i < 4 ? 0.03 : 0.014;\n"
+			"  g += W[i].xy * (a * cos(dot(W[i].xy, q) * k - T * W[i].w + i * 1.7));\n"
 			"}\n"
 			"return normalize(float3(-g, 1));"), CMOT_Float3,
 			{ MakeTuple(FName(TEXT("P")), WorldPos, 0), MakeTuple(FName(TEXT("T")), Time, 0) }, 800);

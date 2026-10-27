@@ -302,7 +302,10 @@ UTexture2D* ABRRFrontEndGameMode::MakeTexture(const FBRRImage& Image, bool bArt)
 	}
 	UTexture2D* T = UTexture2D::CreateTransient(Image.Width, Image.Height, PF_B8G8R8A8);
 	if (!T) return nullptr;
-	T->Filter = TF_Nearest;
+	// A picture (a circuit's view with its title, a screen's backdrop) is a render, not flat art,
+	// so the art smoothing passes it by: filtered in the remastered look rather than shown as
+	// blocks (a play test: "Wet & Wild" pixelated), the original's pixels in the classic.
+	T->Filter = BRRArt::SmoothWanted() ? TF_Bilinear : TF_Nearest;
 	T->SRGB = true;
 	T->NeverStream = true;
 	void* Data = T->GetPlatformData()->Mips[0].BulkData.Lock(LOCK_READ_WRITE);
@@ -492,6 +495,16 @@ void ABRRFrontEndGameMode::HandleInput()
 	TSharedPtr<FBRRMenuScreen> S = Top();
 	APlayerController* PC = GetWorld()->GetFirstPlayerController();
 	if (!S || !PC) return;
+	// The menus keep the mouse whatever happened since StartPlay: applying the graphics page's
+	// window mode, resolution or look resets the viewport's capture and lock (a play test: no
+	// mouse on the graphics page), so the cursor and an uncaptured, unlocked viewport are held
+	// every frame.
+	if (!PC->bShowMouseCursor) PC->bShowMouseCursor = true;
+	if (UGameViewportClient* Viewport = GetWorld()->GetGameViewport())
+	{
+		if (Viewport->GetMouseCaptureMode() != EMouseCaptureMode::NoCapture) Viewport->SetMouseCaptureMode(EMouseCaptureMode::NoCapture);
+		if (Viewport->GetMouseLockMode() != EMouseLockMode::DoNotLock) Viewport->SetMouseLockMode(EMouseLockMode::DoNotLock);
+	}
 	float MX = 0, MY = 0;
 	if (PC->GetMousePosition(MX, MY) && Scale.X > 0)
 	{

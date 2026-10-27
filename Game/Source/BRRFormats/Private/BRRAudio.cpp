@@ -80,6 +80,10 @@ namespace
 	float GReverbTarget = 0.f, GReverbLevel = 0.f;
 	bool GSpeaking = false;      // a speech voice is live (Mixer::mix): the music and the wash step aside
 	float GMusicDuck = 1.f;      // eased music gain under speech
+	// The sound menu's finer mix (BRRAudio::SetMix): engines and the commentator against the rest
+	// of the effects (256 = as the original mixed them), and whether the music steps aside for speech.
+	int32 GEngineGain = 256, GSpeechGain = 256;
+	bool GDuckMusic = true;
 	TArray<int16_t> GScratch;          // audio thread only
 	FString GDumpPath;                 // DumpTo: where, how much, and what so far
 	int32 GDumpFrames = 0;
@@ -169,7 +173,7 @@ namespace
 	{
 		// The music steps aside while the commentator speaks (the mixer ducks only the effects;
 		// the music is ours), easing so nothing pumps.
-		GMusicDuck += ((GSpeaking ? 0.35f : 1.f) - GMusicDuck) * FMath::Min(Frames / 1024.f, 1.f);
+		GMusicDuck += ((GSpeaking && GDuckMusic ? 0.35f : 1.f) - GMusicDuck) * FMath::Min(Frames / 1024.f, 1.f);
 		for (int32 I = 0; I < Frames; ++I)
 		{
 			const TSharedPtr<FTrack>& T = GInIntro ? GIntro : GLoop;
@@ -228,7 +232,8 @@ namespace bigred
 		for (Voice& v : voices_)
 		{
 			if (!v.active || v.pcm == nullptr) continue;
-			const int32_t vol = (v.volume * master_) >> 8;
+			const int32_t gain = v.engine ? GEngineGain : v.speech ? GSpeechGain : 256; // the sound menu's mix
+			const int32_t vol = (((v.volume * master_) >> 8) * gain) >> 8;
 			const int32_t lvol0 = (vol * (256 - v.pan)) >> 8;
 			const int32_t rvol0 = (vol * v.pan) >> 8;
 			const bool ducked = !v.speech && (duck0 < 256 || duck1 < 256);
@@ -446,6 +451,14 @@ namespace BRRAudio
 		return FString::Printf(TEXT("%d voices, music %s at %.0f s"), GMixer && GMixer->ready() ? GMixer->active() : 0,
 			GInIntro ? TEXT("intro") : GLoop.IsValid() ? TEXT("loop") : TEXT("off"),
 			GMusicPos / FMath::Max((GInIntro ? GIntro : GLoop).IsValid() ? (GInIntro ? GIntro : GLoop)->Rate : 44100, 1));
+	}
+
+	void SetMix(float Engines, float Speech, bool bDuckMusic)
+	{
+		FScopeLock Lock(&GLock);
+		GEngineGain = FMath::Clamp(FMath::RoundToInt32(Engines * 256.f), 0, 256);
+		GSpeechGain = FMath::Clamp(FMath::RoundToInt32(Speech * 256.f), 0, 256);
+		GDuckMusic = bDuckMusic;
 	}
 
 	void SetReverb(float Wet)

@@ -87,6 +87,8 @@ namespace
 	TAutoConsoleVariable<bool> CVarCommentary(TEXT("brr.Commentary"), true,
 		TEXT("The circuit's commentator (applies from the next race)."));
 
+	TAutoConsoleVariable<int32> CVarTunnelEcho(TEXT("brr.TunnelEcho"), 1,
+		TEXT("The remastered look's echo on the effects in tunnels and under roofs: 1 on, 0 the original's dry sound."));
 	TAutoConsoleVariable<int32> CVarMegaLights(TEXT("brr.MegaLights"), 1,
 		TEXT("The remastered look's many-light sampling (engine MegaLights, hardware ray tracing): 1 every headlamp and lamp post casts a shadow, 0 only the player's (from the next race)."));
 	TAutoConsoleVariable<bool> CVarLogPerf(TEXT("brr.LogPerf"), false,
@@ -519,7 +521,7 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 	BRRAudio::SetVolumes(CVarSoundVolume.GetValueOnGameThread(), CVarMusicVolume.GetValueOnGameThread());
 	// The tunnel wash: the effects reverberate where the sky closes over the chase camera. The
 	// classic look keeps the original's bone-dry mix.
-	BRRAudio::SetReverb(Look && Look->IsRemastered() ? float(1.0 - Race->PlayerCameraOpenness()) * 0.55f : 0.f);
+	BRRAudio::SetReverb(Look && Look->IsRemastered() && CVarTunnelEcho.GetValueOnGameThread() != 0 ? float(1.0 - Race->PlayerCameraOpenness()) * 0.55f : 0.f);
 	if (const double Knock = PlayerCar->TakeImpactSpeed(); Knock > 0) Race->ReportPlayerImpact(Knock, PlayerCar->ImpactPoint);
 	if (PlayerCar->TakeRecovered()) Race->ReportPlayerRecovered();
 	const FTransform PlayerPose = PlayerCar->GetBodyOriginTransform();
