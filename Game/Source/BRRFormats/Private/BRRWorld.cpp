@@ -159,16 +159,28 @@ double FBRRWorld::RefinedOffsetAt(double UEX, double UEY) const
 	return Weight * FMath::Clamp(Smooth - Flat, -RefineClamp, RefineClamp);
 }
 
-double FBRRWorld::WaterDepthAt(double UEX, double UEY) const
+double FBRRWorld::ShoreSinkAt(double UEX, double UEY) const
 {
 	const int32 Rows = MapHeight, Cols = MapWidth;
-	if (Rows < 2 || Cols < 2 || CornerWaterDepth.Num() != Rows * Cols) return 0.0;
+	if (Rows < 2 || Cols < 2 || CornerSink.Num() != Rows * Cols) return 0.0;
 	const double Cell = BRR::TerrainCellUnits * BRR::CmPerUnit;
 	const double GR = FMath::Clamp(UEX / Cell, 0.0, double(Rows - 1)), GC = FMath::Clamp(UEY / Cell, 0.0, double(Cols - 1));
 	const int32 R0 = FMath::Min(FMath::FloorToInt32(GR), Rows - 2), C0 = FMath::Min(FMath::FloorToInt32(GC), Cols - 2);
 	const double FR = GR - R0, FC = GC - C0;
-	auto At = [&](int32 R, int32 C) { return double(CornerWaterDepth[R * Cols + C]); };
-	return FMath::Lerp(FMath::Lerp(At(R0, C0), At(R0, C0 + 1), FC), FMath::Lerp(At(R0 + 1, C0), At(R0 + 1, C0 + 1), FC), FR);
+	auto At = [&](int32 R, int32 C) { return double(CornerSink[FMath::Clamp(R, 0, Rows - 1) * Cols + FMath::Clamp(C, 0, Cols - 1)]); };
+	const double Most = FMath::Max(FMath::Max(At(R0, C0), At(R0, C0 + 1)), FMath::Max(At(R0 + 1, C0), At(R0 + 1, C0 + 1)));
+	if (Most <= 0.0) return 0.0;
+	auto CatmullRom = [](double P0, double P1, double P2, double P3, double T)
+	{
+		return 0.5 * (2 * P1 + (P2 - P0) * T + (2 * P0 - 5 * P1 + 4 * P2 - P3) * T * T + (3 * P1 - P0 - 3 * P2 + P3) * T * T * T);
+	};
+	double Rowsums[4];
+	for (int32 K = 0; K < 4; ++K)
+	{
+		const int32 R = R0 - 1 + K;
+		Rowsums[K] = CatmullRom(At(R, C0 - 1), At(R, C0), At(R, C0 + 1), At(R, C0 + 2), FC);
+	}
+	return FMath::Clamp(CatmullRom(Rowsums[0], Rowsums[1], Rowsums[2], Rowsums[3], FR), 0.0, Most);
 }
 
 FBRRMesh FBRRWorld::RefinedTerrain(int32 Divisions) const
@@ -176,7 +188,7 @@ FBRRMesh FBRRWorld::RefinedTerrain(int32 Divisions) const
 	FBRRMesh Out = BRR::Subdivide(Terrain, Divisions);
 	for (FBRRMeshSection& Section : Out.Sections)
 	{
-		for (FBRRVertex& V : Section.Vertices) V.Position.Z += float(RefinedOffsetAt(V.Position.X, V.Position.Y));
+		for (FBRRVertex& V : Section.Vertices) V.Position.Z += float(RefinedOffsetAt(V.Position.X, V.Position.Y) - ShoreSinkAt(V.Position.X, V.Position.Y));
 	}
 	BRR::SmoothNormals(Out, 50.f);
 	return Out;
@@ -299,8 +311,9 @@ bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<
 				}
 			}
 
-			// The water's depth (WaterDepthAt): a corner is wet when every cell around it holds open
-			// water; its depth is its distance, in corners, from the nearest dry one.
+			// The ground let down for the water (ShoreSinkAt): a corner is wet when every cell around
+			// it holds open water, its depth its distance, in corners, from the nearest dry one; a dry
+			// corner beside the water is the shore. (The track's corners are let off below.)
 			{
 				const double Cell = BRR::TerrainCellUnits * BRR::CmPerUnit;
 				const int32 Rows = Out.MapHeight, Cols = Out.MapWidth;
@@ -347,10 +360,18 @@ bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<
 						Queue.Add(NR * Cols + NC);
 					}
 				}
-				Out.CornerWaterDepth.SetNumUninitialized(Rows * Cols);
+				Out.CornerSink.SetNumUninitialized(Rows * Cols);
 				for (int32 I = 0; I < Rows * Cols; ++I)
 				{
-					Out.CornerWaterDepth[I] = float(FMath::Min(FMath::Max(Steps[I], 0) * WaterDepthStep, WaterDepthMax));
+					const int32 R = I / Cols, Col = I % Cols;
+					bool bShore = false;
+					for (int32 DR = -1; DR <= 0; ++DR)
+						for (int32 DC = -1; DC <= 0; ++DC)
+						{
+							const int32 CR = R + DR, CC = Col + DC;
+							if (CR >= 0 && CC >= 0 && CR < Rows && CC < Cols && WetCell[CR * Cols + CC]) bShore = true;
+						}
+					Out.CornerSink[I] = Steps[I] > 0 ? float(FMath::Min(Steps[I] * WaterDepthStep, WaterDepthMax)) : bShore ? float(ShoreSink) : 0.f;
 				}
 			}
 
@@ -369,6 +390,9 @@ bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<
 					for (int32 T = 0; T + 2 < Section.Vertices.Num(); T += 3)
 					{
 						const uint8 Type = Section.Vertices[T].Land;
+						// Open water is drawn apart (BRR::SplitWater) over ground that is only seen
+						// through it: its corners take the refinement and are let down instead.
+						if (Out.LiquidOf(Type) == EBRRLiquid::Water) continue;
 						const bool bFixed = Type == Ramps || Out.LiquidOf(Type) != EBRRLiquid::None;
 						const bool bTrack = Type == Track || Type == Grippy;
 						if (!bFixed && !bTrack) continue;
@@ -380,6 +404,8 @@ bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<
 								{
 									float& W = Out.CornerWeight[R * Cols + Col];
 									W = 0.f;
+									// The dry track, the ramps and the other liquids keep their height.
+									if (Out.CornerSink.Num() == Rows * Cols) Out.CornerSink[R * Cols + Col] = 0.f;
 								}
 					}
 				}

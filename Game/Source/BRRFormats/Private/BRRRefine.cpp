@@ -158,20 +158,54 @@ void BRR::SplitWater(const FBRRWorld& World, const FBRRMesh& Refined, FBRRMesh& 
 	};
 	OutLand = FBRRMesh();
 	OutWater = FBRRMesh();
-	Split(Refined, OutLand, false);
-	Split(World.Terrain, OutWater, true);
-	OutBed = OutWater;
+	OutBed = FBRRMesh();
+	// The land is all of the refined terrain: under the water it is the bed, already let down
+	// (FBRRWorld::ShoreSinkAt), as sand.
 	constexpr uint8 Sand = 5;
-	for (FBRRMeshSection& S : OutBed.Sections)
+	OutLand = Refined;
+	for (FBRRMeshSection& S : OutLand.Sections)
 	{
-		S.bTwoSided = false;
-		for (FBRRVertex& V : S.Vertices)
+		for (FBRRVertex& V : S.Vertices) if (IsWater(V.Land)) V.Land = Sand;
+	}
+	// The water: the original's, and over every triangle beside it at its level, so it runs into
+	// the let-down banks as far as their surface stays under it - the shore is where they cross.
+	Split(World.Terrain, OutWater, true);
+	const double Cell = BRR::TerrainCellUnits * BRR::CmPerUnit;
+	auto CornerOf = [Cell](const FVector3f& P) { return FIntPoint(FMath::RoundToInt32(P.X / Cell), FMath::RoundToInt32(P.Y / Cell)); };
+	TMap<FIntPoint, float> Level;
+	for (const FBRRMeshSection& S : OutWater.Sections)
+	{
+		for (const FBRRVertex& V : S.Vertices)
 		{
-			V.Position.Z -= float(World.WaterDepthAt(V.Position.X, V.Position.Y));
-			V.Land = Sand;
+			float& Z = Level.FindOrAdd(CornerOf(V.Position), V.Position.Z);
+			Z = FMath::Min(Z, V.Position.Z);
 		}
 	}
-	SmoothNormals(OutBed, 60.f);
+	FBRRMeshSection& Shore = OutWater.Sections.AddDefaulted_GetRef();
+	if (OutWater.Sections.Num() > 1) Shore.Atlas = OutWater.Sections[0].Atlas;
+	for (const FBRRMeshSection& S : World.Terrain.Sections)
+	{
+		for (int32 T = 0; T + 2 < S.Vertices.Num(); T += 3)
+		{
+			if (IsWater(S.Vertices[T].Land)) continue;
+			float Z = TNumericLimits<float>::Max();
+			bool bSunk = false;
+			for (int32 K = 0; K < 3; ++K)
+			{
+				const FVector3f& P = S.Vertices[T + K].Position;
+				if (const float* L = Level.Find(CornerOf(P))) Z = FMath::Min(Z, *L);
+				bSunk |= World.ShoreSinkAt(P.X, P.Y) > 1.0;
+			}
+			if (Z == TNumericLimits<float>::Max() || !bSunk) continue;
+			for (int32 K = 0; K < 3; ++K)
+			{
+				FBRRVertex V = S.Vertices[T + K];
+				V.Position.Z = Z;
+				Shore.Vertices.Add(V);
+			}
+		}
+	}
+	if (Shore.Vertices.IsEmpty()) OutWater.Sections.Pop();
 }
 
 FBRRMesh BRR::MakeGrassTuft(int32 Seed)
@@ -336,7 +370,9 @@ TArray<BRR::FBRRScatter> BRR::ScatterGround(const FBRRWorld& World, double Reach
 					float U = Rand.FRand(), W = Rand.FRand();
 					if (U + W > 1.f) { U = 1.f - U; W = 1.f - W; }
 					FVector3f P = A + (B - A) * U + (C - A) * W;
-					P.Z += float(World.RefinedOffsetAt(P.X, P.Y));
+					const double Sink = World.ShoreSinkAt(P.X, P.Y);
+					if (Sink > 10.0) continue; // the banks let down into the water
+					P.Z += float(World.RefinedOffsetAt(P.X, P.Y) - Sink);
 					FColor Under = V[0].Color;
 					if (Page)
 					{

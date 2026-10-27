@@ -32,7 +32,7 @@ bool FBRRRefineTest::RunTest(const FString& Parameters)
 		if (!TestTrue(FString::Printf(TEXT("%s loads: %s"), Level, *Error), FBRRWorld::Load(DataDir, Level, { TEXT("JEEP") }, 1, World, Error))) continue;
 
 		// The refined surface meets the original at the corners, stays within the clamp, and
-		// within a third of it on the track and nothing on liquids.
+		// within a third of it on the track and nothing on ice and lava (open water is drawn apart).
 		double MaxOffset = 0, MaxTrack = 0, MaxLiquid = 0, MaxCorner = 0;
 		for (const FBRRMeshSection& S : World.Terrain.Sections)
 		{
@@ -42,8 +42,8 @@ bool FBRRRefineTest::RunTest(const FString& Parameters)
 				const double Offset = FMath::Abs(World.RefinedOffsetAt(Mid.X, Mid.Y));
 				const uint8 Land = S.Vertices[T].Land;
 				MaxOffset = FMath::Max(MaxOffset, Offset);
-				if (Land == 0 || Land == 1) MaxTrack = FMath::Max(MaxTrack, Offset);
-				if (World.LiquidOf(Land) != EBRRLiquid::None) MaxLiquid = FMath::Max(MaxLiquid, Offset);
+				if ((Land == 0 || Land == 1) && World.LiquidOf(Land) == EBRRLiquid::None) MaxTrack = FMath::Max(MaxTrack, Offset);
+				if (World.LiquidOf(Land) != EBRRLiquid::None && World.LiquidOf(Land) != EBRRLiquid::Water) MaxLiquid = FMath::Max(MaxLiquid, Offset);
 				MaxCorner = FMath::Max(MaxCorner, FMath::Abs(World.RefinedOffsetAt(S.Vertices[T].Position.X, S.Vertices[T].Position.Y)));
 			}
 		}

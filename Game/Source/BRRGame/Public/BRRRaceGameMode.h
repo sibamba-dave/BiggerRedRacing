@@ -71,6 +71,12 @@ private:
 	UPROPERTY()
 	TObjectPtr<ABRRWrecks> Wrecks;
 
+	UPROPERTY()
+	TObjectPtr<class ABRRWake> Wake;
+
+	UPROPERTY()
+	TObjectPtr<class ABRRDust> Dust;
+
 	// The ground effects: dust, spray, sparks.
 	UPROPERTY()
 	TObjectPtr<class ABRRParticles> Particles;

@@ -248,12 +248,17 @@ struct BRRFORMATS_API FBRRWorld
 	TArray<float> CornerZ;       // the physics' height (UE cm) at each cell corner, MapHeight rows of MapWidth (Load)
 	TArray<float> CornerWeight;  // how much of the refinement each corner takes, 0..1 (Load)
 
-	// How deep the remastered look's water is at a UE X/Y, in cm: nothing at the shore, deeper by
-	// WaterDepthStep per cell further out, to WaterDepthMax (the original's water has no bed).
-	double WaterDepthAt(double UEX, double UEY) const;
+	// How far the remastered look's ground lies below the original's at a UE X/Y, in cm, for its
+	// open water (the original's has no bed): deeper by WaterDepthStep per cell out from the shore,
+	// to WaterDepthMax, and the shore itself let down by ShoreSink, so the water (BRR::SplitWater)
+	// reaches into the banks along the smooth surface's own contour instead of ending on the
+	// original's triangle edges. Catmull-Rom between the corners; nothing at a corner on the dry
+	// track, a ramp or another liquid, which keep the original's surface.
+	double ShoreSinkAt(double UEX, double UEY) const;
 	static constexpr double WaterDepthStep = 150.0;
 	static constexpr double WaterDepthMax = 450.0;
-	TArray<float> CornerWaterDepth; // per corner (Load)
+	static constexpr double ShoreSink = 80.0;
+	TArray<float> CornerSink; // per corner (Load)
 
 	// What a terrain surface type (FBRRVertex::Land) is on this level. The original has no such
 	// notion - water is a surface the boats race on, or the slippery one the cars slide into - so

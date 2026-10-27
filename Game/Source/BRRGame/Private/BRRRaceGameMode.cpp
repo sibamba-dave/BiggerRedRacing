@@ -15,6 +15,8 @@
 #include "BRRPhoto.h"
 #include "BRRSprites.h"
 #include "BRRScatter.h"
+#include "BRRWake.h"
+#include "BRRDust.h"
 #include "BRRWrecks.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Camera/CameraActor.h"
@@ -250,6 +252,10 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 	Race->SetParticleAtlasBase(World.ParticleAtlasBase);
 	Wrecks->Build(World.Wrecks, LevelName);
 	GetWorld()->SpawnActor<ABRRScatter>()->Build(World);
+	Wake = GetWorld()->SpawnActor<ABRRWake>();
+	Wake->Build(World);
+	Dust = GetWorld()->SpawnActor<ABRRDust>();
+	Dust->Build(World);
 	DrawRange = LoadObject<UMaterialParameterCollection>(nullptr, TEXT("/Game/BRR/Materials/MPC_BRR.MPC_BRR"));
 	Look = GetWorld()->SpawnActor<ABRRLook>();
 	Look->Build(World.SunDirection, DrawRange);
@@ -508,6 +514,22 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 		Sprites->Update(*Race, Facing, GetWorld()->GetTimeSeconds());
 	}
 	if (AnimDecor) AnimDecor->Update(GetWorld()->GetTimeSeconds());
+	if (Wake)
+	{
+		// Every racer as drawn this frame: the ghosts between their ticks, the player where it is.
+		TArray<FTransform> Drawn;
+		for (int32 R = 0; R < Race->NumRacers(); ++R)
+		{
+			Drawn.Add(R == Race->PlayerIndex() ? PlayerCar->GetBodyOriginTransform()
+				: FTransform(FQuat::Slerp(PrevPose[R].GetRotation(), CurrPose[R].GetRotation(), Alpha), FMath::Lerp(PrevPose[R].GetLocation(), CurrPose[R].GetLocation(), Alpha)));
+		}
+		Wake->Update(Drawn, DeltaSeconds, Look && Look->IsRemastered());
+		if (Dust && RaceCamera)
+		{
+			const FRotationMatrix View(RaceCamera->GetActorRotation());
+			Dust->Update(Drawn, View.GetUnitAxis(EAxis::Y), View.GetUnitAxis(EAxis::Z), DeltaSeconds, Look && Look->IsRemastered());
+		}
+	}
 	for (int32 R = 0; R < Ghosts.Num(); ++R)
 	{
 		if (!Ghosts[R]) continue;

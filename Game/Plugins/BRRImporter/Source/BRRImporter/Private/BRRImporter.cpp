@@ -203,6 +203,8 @@ namespace
 		UMaterial* TexturedHD = nullptr;   // Textured, tessellated and displaced: the refined terrain's
 		UMaterial* Water = nullptr;        // the remastered look's open water (single layer water)
 		UMaterial* Effect = nullptr;       // the race's spray, dust and sparks (ABRRParticles): unlit in both looks
+		UMaterial* Foam = nullptr;         // the boats' wakes and splashes (ABRRWake, remastered only)
+		UMaterial* Haze = nullptr;         // the dust hanging over dirt (ABRRDust, remastered only)
 	};
 
 	// The ground materials Tools/fetch_ground.py packs (normal X/Y, roughness, brightness), one
@@ -317,8 +319,10 @@ namespace
 		return Custom;
 	}
 
-	// The remastered ground's detail (EBRRGround in UV1.x, by MakeMesh: the terrain only): its CC0
-	// material laid in the world every 3 m, projected along the face's main axis, modulating the
+	// The remastered ground's detail (EBRRGround at the triangle's three corners in UV1.xy and UV2.x,
+	// the corners' weights in UV3, by MakeMesh: the terrain only): its CC0 materials laid in the world
+	// every 3 m, projected along the face's main axis, blended from corner to corner by weight and
+	// height (one kind's pebbles and clumps stand out of the next before it gives way), modulating the
 	// original's colour by its brightness and adding its relief and roughness to the page's own;
 	// fading out by 160 m, where its tiling would show. Returns the colour (float3) and the
 	// detail (float4) to hand ConnectLook in place of the ones given.
@@ -326,23 +330,49 @@ namespace
 		UMaterialExpression* Colour, int32 ColourOutput, UMaterialExpression* Detail, bool bDisplace = false)
 	{
 		auto Make = [Mat](UClass* Class, int32 X, int32 Y) { return UMaterialEditingLibrary::CreateMaterialExpression(Mat, Class, X, Y); };
-		auto* Kind = Cast<UMaterialExpressionTextureCoordinate>(Make(UMaterialExpressionTextureCoordinate::StaticClass(), -1400, 1500));
-		Kind->CoordinateIndex = 1;
+		auto Coordinate = [&](int32 Index, int32 Y)
+		{
+			auto* C = Cast<UMaterialExpressionTextureCoordinate>(Make(UMaterialExpressionTextureCoordinate::StaticClass(), -1600, Y));
+			C->CoordinateIndex = Index;
+			return C;
+		};
+		UMaterialExpression* Kinds01 = Coordinate(1, 1400);
+		UMaterialExpression* Kinds2 = Coordinate(2, 1450);
+		UMaterialExpression* Weights = Coordinate(3, 1500);
 		UMaterialExpression* Position = Make(UMaterialExpressionWorldPosition::StaticClass(), -1400, 1600);
 		UMaterialExpression* Facing = Make(UMaterialExpressionVertexNormalWS::StaticClass(), -1400, 1700);
 		UMaterialExpression* Depth = Make(UMaterialExpressionPixelDepth::StaticClass(), -1400, 1800);
 		UMaterialExpression* Remaster = MakeCollectionValue(Mat, Collection, TEXT("Remaster"), -1400, 1900);
-		UMaterialExpressionCustom* Coord = MakeCustomOutputs(Mat, TEXT(
-			"float3 a = abs(N);\n"
-			"float2 uv = a.z >= max(a.x, a.y) ? P.xy : a.x >= a.y ? P.yz : P.xz;\n"
-			"return float3(uv / 300.0, max(K.x - 1, 0));"), CMOT_Float3,
-			{ MakeTuple(FName(TEXT("P")), Position, 0), MakeTuple(FName(TEXT("N")), Facing, 0), MakeTuple(FName(TEXT("K")), (UMaterialExpression*)Kind, 0) }, 1500);
-		auto* Sample = Cast<UMaterialExpressionTextureSampleParameter2DArray>(Make(UMaterialExpressionTextureSampleParameter2DArray::StaticClass(), -900, 1500));
-		Sample->ParameterName = TEXT("Ground");
-		Sample->Texture = Ground;
-		Sample->SamplerType = SAMPLERTYPE_LinearColor;
-		Sample->SamplerSource = SSM_Wrap_WorldGroupSettings;
-		Sample->Coordinates.Connect(0, Coord);
+		// A sample per corner, of its kind's slice (a kind-less corner reads the first, unused).
+		TArray<TTuple<FName, UMaterialExpression*, int32>> BlendInputs = { MakeTuple(FName(TEXT("A")), Kinds01, 0),
+			MakeTuple(FName(TEXT("B")), Kinds2, 0), MakeTuple(FName(TEXT("W")), Weights, 0) };
+		for (int32 Corner = 0; Corner < 3; ++Corner)
+		{
+			UMaterialExpressionCustom* Coord = MakeCustomOutputs(Mat, FString::Printf(TEXT(
+				"float3 a = abs(N);\n"
+				"float2 uv = a.z >= max(a.x, a.y) ? P.xy : a.x >= a.y ? P.yz : P.xz;\n"
+				"float k = %s;\n"
+				"return float3(uv / 300.0, max(k - 1, 0));"), Corner == 0 ? TEXT("A.x") : Corner == 1 ? TEXT("A.y") : TEXT("B.x")), CMOT_Float3,
+				{ MakeTuple(FName(TEXT("P")), Position, 0), MakeTuple(FName(TEXT("N")), Facing, 0), MakeTuple(FName(TEXT("A")), Kinds01, 0),
+				  MakeTuple(FName(TEXT("B")), Kinds2, 0) }, 1300 + Corner * 100);
+			auto* Sample = Cast<UMaterialExpressionTextureSampleParameter2DArray>(Make(UMaterialExpressionTextureSampleParameter2DArray::StaticClass(), -1100, 1300 + Corner * 100));
+			Sample->ParameterName = TEXT("Ground");
+			Sample->Texture = Ground;
+			Sample->SamplerType = SAMPLERTYPE_LinearColor;
+			Sample->SamplerSource = SSM_Wrap_WorldGroupSettings;
+			Sample->Coordinates.Connect(0, Coord);
+			BlendInputs.Add(MakeTuple(FName(*FString::Printf(TEXT("T%d"), Corner)), (UMaterialExpression*)Sample, 5));
+		}
+		// Kind-less corners are neutral (flat, average roughness and brightness): the detail fades
+		// out towards them. Weighted by how near the corner and how high its material stands.
+		UMaterialExpressionCustom* Sample = MakeCustomOutputs(Mat, TEXT(
+			"const float4 n = float4(0.5, 0.5, 0.75, 0.5);\n"
+			"float4 t0 = A.x > 0.5 ? T0 : n, t1 = A.y > 0.5 ? T1 : n, t2 = B.x > 0.5 ? T2 : n;\n"
+			"float3 b = float3(W.x, W.y, saturate(1 - W.x - W.y));\n"
+			"float3 h = b + 0.6 * float3(t0.a, t1.a, t2.a);\n"
+			"float3 w = max(h - (max(h.x, max(h.y, h.z)) - 0.2), 0);\n"
+			"w /= max(w.x + w.y + w.z, 1e-4);\n"
+			"return t0 * w.x + t1 * w.y + t2 * w.z;"), CMOT_Float4, BlendInputs, 1600);
 		// The sample's normal (DirectX: X along u, Y along v) into the world, by the projection's axes.
 		UMaterialExpressionCustom* World = MakeCustomOutputs(Mat, TEXT(
 			"float2 xy = T.rg * 2 - 1;\n"
@@ -351,14 +381,14 @@ namespace
 			"if (a.z >= max(a.x, a.y)) return float3(t.x, t.y, t.z * sign(N.z));\n"
 			"if (a.x >= a.y) return float3(t.z * sign(N.x), t.x, t.y);\n"
 			"return float3(t.x, t.z * sign(N.y), t.y);"), CMOT_Float3,
-			{ MakeTuple(FName(TEXT("T")), (UMaterialExpression*)Sample, 5), MakeTuple(FName(TEXT("N")), Facing, 0) }, 1600);
+			{ MakeTuple(FName(TEXT("T")), (UMaterialExpression*)Sample, 0), MakeTuple(FName(TEXT("N")), Facing, 0) }, 1600);
 		auto* ToTangent = Cast<UMaterialExpressionTransform>(Make(UMaterialExpressionTransform::StaticClass(), -500, 1600));
 		ToTangent->Input.Connect(0, World);
 		ToTangent->TransformSourceType = TRANSFORMSOURCE_World;
 		ToTangent->TransformType = TRANSFORM_Tangent;
-		const TCHAR* On = TEXT("float on = (K.x > 0.5 && R > 0.5) ? saturate(1 - (Z - 4000) / 12000) : 0;\n");
-		TArray<TTuple<FName, UMaterialExpression*, int32>> Common = { MakeTuple(FName(TEXT("K")), (UMaterialExpression*)Kind, 0),
-			MakeTuple(FName(TEXT("R")), Remaster, 0), MakeTuple(FName(TEXT("Z")), Depth, 0), MakeTuple(FName(TEXT("T")), (UMaterialExpression*)Sample, 5) };
+		const TCHAR* On = TEXT("float on = R > 0.5 ? saturate(1 - (Z - 4000) / 12000) : 0;\n");
+		TArray<TTuple<FName, UMaterialExpression*, int32>> Common = {
+			MakeTuple(FName(TEXT("R")), Remaster, 0), MakeTuple(FName(TEXT("Z")), Depth, 0), MakeTuple(FName(TEXT("T")), (UMaterialExpression*)Sample, 0) };
 		TArray<TTuple<FName, UMaterialExpression*, int32>> ColourInputs = Common;
 		ColourInputs.Add(MakeTuple(FName(TEXT("C")), Colour, ColourOutput));
 		UMaterialExpressionCustom* NewColour = MakeCustomOutputs(Mat, FString(On) + TEXT("return C.rgb * lerp(1, T.a * 2, on * 0.55);"), CMOT_Float3, ColourInputs, 1700);
@@ -373,8 +403,8 @@ namespace
 		{
 			// Nanite tessellation's displacement (0.5 is none): the material's brightness as its
 			// height, the pebbles and clods standing up out of the ground.
-			UMaterialEditingLibrary::ConnectMaterialProperty(MakeCustomOutputs(Mat, TEXT("return 0.5 + ((K.x > 0.5 && R > 0.5) ? (T.a - 0.5) : 0);"), CMOT_Float1,
-				{ MakeTuple(FName(TEXT("K")), (UMaterialExpression*)Kind, 0), MakeTuple(FName(TEXT("R")), Remaster, 0), MakeTuple(FName(TEXT("T")), (UMaterialExpression*)Sample, 5) }, 1900),
+			UMaterialEditingLibrary::ConnectMaterialProperty(MakeCustomOutputs(Mat, TEXT("return 0.5 + (R > 0.5 ? (T.a - 0.5) : 0);"), CMOT_Float1,
+				{ MakeTuple(FName(TEXT("R")), Remaster, 0), MakeTuple(FName(TEXT("T")), (UMaterialExpression*)Sample, 0) }, 1900),
 				TEXT(""), MP_Displacement);
 		}
 		return { NewColour, NewDetail };
@@ -600,10 +630,12 @@ namespace
 			// The ground effects: unlit in both looks. Classic as Textured's classic path, the palette
 			// exact; remastered the smooth page at Brightness - about what a sunlit surface of that
 			// colour gives (ABRRLook's 10 lux sun) - so a splash is not darkened by the water it
-			// stands in, the shadow it is in, or the occlusion of the ground around it.
+			// stands in, the shadow it is in, or the occlusion of the ground around it. Translucent, at 60%:
+			// classic's alpha is the page's own, all or nothing, the palette still exact where it
+			// shows; remastered's the filtered page's, a soft edge and a splash you see through.
 			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Effect"));
 			Mat->SetShadingModel(MSM_Unlit);
-			Mat->BlendMode = BLEND_Masked;
+			Mat->BlendMode = BLEND_Translucent;
 			Mat->TwoSided = true;
 			UTexture2D* Default = LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/DefaultTexture.DefaultTexture"));
 			auto* Classic = Cast<UMaterialExpressionTextureSampleParameter2D>(
@@ -620,18 +652,93 @@ namespace
 			auto* Brightness = Cast<UMaterialExpressionScalarParameter>(
 				UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionScalarParameter::StaticClass(), -800, 450));
 			Brightness->ParameterName = TEXT("Brightness");
-			Brightness->DefaultValue = 3.f;
+			Brightness->DefaultValue = 2.5f;
 			UMaterialExpression* Remaster = MakeCollectionValue(Mat, Collection, TEXT("Remaster"), -800, 550);
-			UMaterialExpressionCustom* Colour = MakeCustomOutputs(Mat, TEXT("return R > 0.5 ? float4(B.rgb * L, B.a) : A;"), CMOT_Float4,
+			UMaterialExpressionCustom* Colour = MakeCustomOutputs(Mat, TEXT("return R > 0.5 ? float4(B.rgb * L, saturate(B.a * 1.3) * 0.6) : float4(A.rgb, A.a > 0.5);"), CMOT_Float4,
 				{ MakeTuple(FName(TEXT("A")), (UMaterialExpression*)Classic, 5), MakeTuple(FName(TEXT("B")), (UMaterialExpression*)Smooth, 5),
 				  MakeTuple(FName(TEXT("L")), (UMaterialExpression*)Brightness, 0), MakeTuple(FName(TEXT("R")), Remaster, 0) }, 500);
 			UMaterialEditingLibrary::ConnectMaterialProperty(MakeCustom(Mat, TEXT("return C.rgb;"), CMOT_Float3, { { TEXT("C"), Colour } }), TEXT(""), MP_EmissiveColor);
 			auto* Mask = MakeCustomOutputs(Mat, TEXT("return C.a * D;"), CMOT_Float1,
 				{ MakeTuple(FName(TEXT("C")), (UMaterialExpression*)Colour, 0), MakeTuple(FName(TEXT("D")), MakeDrawRange(Mat, Collection), 0) }, 600);
-			UMaterialEditingLibrary::ConnectMaterialProperty(Mask, TEXT(""), MP_OpacityMask);
+			UMaterialEditingLibrary::ConnectMaterialProperty(Mask, TEXT(""), MP_Opacity);
 			UMaterialEditingLibrary::RecompileMaterial(Mat);
 			SaveAsset(Mat);
 			M.Effect = Mat;
+		}
+		{
+			// The wakes (ABRRWake): white water, see-through, broken up by two octaves of noise that
+			// drift with the strip (UV.x) and boil in place (time); soft at a strip's edges (UV.y);
+			// as strong as the vertex alpha. Unlit at the effects' brightness (M_BRR_Effect).
+			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Foam"));
+			Mat->SetShadingModel(MSM_Unlit);
+			Mat->BlendMode = BLEND_Translucent;
+			Mat->TwoSided = true;
+			UMaterial* Base = Mat;
+			auto Make = [Base](UClass* Class, int32 X, int32 Y) { return UMaterialEditingLibrary::CreateMaterialExpression(Base, Class, X, Y); };
+			UMaterialExpression* Vertex = Make(UMaterialExpressionVertexColor::StaticClass(), -900, 0);
+			UMaterialExpression* Uv = Make(UMaterialExpressionTextureCoordinate::StaticClass(), -900, 150);
+			UMaterialExpression* Where = Make(UMaterialExpressionWorldPosition::StaticClass(), -900, 300);
+			UMaterialExpression* Time = Make(UMaterialExpressionTime::StaticClass(), -900, 450);
+			const TCHAR* Noise = TEXT(
+				"float2 p = P.xy / 90.0 + float2(U.x * 3.0, 0);\n"
+				"float n = 0, a = 0.6;\n"
+				"for (int o = 0; o < 2; o++)\n"
+				"{\n"
+				"  float2 i = floor(p), f = frac(p);\n"
+				"  f = f * f * (3 - 2 * f);\n"
+				"  float h00 = frac(sin(dot(i, float2(127.1, 311.7)) + T * 0.7) * 43758.5);\n"
+				"  float h10 = frac(sin(dot(i + float2(1, 0), float2(127.1, 311.7)) + T * 0.7) * 43758.5);\n"
+				"  float h01 = frac(sin(dot(i + float2(0, 1), float2(127.1, 311.7)) + T * 0.7) * 43758.5);\n"
+				"  float h11 = frac(sin(dot(i + float2(1, 1), float2(127.1, 311.7)) + T * 0.7) * 43758.5);\n"
+				"  n += a * lerp(lerp(h00, h10, f.x), lerp(h01, h11, f.x), f.y);\n"
+				"  p *= 2.7; a *= 0.4;\n"
+				"}\n"
+				"float edge = sin(saturate(U.y) * 3.14159);\n"
+				"return saturate((n - 0.25) * 1.8) * edge * C;");
+			UMaterialExpressionCustom* Opacity = MakeCustomOutputs(Mat, Noise, CMOT_Float1,
+				{ MakeTuple(FName(TEXT("C")), Vertex, 4), MakeTuple(FName(TEXT("U")), Uv, 0), MakeTuple(FName(TEXT("P")), Where, 0), MakeTuple(FName(TEXT("T")), Time, 0) }, 0);
+			UMaterialEditingLibrary::ConnectMaterialProperty(Opacity, TEXT(""), MP_Opacity);
+			// A sunlit white (ABRRLook's 10 lux sun gives a white surface about 3, its sky a little more).
+			UMaterialEditingLibrary::ConnectMaterialProperty(MakeCustom(Mat, TEXT("return float3(0.92, 0.96, 0.95) * 4.0;"), CMOT_Float3, {}), TEXT(""), MP_EmissiveColor);
+			UMaterialEditingLibrary::RecompileMaterial(Mat);
+			SaveAsset(Mat);
+			M.Foam = Mat;
+		}
+		{
+			// The dust haze (ABRRDust): soft round cards in the vertex colour (linear) at a sunlit
+			// brightness, as see-through as the vertex alpha, thinned out by a slowly boiling noise.
+			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Haze"));
+			Mat->SetShadingModel(MSM_Unlit);
+			Mat->BlendMode = BLEND_Translucent;
+			Mat->TwoSided = true;
+			UMaterial* Base = Mat;
+			auto Make = [Base](UClass* Class, int32 X, int32 Y) { return UMaterialEditingLibrary::CreateMaterialExpression(Base, Class, X, Y); };
+			UMaterialExpression* Vertex = Make(UMaterialExpressionVertexColor::StaticClass(), -900, 0);
+			UMaterialExpression* Uv = Make(UMaterialExpressionTextureCoordinate::StaticClass(), -900, 150);
+			UMaterialExpression* Time = Make(UMaterialExpressionTime::StaticClass(), -900, 300);
+			UMaterialExpressionCustom* Opacity = MakeCustomOutputs(Mat, TEXT(
+				"float2 q = float2(frac(U.x), U.y) - 0.5;\n"
+				"float r = saturate(1 - length(q) * 2);\n"
+				"float2 p = q * 3.0 + floor(U.x) * 1.37 + T * 0.04;\n"
+				"float n = 0, a = 0.6;\n"
+				"for (int o = 0; o < 2; o++)\n"
+				"{\n"
+				"  float2 i = floor(p), f = frac(p);\n"
+				"  f = f * f * (3 - 2 * f);\n"
+				"  float h00 = frac(sin(dot(i, float2(127.1, 311.7))) * 43758.5);\n"
+				"  float h10 = frac(sin(dot(i + float2(1, 0), float2(127.1, 311.7))) * 43758.5);\n"
+				"  float h01 = frac(sin(dot(i + float2(0, 1), float2(127.1, 311.7))) * 43758.5);\n"
+				"  float h11 = frac(sin(dot(i + float2(1, 1), float2(127.1, 311.7))) * 43758.5);\n"
+				"  n += a * lerp(lerp(h00, h10, f.x), lerp(h01, h11, f.x), f.y);\n"
+				"  p *= 2.3; a *= 0.45;\n"
+				"}\n"
+				"return r * (0.5 + 0.7 * n) * A;"), CMOT_Float1,
+				{ MakeTuple(FName(TEXT("A")), Vertex, 4), MakeTuple(FName(TEXT("U")), Uv, 0), MakeTuple(FName(TEXT("T")), Time, 0) }, 0);
+			UMaterialEditingLibrary::ConnectMaterialProperty(Opacity, TEXT(""), MP_Opacity);
+			UMaterialEditingLibrary::ConnectMaterialProperty(MakeCustom(Mat, TEXT("return C.rgb * 3.0;"), CMOT_Float3, { { TEXT("C"), Vertex } }), TEXT(""), MP_EmissiveColor);
+			UMaterialEditingLibrary::RecompileMaterial(Mat);
+			SaveAsset(Mat);
+			M.Haze = Mat;
 		}
 		{
 			// Band index from the view direction's elevation, as ORR's sky shader picks it.
@@ -799,7 +906,7 @@ namespace
 		TVertexInstanceAttributesRef<FVector2f> UVs = Attributes.GetVertexInstanceUVs();
 		TVertexInstanceAttributesRef<FVector4f> Colors = Attributes.GetVertexInstanceColors();
 		TPolygonGroupAttributesRef<FName> SlotNames = Attributes.GetPolygonGroupMaterialSlotNames();
-		UVs.SetNumChannels(2); // 1: the terrain's ground kind (AddGround)
+		UVs.SetNumChannels(4); // 1-3: the terrain's ground kinds at the triangle's corners, where in it (AddGround)
 
 		const int32 Verts = Source.NumTriangles() * 3;
 		Desc.ReserveNewVertices(Verts);
@@ -808,6 +915,72 @@ namespace
 
 		UStaticMesh* Mesh = NewAsset<UStaticMesh>(Assets.Dir / TEXT("Meshes") / Name);
 		int32 GroundCounts[int32(EBRRGround::Count)] = {};
+
+		// The terrain's ground kinds: each triangle's from its land and art, then each corner's -
+		// what most of the ground around it is - rounded off twice (a triangle takes what two of
+		// its corners are, the corners vote again), so the material blends across a triangle from
+		// corner to corner and the kinds meet along curves rather than the triangles' steps.
+		TArray<uint8> TriangleGround;
+		TArray<int32> CornerPoint;
+		TArray<uint8> PointGround;
+		{
+			TMap<FIntVector, int32> Points;
+			TArray<float> TriangleArea;
+			for (const FBRRMeshSection& Section : Source.Sections)
+			{
+				for (int32 T = 0; T + 2 < Section.Vertices.Num(); T += 3)
+				{
+					EBRRGround Ground = EBRRGround::None;
+					if (const uint8 Land = Section.Vertices[T].Land; Land != 0xFF)
+					{
+						const bool bPage = Assets.World->Atlases.IsValidIndex(Section.Atlas);
+						const FColor Average = bPage ? FBRRWorld::AverageTexels(Assets.World->Atlases[Section.Atlas], Section.Vertices[T].UV,
+							Section.Vertices[T + 1].UV, Section.Vertices[T + 2].UV) : Section.Vertices[T].Color;
+						Ground = Assets.World->GroundOf(Land, Average);
+						++GroundCounts[int32(Ground)];
+					}
+					TriangleGround.Add(uint8(Ground));
+					const FVector3f A = Section.Vertices[T].Position;
+					TriangleArea.Add(((Section.Vertices[T + 1].Position - A) ^ (Section.Vertices[T + 2].Position - A)).Size() * 0.5f);
+					for (int32 K = 0; K < 3; ++K)
+					{
+						const FVector3f& P = Section.Vertices[T + K].Position;
+						const FIntVector Key(FMath::RoundToInt(P.X), FMath::RoundToInt(P.Y), FMath::RoundToInt(P.Z));
+						CornerPoint.Add(Points.FindOrAdd(Key, Points.Num()));
+					}
+				}
+			}
+			constexpr int32 Kinds = int32(EBRRGround::Count);
+			TArray<float> Votes;
+			auto Vote = [&]()
+			{
+				Votes.Init(0.f, Points.Num() * Kinds);
+				for (int32 T = 0; T < TriangleGround.Num(); ++T)
+				{
+					for (int32 K = 0; K < 3; ++K) Votes[CornerPoint[T * 3 + K] * Kinds + TriangleGround[T]] += TriangleArea[T];
+				}
+				PointGround.SetNumUninitialized(Points.Num());
+				for (int32 P = 0; P < Points.Num(); ++P)
+				{
+					int32 Best = 0;
+					for (int32 G = 1; G < Kinds; ++G) if (Votes[P * Kinds + G] > Votes[P * Kinds + Best]) Best = G;
+					PointGround[P] = uint8(Best);
+				}
+			};
+			Vote();
+			for (int32 Round = 0; Round < 2; ++Round)
+			{
+				for (int32 T = 0; T < TriangleGround.Num(); ++T)
+				{
+					const uint8 A = PointGround[CornerPoint[T * 3]], B = PointGround[CornerPoint[T * 3 + 1]], C = PointGround[CornerPoint[T * 3 + 2]];
+					if (A == B || A == C) TriangleGround[T] = A;
+					else if (B == C) TriangleGround[T] = B;
+				}
+				Vote();
+			}
+		}
+
+		int32 Triangle = 0;
 		for (const FBRRMeshSection& Section : Source.Sections)
 		{
 			UMaterialInstanceConstant* Material = Assets.MaterialFor(Section.Atlas, Section.bTwoSided, Surface);
@@ -820,15 +993,8 @@ namespace
 			{
 				const FVector3f A = Section.Vertices[T].Position;
 				const FVector3f Normal = ((Section.Vertices[T + 2].Position - A) ^ (Section.Vertices[T + 1].Position - A)).GetSafeNormal();
-				EBRRGround Ground = EBRRGround::None;
-				if (const uint8 Land = Section.Vertices[T].Land; Land != 0xFF)
-				{
-					const bool bPage = Assets.World->Atlases.IsValidIndex(Section.Atlas);
-					const FColor Average = bPage ? FBRRWorld::AverageTexels(Assets.World->Atlases[Section.Atlas], Section.Vertices[T].UV,
-						Section.Vertices[T + 1].UV, Section.Vertices[T + 2].UV) : Section.Vertices[T].Color;
-					Ground = Assets.World->GroundOf(Land, Average);
-					++GroundCounts[int32(Ground)];
-				}
+				const float G0 = PointGround[CornerPoint[Triangle * 3]], G1 = PointGround[CornerPoint[Triangle * 3 + 1]], G2 = PointGround[CornerPoint[Triangle * 3 + 2]];
+				++Triangle;
 				TStaticArray<FVertexInstanceID, 3> Corners;
 				for (int32 K = 0; K < 3; ++K)
 				{
@@ -838,7 +1004,9 @@ namespace
 					const FVertexInstanceID Instance = Desc.CreateVertexInstance(Vertex);
 					Normals[Instance] = V.Normal.IsNearlyZero() ? Normal : V.Normal;
 					UVs.Set(Instance, 0, V.UV);
-					UVs.Set(Instance, 1, FVector2f(float(Ground), 0.f));
+					UVs.Set(Instance, 1, FVector2f(G0, G1));
+					UVs.Set(Instance, 2, FVector2f(G2, 0.f));
+					UVs.Set(Instance, 3, FVector2f(K == 0 ? 1.f : 0.f, K == 1 ? 1.f : 0.f)); // interpolated: the corners' weights
 					// The build sRGB-encodes the colour back to the palette bytes (M_BRR_Flat); the
 					// alpha carries the liquid (ConnectLook).
 					FLinearColor Colour(V.Color);
@@ -1036,8 +1204,10 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 		int32 N = 0;
 		for (const FBRRMeshSection& S : Water.Sections)
 		{
-			for (int32 T = 0; T + 2 < S.Vertices.Num(); T += 3, ++N)
+			for (int32 T = 0; T + 2 < S.Vertices.Num(); T += 3)
 			{
+				if (World.LiquidOf(S.Vertices[T].Land) != EBRRLiquid::Water) continue; // the banks it reaches over
+				++N;
 				Sum += FLinearColor::FromSRGBColor(World.Atlases.IsValidIndex(S.Atlas)
 					? FBRRWorld::AverageTexels(World.Atlases[S.Atlas], S.Vertices[T].UV, S.Vertices[T + 1].UV, S.Vertices[T + 2].UV) : S.Vertices[T].Color);
 			}

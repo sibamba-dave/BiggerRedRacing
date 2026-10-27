@@ -22,9 +22,10 @@ namespace BRR
 	BRRFORMATS_API FBRRMesh RoundWheel(const FBRRMesh& Wheel, const FVector& Axle, int32 Divisions);
 
 	// The remastered look's open water apart from its land (EBRRLiquid::Water; ice and lava stay
-	// in the terrain): OutLand the refined terrain without it, OutWater the original's water
-	// triangles (flat already), OutBed those lowered by FBRRWorld::WaterDepthAt - meeting the
-	// banks at the shore - as sand, for the water to be seen through.
+	// in the terrain): OutLand the refined terrain, its water cells the bed (let down by
+	// FBRRWorld::ShoreSinkAt) as sand; OutWater the original's water triangles (flat already) and,
+	// at their level, the triangles beside them, which the let-down banks rise out of along a
+	// curve. OutBed is empty: the bed is part of the land.
 	BRRFORMATS_API void SplitWater(const FBRRWorld& World, const FBRRMesh& Refined, FBRRMesh& OutLand, FBRRMesh& OutWater, FBRRMesh& OutBed);
 
 	// The scattered ground detail's shapes (FBRRScatter), white so the instance colours them: a tuft
