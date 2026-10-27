@@ -28,8 +28,9 @@ public:
 	// Which ground is dusty, its colour, and its height (a car in the air raises none).
 	void Build(const FBRRWorld& World);
 
-	// Each racer's body-origin pose this frame, the camera's right and up, and whether to draw.
-	void Update(const TArray<FTransform>& Poses, const FVector& CameraRight, const FVector& CameraUp, float DeltaSeconds, bool bOn);
+	// Each racer's body-origin pose this frame, the camera's right and up, how hard it rains
+	// (0..1: wet ground raises less and thinner dust), and whether to draw.
+	void Update(const TArray<FTransform>& Poses, const FVector& CameraRight, const FVector& CameraUp, float DeltaSeconds, float Rain, bool bOn);
 
 private:
 	UPROPERTY()

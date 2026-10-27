@@ -11,10 +11,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "BRRCardBuffer.h"
 #include "BRRLook.h"
 #include "GameFramework/Actor.h"
 
 #include "BRRWeather.generated.h"
+
+struct FBRRWorld;
 class UMaterialInterface;
 class UProceduralMeshComponent;
 
@@ -26,11 +29,13 @@ class BRRGAME_API ABRRWeather : public AActor
 public:
 	ABRRWeather();
 
-	// Draws the race's weather for Level and sets the sun and the mist (ABRRLook::SetMood).
-	void Build(const FString& Level, ABRRLook* Look);
+	// Draws the race's weather for Level and sets the sun and the mist (ABRRLook::SetMood). The
+	// world supplies the ground heights the rain's splashes land on.
+	void Build(const FBRRWorld& World, const FString& Level, ABRRLook* Look);
 
-	// Each frame: carries the box of falling rain or snow along with the camera.
-	void Update(const FVector& CameraLocation, bool bOn);
+	// Each frame: carries the box of falling rain or snow along with the camera, and lands the
+	// rain - short-lived splash rings on the ground about the camera.
+	void Update(const FVector& CameraLocation, float DeltaSeconds, bool bOn);
 
 	// The hour moves on: the sun drifts as the race runs (a long race started at dusk ends in the
 	// dark), re-setting the mood every few seconds. Returns true when it crossed the light's
@@ -48,7 +53,23 @@ private:
 	UPROPERTY()
 	TObjectPtr<UProceduralMeshComponent> Fall;
 	UPROPERTY()
+	TObjectPtr<UProceduralMeshComponent> Splashes;
+	UPROPERTY()
 	TObjectPtr<UMaterialInterface> Material;
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> SplashMaterial;
+
+	// Where the rain lands (corner heights, as the dust samples them), and the live rings.
+	int32 Rows = 0, Cols = 0;
+	TArray<float> CornerZ;
+	struct FRing
+	{
+		FVector At;
+		float Age = 0, Life = 0.35f, Seed = 0;
+	};
+	TArray<FRing> Rings;
+	FBRRCardBuffer RingCards;
+	float SplashCarry = 0; // fractional spawns carried between frames
 
 	enum class EFall : uint8 { None, Rain, Snow };
 	EFall Kind = EFall::None;

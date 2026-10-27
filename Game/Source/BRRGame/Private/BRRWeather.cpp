@@ -1,6 +1,7 @@
 #include "BRRWeather.h"
 
 #include "BRRLook.h"
+#include "BRRWorld.h"
 #include "Kismet/KismetMaterialLibrary.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
@@ -24,12 +25,21 @@ ABRRWeather::ABRRWeather()
 	Fall->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Fall->SetCastShadow(false);
 	SetRootComponent(Fall);
+	Splashes = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("Splashes"));
+	Splashes->SetupAttachment(Fall);
+	Splashes->SetUsingAbsoluteLocation(true); // the rings sit on the world's ground, not in the fall's box
+	Splashes->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Splashes->SetCastShadow(false);
+	Splashes->SetVisibleInRayTracing(false);
 	PrimaryActorTick.bCanEverTick = false;
 	Tags.Add(TEXT("BRRRemasterOnly"));
 }
 
-void ABRRWeather::Build(const FString& Level, ABRRLook* Look)
+void ABRRWeather::Build(const FBRRWorld& World, const FString& Level, ABRRLook* Look)
 {
+	Rows = World.MapHeight;
+	Cols = World.MapWidth;
+	CornerZ = World.CornerZ;
 	Material = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BRR/Materials/M_BRR_Haze.M_BRR_Haze"), nullptr, LOAD_NoWarn | LOAD_Quiet);
 	int32 Seed = 0;
 	if (FParse::Value(FCommandLine::Get(), TEXT("BRRWeatherSeed="), Seed)) Random.Initialize(Seed); // a pinned draw, for benches and comparisons
@@ -115,6 +125,16 @@ void ABRRWeather::Build(const FString& Level, ABRRLook* Look)
 			Fall->SetMaterial(0, Material);
 			Fall->SetVisibleInRayTracing(false);
 			Fall->BoundsScale = 1.5f; // the shader moves drops anywhere in the box
+			if (bRain)
+			{
+				// Where the rain lands: a fixed buffer of splash rings, flat on the ground.
+				SplashMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BRR/Materials/M_BRR_Haze.M_BRR_Haze"), nullptr, LOAD_NoWarn | LOAD_Quiet);
+				if (SplashMaterial)
+				{
+					RingCards.Create(Splashes, 0, 256);
+					Splashes->SetMaterial(0, SplashMaterial);
+				}
+			}
 		}
 	}
 	UE_LOG(LogBRRWeather, Display, TEXT("%s: %s"), *Level, *Describe());
@@ -142,7 +162,7 @@ FString ABRRWeather::Describe() const
 	return FString::Printf(TEXT("%s %.0f%%, sun %.0f degrees up, mist %.3f"), What, Strength * 100.f, SunElevation, Mist);
 }
 
-void ABRRWeather::Update(const FVector& CameraLocation, bool bOn)
+void ABRRWeather::Update(const FVector& CameraLocation, float DeltaSeconds, bool bOn)
 {
 	static const IConsoleVariable* Effects = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.Effects"));
 	const bool bShow = bOn && Fall->GetNumSections() > 0 && (!Effects || Effects->GetInt() != 0);
@@ -151,4 +171,43 @@ void ABRRWeather::Update(const FVector& CameraLocation, bool bOn)
 	if (bShow == IsHidden()) SetActorHiddenInGame(!bShow);
 	// The box rides with the camera; the drops fall and wrap inside it, in the shader.
 	if (bShow) SetActorLocation(CameraLocation - FVector(BoxSize * 0.5f, BoxSize * 0.5f, BoxHeight * 0.6f));
+
+	// The rain lands: rings spring up on the ground about the camera, swell and die inside half a
+	// second. The buffer is fixed; past it a frame's extra splashes simply wait their turn.
+	if (RingCards.Capacity == 0) return;
+	const float Dt = FMath::Min(DeltaSeconds, 0.1f);
+	for (FRing& R : Rings) R.Age += Dt;
+	Rings.RemoveAllSwap([](const FRing& R) { return R.Age >= R.Life; });
+	if (bShow && Rows > 0)
+	{
+		SplashCarry += Strength * 250.f * Dt;
+		const double Cell = BRR::TerrainCellCm;
+		while (SplashCarry >= 1.f && Rings.Num() < 120)
+		{
+			SplashCarry -= 1.f;
+			const double A = Random.FRand() * 2.0 * PI, D = FMath::Sqrt(Random.FRand()) * 1500.0;
+			const double X = CameraLocation.X + FMath::Cos(A) * D, Y = CameraLocation.Y + FMath::Sin(A) * D;
+			const int32 Row = FMath::FloorToInt32(X / Cell), Col = FMath::FloorToInt32(Y / Cell);
+			if (Row < 0 || Col < 0 || Row >= Rows - 1 || Col >= Cols - 1 || CornerZ.Num() != Rows * Cols) continue;
+			const double FR = X / Cell - Row, FC = Y / Cell - Col;
+			auto Z = [&](int32 R0, int32 C0) { return double(CornerZ[R0 * Cols + C0]); };
+			const double Ground = FMath::Lerp(FMath::Lerp(Z(Row, Col), Z(Row, Col + 1), FC), FMath::Lerp(Z(Row + 1, Col), Z(Row + 1, Col + 1), FC), FR);
+			FRing& R = Rings.AddDefaulted_GetRef();
+			R.At = FVector(X, Y, Ground + 3.0);
+			R.Life = Random.FRandRange(0.25f, 0.4f);
+			R.Seed = float(Rings.Num() % 50);
+		}
+	}
+	else SplashCarry = 0;
+	RingCards.Begin();
+	for (const FRing& R : Rings)
+	{
+		const float T = R.Age / R.Life;
+		const float Size = FMath::Lerp(5.f, 22.f, T);
+		const uint8 A = uint8(90 * (1.f - T) * FMath::Min(Strength * 1.5f, 1.f));
+		const FColor C(235, 240, 245, A);
+		RingCards.AddQuad(R.At + FVector(-Size, -Size, 0), R.At + FVector(Size, -Size, 0), R.At + FVector(-Size, Size, 0), R.At + FVector(Size, Size, 0),
+			FVector2D(R.Seed, 0), FVector2D(R.Seed + 1, 0), FVector2D(R.Seed, 1), FVector2D(R.Seed + 1, 1), C, C, FVector::UpVector);
+	}
+	RingCards.Commit(Splashes, 0);
 }

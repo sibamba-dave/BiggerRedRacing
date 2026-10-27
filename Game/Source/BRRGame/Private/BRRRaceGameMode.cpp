@@ -306,7 +306,7 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 	Look = GetWorld()->SpawnActor<ABRRLook>();
 	Look->Build(World.SunDirection, DrawRange);
 	Weather = GetWorld()->SpawnActor<ABRRWeather>();
-	Weather->Build(LevelName, Look);
+	Weather->Build(World, LevelName, Look);
 	Crowd = GetWorld()->SpawnActor<ABRRCrowd>();
 	TArray<FVector> Routes;
 	for (int32 R = 0; R < Race->NumRacers(); ++R)
@@ -749,8 +749,8 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 		{
 			const FRotationMatrix View(RaceCamera->GetActorRotation());
 			const bool bRemasteredNow = Look && Look->IsRemastered();
-			if (Dust) Dust->Update(Drawn, View.GetUnitAxis(EAxis::Y), View.GetUnitAxis(EAxis::Z), DeltaSeconds, bRemasteredNow);
-			if (Weather) Weather->Update(RaceCamera->GetActorLocation(), bRemasteredNow);
+			if (Dust) Dust->Update(Drawn, View.GetUnitAxis(EAxis::Y), View.GetUnitAxis(EAxis::Z), DeltaSeconds, Weather ? Weather->RainStrength() : 0.f, bRemasteredNow);
+			if (Weather) Weather->Update(RaceCamera->GetActorLocation(), DeltaSeconds, bRemasteredNow);
 		}
 		if (Crowd)
 		{

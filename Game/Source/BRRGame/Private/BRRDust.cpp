@@ -76,7 +76,7 @@ void ABRRDust::Build(const FBRRWorld& World)
 	UE_LOG(LogBRRDust, Display, TEXT("%s: %d dusty cells%s"), *World.LevelName, Cells, Material ? TEXT("") : TEXT(", M_BRR_Haze missing: re-import a level"));
 }
 
-void ABRRDust::Update(const TArray<FTransform>& Poses, const FVector& CameraRight, const FVector& CameraUp, float DeltaSeconds, bool bOn)
+void ABRRDust::Update(const TArray<FTransform>& Poses, const FVector& CameraRight, const FVector& CameraUp, float DeltaSeconds, float Rain, bool bOn)
 {
 	static const IConsoleVariable* Effects = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.Effects"));
 	bOn = bOn && (!Effects || Effects->GetInt() != 0);
@@ -102,7 +102,9 @@ void ABRRDust::Update(const TArray<FTransform>& Poses, const FVector& CameraRigh
 		Racer.bHaveLast = true;
 		Racer.Since += Dt;
 		const double Speed = Velocity.Size2D();
-		if (bJump || Speed < MinSpeed || Racer.Since < PuffSeconds) continue;
+		// Rain lays the dust: wet ground raises it slower and thinner, and a downpour hardly any.
+		const double RainDamp = 1.0 - 0.8 * FMath::Clamp(Rain, 0.f, 1.f);
+		if (bJump || Speed < MinSpeed || Racer.Since < PuffSeconds / FMath::Max(RainDamp, 0.1)) continue;
 		const int32 R = FMath::FloorToInt32(At.X / Cell), C = FMath::FloorToInt32(At.Y / Cell);
 		if (R < 0 || C < 0 || R >= Rows - 1 || C >= Cols - 1 || CellDust[R * Cols + C].A <= 0.f) continue;
 		// Only off the ground: the corner heights between the cell's corners.
@@ -122,7 +124,7 @@ void ABRRDust::Update(const TArray<FTransform>& Poses, const FVector& CameraRigh
 		P.Size0 = 150.0 + 100.0 * Fast;
 		// Capped lower than the old 1300: the widest cards were mostly overdraw.
 		P.Size1 = 700.0 + 200.0 * Fast;
-		P.Strength = 0.33 + 0.33 * Fast;
+		P.Strength = (0.33 + 0.33 * Fast) * RainDamp;
 		P.Spin = Random.FRandRange(0.f, 1.f);
 	}
 	for (FPuff& P : Puffs)
