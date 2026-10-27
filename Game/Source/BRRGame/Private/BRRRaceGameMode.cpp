@@ -466,6 +466,7 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 			PerfPhysics = 0;
 		}
 	}
+	else PerfSince = -1; // so re-enabling starts a fresh window instead of spanning the gap
 	UpdateRaceEnd();
 	if (!Race) return;
 	PlayerCar->bControlsLocked = !Race->HasStarted();
