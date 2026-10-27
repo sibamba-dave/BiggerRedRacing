@@ -30,6 +30,8 @@
 #include "Materials/MaterialExpressionMultiply.h"
 #include "Materials/MaterialExpressionTime.h"
 #include "Materials/MaterialExpressionLocalPosition.h"
+#include "Materials/MaterialExpressionIf.h"
+#include "Materials/MaterialExpressionShadingModel.h"
 #include "Materials/MaterialExpressionTransform.h"
 #include "Materials/MaterialExpressionWorldPosition.h"
 #include "Materials/MaterialParameterCollection.h"
@@ -497,6 +499,33 @@ namespace
 			{ MakeTuple(FName(TEXT("N")), (UMaterialExpression*)ToTangent, 0), MakeTuple(FName(TEXT("K")), (UMaterialExpression*)Kind, 0),
 			  MakeTuple(FName(TEXT("R")), Remaster, 0), MakeTuple(FName(TEXT("D")), Detail, 0) }, 900);
 		UMaterialEditingLibrary::ConnectMaterialProperty(Normal, TEXT(""), MP_Normal);
+
+		// Vehicle paint rides a clear coat (per-pixel shading model): instances with ClearCoat 1
+		// get the lacquered second lobe in the remastered look - toy-car gloss - while everything
+		// else stays default lit, and the classic look's emissive-only output never reads a
+		// shading model at all.
+		// As the editor's dropdown does: the sentinel goes straight into the property (SetShadingModel
+		// asserts on it), and the recompile's PostEditChange rebuilds the shading-model field from
+		// the expressions.
+		if (FByteProperty* ModelProp = FindFProperty<FByteProperty>(UMaterial::StaticClass(), TEXT("ShadingModel")))
+			ModelProp->SetPropertyValue_InContainer(Mat, MSM_FromMaterialExpression);
+		UMaterialExpression* Coat = Scalar(TEXT("ClearCoat"), 0.f, 1200);
+		auto* Lit = Cast<UMaterialExpressionShadingModel>(Make(UMaterialExpressionShadingModel::StaticClass(), -500, 1300));
+		Lit->ShadingModel = MSM_DefaultLit;
+		auto* Lacquer = Cast<UMaterialExpressionShadingModel>(Make(UMaterialExpressionShadingModel::StaticClass(), -500, 1400));
+		Lacquer->ShadingModel = MSM_ClearCoat;
+		UMaterialExpressionCustom* Gate = MakeCustom(Mat, TEXT("return CC * R;"), CMOT_Float1,
+			{ { TEXT("CC"), Coat }, { TEXT("R"), Remaster } });
+		auto* Pick = Cast<UMaterialExpressionIf>(Make(UMaterialExpressionIf::StaticClass(), -300, 1350));
+		Pick->A.Connect(0, Gate);
+		Pick->ConstB = 0.5f;
+		Pick->AGreaterThanB.Connect(0, Lacquer);
+		Pick->ALessThanB.Connect(0, Lit);
+		Pick->AEqualsB.Connect(0, Lit);
+		UMaterialEditingLibrary::ConnectMaterialProperty(Pick, TEXT(""), MP_ShadingModel);
+		UMaterialEditingLibrary::ConnectMaterialProperty(MakeCustom(Mat, TEXT("return CC * R * 0.9;"), CMOT_Float1,
+			{ { TEXT("CC"), Coat }, { TEXT("R"), Remaster } }), TEXT(""), MP_CustomData0);
+		UMaterialEditingLibrary::ConnectMaterialProperty(MakeCustom(Mat, TEXT("return 0.08;"), CMOT_Float1, {}), TEXT(""), MP_CustomData1);
 	}
 
 	FMasters MakeMasters(const FString& Root)
@@ -1067,6 +1096,7 @@ namespace
 			{
 				MI->SetScalarParameterValueEditorOnly(FMaterialParameterInfo(TEXT("Roughness")), 0.3f);
 				MI->SetScalarParameterValueEditorOnly(FMaterialParameterInfo(TEXT("Specular")), 0.5f);
+				MI->SetScalarParameterValueEditorOnly(FMaterialParameterInfo(TEXT("ClearCoat")), 1.f);
 			}
 			else if (Surface == ESurface::Rubber)
 			{
