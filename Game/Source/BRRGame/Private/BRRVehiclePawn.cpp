@@ -1,5 +1,11 @@
 #include "BRRVehiclePawn.h"
 
+#include "EnhancedInputSubsystems.h"
+#include "EnhancedPlayerInput.h"
+#include "InputAction.h"
+#include "InputMappingContext.h"
+#include "InputModifiers.h"
+
 #include "BRRRace.h"
 #include "BRRWorld.h"
 #include "ChaosWheeledVehicleMovementComponent.h"
@@ -396,6 +402,51 @@ void ABRRVehiclePawn::SetSurface(int32 Surface)
 	BrakeScale = S.Brake;
 }
 
+void ABRRVehiclePawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+{
+	Super::SetupPlayerInputComponent(PlayerInputComponent);
+	// The driving as Enhanced Input actions, with the classic defaults mapped: remapping the
+	// context is all a rebinding screen will need. The raw keys below stay as the fallback.
+	const APlayerController* PC = Cast<APlayerController>(GetController());
+	const ULocalPlayer* LP = PC ? PC->GetLocalPlayer() : nullptr;
+	UEnhancedInputLocalPlayerSubsystem* Sub = LP ? ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(LP) : nullptr;
+	if (!Sub) return;
+	DriveContext = NewObject<UInputMappingContext>(this);
+	auto Action = [this](EInputActionValueType Type)
+	{
+		UInputAction* A = NewObject<UInputAction>(this);
+		A->ValueType = Type;
+		return A;
+	};
+	SteerAction = Action(EInputActionValueType::Axis1D);
+	AccelAction = Action(EInputActionValueType::Boolean);
+	BrakeAction = Action(EInputActionValueType::Boolean);
+	HandbrakeAction = Action(EInputActionValueType::Boolean);
+	BoostAction = Action(EInputActionValueType::Boolean);
+	auto Map = [this](UInputAction* A, const FKey& Key, bool bNegate = false)
+	{
+		FEnhancedActionKeyMapping& M = DriveContext->MapKey(A, Key);
+		if (bNegate) M.Modifiers.Add(NewObject<UInputModifierNegate>(this));
+	};
+	Map(SteerAction, EKeys::Gamepad_LeftX);
+	Map(SteerAction, EKeys::D);
+	Map(SteerAction, EKeys::Right);
+	Map(SteerAction, EKeys::A, /*bNegate=*/true);
+	Map(SteerAction, EKeys::Left, /*bNegate=*/true);
+	Map(AccelAction, EKeys::W);
+	Map(AccelAction, EKeys::Up);
+	Map(AccelAction, EKeys::Gamepad_RightTriggerAxis);
+	Map(BrakeAction, EKeys::S);
+	Map(BrakeAction, EKeys::Down);
+	Map(BrakeAction, EKeys::Gamepad_LeftTriggerAxis);
+	Map(HandbrakeAction, EKeys::SpaceBar);
+	Map(HandbrakeAction, EKeys::Gamepad_FaceButton_Left);
+	Map(BoostAction, EKeys::LeftShift);
+	Map(BoostAction, EKeys::RightShift);
+	Map(BoostAction, EKeys::Gamepad_FaceButton_Bottom);
+	Sub->AddMappingContext(DriveContext, 0);
+}
+
 FBRRDriveInput ABRRVehiclePawn::ReadPlayerInput() const
 {
 	FBRRDriveInput In;
@@ -409,6 +460,19 @@ FBRRDriveInput ABRRVehiclePawn::ReadPlayerInput() const
 	In.bRight = Down(EKeys::Right) || Down(EKeys::D) || StickX > 0.35f;
 	In.bHandbrake = Down(EKeys::SpaceBar) || Down(EKeys::Gamepad_FaceButton_Left);
 	In.bBoost = Down(EKeys::LeftShift) || Down(EKeys::RightShift) || Down(EKeys::Gamepad_FaceButton_Bottom);
+	// The actions say the same thing until someone remaps them; then they win.
+	if (const ULocalPlayer* LP = PC->GetLocalPlayer())
+		if (const UEnhancedInputLocalPlayerSubsystem* Sub = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(LP); Sub && SteerAction)
+			if (const UEnhancedPlayerInput* Enhanced = Sub->GetPlayerInput())
+			{
+				const float Axis = Enhanced->GetActionValue(SteerAction).Get<float>();
+				In.bLeft |= Axis < -0.35f;
+				In.bRight |= Axis > 0.35f;
+				In.bAccel |= Enhanced->GetActionValue(AccelAction).Get<bool>();
+				In.bBrake |= Enhanced->GetActionValue(BrakeAction).Get<bool>();
+				In.bHandbrake |= Enhanced->GetActionValue(HandbrakeAction).Get<bool>();
+				In.bBoost |= Enhanced->GetActionValue(BoostAction).Get<bool>();
+			}
 	return In;
 }
 

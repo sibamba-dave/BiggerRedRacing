@@ -97,6 +97,11 @@ public:
 	bool bControlsLocked = true;          // until the lights go out
 	TOptional<FBRRDriveInput> ScriptedInput; // drive-test / autopilot override
 
+	// Enhanced Input: the driving as rebindable actions (created at possession with the classic
+	// defaults mapped; ReadPlayerInput polls them alongside the raw keys, so nothing changes until
+	// a mapping does).
+	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+
 	// The boost key as last read (false while the controls are locked); the race runs the boost.
 	bool IsBoostKeyDown() const { return bBoostKey; }
 	// Set by the race each tick: while a boost burns, the accelerator is held down, the brake
@@ -115,6 +120,19 @@ public:
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UChaosWheeledVehicleMovementComponent> Movement;
+
+	UPROPERTY()
+	TObjectPtr<class UInputMappingContext> DriveContext;
+	UPROPERTY()
+	TObjectPtr<class UInputAction> SteerAction;   // Axis1D: left negative
+	UPROPERTY()
+	TObjectPtr<class UInputAction> AccelAction;
+	UPROPERTY()
+	TObjectPtr<class UInputAction> BrakeAction;
+	UPROPERTY()
+	TObjectPtr<class UInputAction> HandbrakeAction;
+	UPROPERTY()
+	TObjectPtr<class UInputAction> BoostAction;
 
 	UPROPERTY()
 	TObjectPtr<UStaticMeshComponent> CabinMesh;
