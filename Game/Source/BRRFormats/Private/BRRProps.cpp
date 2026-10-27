@@ -17,6 +17,7 @@ BRR::EPropKind BRR::PropKindOf(const FString& Shape)
 	if (S.StartsWith(TEXT("ROCK"))) return EPropKind::Rock;
 	if (S == TEXT("ROADSIGN") || S == TEXT("DIR1") || S == TEXT("DIR2") || S == TEXT("CHEVRONS") || S.StartsWith(TEXT("MSIGN")) || S.StartsWith(TEXT("BILBORD"))
 		|| S == TEXT("SIGN1") || S == TEXT("SIGNPOST") || S == TEXT("BSIGN") || S == TEXT("ARROSIGN") || S == TEXT("ARROW") || S.StartsWith(TEXT("VSIGN"))) return EPropKind::Sign;
+	if (S == TEXT("FLAG") || S == TEXT("FLAG2")) return EPropKind::Flag;
 	// The landmarks made again one by one (BuildLandmark).
 	if (S == TEXT("MUDHUT") || S == TEXT("CHINA1") || S == TEXT("PAGODA1") || S == TEXT("PAGODA2") || S == TEXT("BAYWATCH") || S.StartsWith(TEXT("ROCKET"))) return EPropKind::Landmark;
 	if (S.Contains(TEXT("TUNN")) || S.Contains(TEXT("BRIJ")) || S.Contains(TEXT("BRIDGE")) || S.StartsWith(TEXT("BR_")) || S == TEXT("FOOT_BR")
@@ -230,6 +231,137 @@ namespace
 	const FColor Metal(150, 155, 160), DarkMetal(42, 44, 48), Rubber(26, 26, 28);
 }
 
+TArray<BRR::FBRRFlag> BRR::FindFlags(const FBRRWorld& World)
+{
+	TArray<FBRRFlag> Flags;
+	TArray<FTri> Tris;
+	for (int32 S = 0; S < World.Decor.Sections.Num(); ++S)
+		for (int32 T = 0; T + 2 < World.Decor.Sections[S].Vertices.Num(); T += 3) Tris.Add({ &World.Decor.Sections[S].Vertices[T], S, Tris.Num() });
+	if (Tris.IsEmpty()) return Flags;
+	const TMap<int32, TArray<TArray<int32>>> Groups = GroupDecor(World, Tris, [&](int32 P) { return PropKindOf(World.Placements[P].Shape) == EPropKind::Flag; });
+	for (const TPair<int32, TArray<TArray<int32>>>& Group : Groups)
+	{
+		const FBRRPlacement& Place = World.Placements[Group.Key];
+		const FQuat4f Rot = FQuat4f(Place.Rotation);
+		const FVector3f Origin = FVector3f(Place.Location);
+		FBox3f Box(ForceInit);
+		TArray<int32> All;
+		for (const TArray<int32>& Piece : Group.Value)
+		{
+			All.Append(Piece);
+			for (const int32 I : Piece) for (int32 K = 0; K < 3; ++K) Box += Rot.UnrotateVector(Tris[I].V[K].Position - Origin);
+		}
+		const FVector3f E = Box.GetSize();
+		FBRRFlag& F = Flags.AddDefaulted_GetRef();
+		const bool bAlongX = E.X >= E.Y;
+		const float Width = FMath::Max(bAlongX ? E.X : E.Y, 60.f);
+		// The pole at the box's one end, the cloth off the other way.
+		const FVector3f Pole = bAlongX ? FVector3f(Box.Min.X, Box.GetCenter().Y, Box.Max.Z) : FVector3f(Box.GetCenter().X, Box.Min.Y, Box.Max.Z);
+		F.Top = Origin + Rot.RotateVector(Pole);
+		F.Out = Rot.RotateVector(bAlongX ? FVector3f::ForwardVector : FVector3f::RightVector);
+		F.Width = Width;
+		F.Height = FMath::Clamp(E.Z * 0.35f, 40.f, Width * 0.8f);
+		F.Colour = MeanColour(World, Tris, All);
+	}
+	return Flags;
+}
+
+void BRR::MakeSpectator(int32 Variant, FBRRMesh& OutShirt, FBRRMesh& OutRest)
+{
+	FBuilder Shirt(Variant * 13 + 1), Rest(Variant * 13 + 2);
+	const FColor Skin(224, 172, 136), Denim(58, 78, 122), Jeans(70, 90, 140), Boots(70, 48, 30), Straw(214, 182, 110), Beard(96, 64, 40), Hair(110, 74, 42);
+	const FColor CapRed(190, 30, 30), CapWhite(235, 235, 230), Can(200, 200, 205), ChairGreen(60, 130, 80), CoolerBlue(40, 90, 180);
+	const bool bSitting = Variant == 3;
+	const float Hip = bSitting ? 45.f : 88.f, Shoulder = Hip + 58.f;
+	// The shirt: a torso and the arms, in light and dark checks the crowd's tint makes plaid.
+	const int32 Rows = 6, Cols = 4;
+	for (int32 R = 0; R < Rows; ++R)
+		for (int32 C = 0; C < Cols; ++C)
+		{
+			const float Z0 = Hip + (Shoulder - Hip) * R / Rows, Z1 = Hip + (Shoulder - Hip) * (R + 1) / Rows;
+			const FColor Check = ((R + C) & 1) ? FColor(250, 250, 250) : FColor(150, 150, 150);
+			const float Y0 = -20.f + 40.f * C / Cols, Y1 = -20.f + 40.f * (C + 1) / Cols;
+			Shirt.Box(FVector3f(0, (Y0 + Y1) * 0.5f, (Z0 + Z1) * 0.5f), FVector3f(12.f, (Y1 - Y0) * 0.5f, (Z1 - Z0) * 0.5f), FQuat4f::Identity, Check);
+		}
+	const bool bArmUp = Variant == 2;
+	for (const float Side : { -1.f, 1.f })
+	{
+		const FVector3f Sh(0, Side * 24.f, Shoulder - 6.f);
+		const FVector3f Hand = bArmUp && Side > 0 ? Sh + FVector3f(5, 6, 52) : bSitting ? Sh + FVector3f(28, Side * 4, -28) : Sh + FVector3f(4, Side * 6, -52);
+		Shirt.Tube({ Sh, (Sh + Hand) * 0.5f, Hand }, { 6.5f, 6.f, 5.5f }, 8, FColor(200, 200, 200));
+		Rest.Blob(Hand, FVector3f(5.5f, 5.5f, 6.f), Skin, 0.05f, 1, Variant);
+		if (bArmUp && Side > 0) Rest.Lathe(Hand + FVector3f(0, 0, 4), { {3.3f, 0}, {3.3f, 12}, {0, 12} }, { Can, Can, Can }, 10);
+	}
+	// Legs and boots: overalls' denim, or jeans; bent to sit.
+	for (const float Side : { -1.f, 1.f })
+	{
+		const FColor Leg = (Variant == 1 || Variant == 3) ? Jeans : Denim;
+		if (bSitting)
+		{
+			Rest.Tube({ FVector3f(0, Side * 10, Hip), FVector3f(40, Side * 10, Hip) }, { 8.f, 7.5f }, 8, Leg);
+			Rest.Tube({ FVector3f(40, Side * 10, Hip), FVector3f(42, Side * 10, 8) }, { 7.5f, 7.f }, 8, Leg);
+			Rest.Box(FVector3f(46, Side * 10, 4), FVector3f(12, 6, 4), FQuat4f::Identity, Boots);
+		}
+		else
+		{
+			Rest.Tube({ FVector3f(0, Side * 10, Hip), FVector3f(0, Side * 10, 8) }, { 8.f, 7.f }, 8, Leg);
+			Rest.Box(FVector3f(5, Side * 10, 4), FVector3f(13, 6, 4), FQuat4f::Identity, Boots);
+		}
+	}
+	// Overalls' bib and straps over the shirt.
+	if (Variant == 0 || Variant == 2)
+	{
+		Rest.Box(FVector3f(12.6f, 0, Hip + 18), FVector3f(1.2f, 15, 20), FQuat4f::Identity, Denim);
+		for (const float Side : { -1.f, 1.f }) Rest.Box(FVector3f(12.6f, Side * 11, Shoulder - 12), FVector3f(1.2f, 2.5f, 13), FQuat4f::Identity, Denim);
+		Rest.Box(FVector3f(0, 0, Hip + 2), FVector3f(12.8f, 20.5f, 6), FQuat4f::Identity, Denim);
+	}
+	// Head, and what is on it.
+	const FVector3f Head(2, 0, Shoulder + 15);
+	Rest.Tube({ FVector3f(0, 0, Shoulder - 2), FVector3f(1, 0, Shoulder + 6) }, { 6.f, 6.f }, 8, Skin);
+	Rest.Blob(Head, FVector3f(11, 10, 12.5f), Skin, 0.04f, 2, Variant);
+	if (Variant == 0) Rest.Blob(Head + FVector3f(7, 0, -7), FVector3f(6, 9, 8), Beard, 0.25f, 2, Variant + 5);
+	if (Variant == 0)
+	{
+		// The straw cowboy hat: a wide brim turned up at the sides, a dented crown.
+		Rest.Lathe(Head + FVector3f(0, 0, 8), { {24, 0}, {22, 2}, {10, 3}, {9.5f, 12}, {6, 14}, {0, 13} }, { Straw, Straw, Straw, Straw, Straw, Shade(Straw, 0.9f) }, 20);
+		for (FBRRVertex& V : Rest.Mesh.Sections[0].Vertices)
+		{
+			const FVector3f D = V.Position - (Head + FVector3f(0, 0, 8));
+			if (D.Z > -1 && D.Z < 3 && FVector2f(D.X, D.Y).Size() > 14.f) V.Position.Z += FMath::Square(D.Y / 24.f) * 7.f;
+		}
+	}
+	else if (Variant == 2)
+	{
+		Rest.Blob(Head + FVector3f(-5, 0, 3), FVector3f(9, 10.5f, 10), Hair, 0.2f, 2, Variant + 7);       // the top
+		Rest.Blob(Head + FVector3f(-11, 0, -10), FVector3f(5, 9, 11), Hair, 0.3f, 2, Variant + 9);       // the mullet
+	}
+	else
+	{
+		// The trucker cap: a white front, a red crown, the bill.
+		Rest.Blob(Head + FVector3f(-1, 0, 6), FVector3f(11.5f, 11, 7), CapRed, 0.f, 2, Variant, 0.2f);
+		Rest.Box(Head + FVector3f(6, 0, 7), FVector3f(4, 9, 5), FQuat4f::Identity, CapWhite);
+		Rest.Box(Head + FVector3f(15, 0, 3), FVector3f(7, 8.5f, 0.8f), FQuat4f(FVector3f::RightVector, -0.12f), CapRed);
+	}
+	if (bSitting)
+	{
+		// The lawn chair and the cooler beside it.
+		Rest.Box(FVector3f(8, 0, Hip - 4), FVector3f(26, 24, 2), FQuat4f::Identity, ChairGreen);
+		Rest.Box(FVector3f(-14, 0, Hip + 28), FVector3f(2, 24, 30), FQuat4f(FVector3f::RightVector, 0.15f), ChairGreen);
+		for (const float SX : { -12.f, 28.f })
+			for (const float SY : { -22.f, 22.f })
+				Rest.Tube({ FVector3f(SX, SY, 0), FVector3f(SX, SY, Hip - 4) }, { 1.5f, 1.5f }, 5, FColor(190, 190, 195));
+		Rest.Box(FVector3f(10, 48, 20), FVector3f(20, 14, 20), FQuat4f::Identity, CoolerBlue);
+		Rest.Box(FVector3f(10, 48, 41), FVector3f(21, 15, 2), FQuat4f::Identity, CapWhite);
+	}
+	OutShirt = MoveTemp(Shirt.Mesh);
+	OutRest = MoveTemp(Rest.Mesh);
+	for (FBRRMesh* M : { &OutShirt, &OutRest })
+	{
+		M->Sections.RemoveAll([](const FBRRMeshSection& S) { return S.Vertices.IsEmpty(); });
+		BRR::SmoothNormals(*M, 50.f);
+	}
+}
+
 FBRRMesh BRR::BuildProps(const FBRRWorld& World, TBitArray<>& OutReplaced, int32& OutCount)
 {
 	FBRRMesh Out;
@@ -396,6 +528,14 @@ FBRRMesh BRR::BuildProps(const FBRRWorld& World, TBitArray<>& OutReplaced, int32
 				(Z > Box.Min.Z + E.Z * 0.5f ? Up : Low).Add(I);
 			}
 			BuildLandmark(Place.Shape.ToUpper(), B, Box, Along, Up.IsEmpty() ? Colour : MeanColour(World, Tris, Up), Low.IsEmpty() ? Colour : MeanColour(World, Tris, Low));
+			break;
+		}
+		case EPropKind::Flag:
+		{
+			// The pole; its cloth is the race's (FindFlags, ABRRCrowd), which waves it.
+			const bool bX = E.X >= E.Y;
+			const FVector3f Foot = bX ? FVector3f(Box.Min.X, C.Y, Box.Min.Z) : FVector3f(C.X, Box.Min.Y, Box.Min.Z);
+			B.Lathe(Foot - FVector3f(0, 0, 20), { {4, 0}, {3, E.Z + 20}, {5, E.Z + 22}, {0, E.Z + 28} }, { Metal, Metal, FColor(210, 180, 60), FColor(210, 180, 60) }, 8);
 			break;
 		}
 		case EPropKind::Structure:

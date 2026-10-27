@@ -598,37 +598,128 @@ namespace
 	class FGraphicsScreen : public FBRRMenuScreen
 	{
 	public:
-		enum ERow { Look, Window, Resolution, VSync, FrameLimit, Quality, Upscaling, FrameGen, MotionBlur, Hdr, ViewDistance, Count };
+		// The settings, three pages of them: the display, the engine's quality group by group, and
+		// the remastered look's own. The page row on top turns the pages.
+		enum ERow
+		{
+			Page,
+			Look, Window, Resolution, VSync, FrameLimit, Upscaling, FrameGen, Hdr, MotionBlur, ViewDistance,
+			Quality, Shadows, GlobalIllumination, Reflections, Textures, Effects, PostProcessing, Foliage, Shading, DrawDistance, AntiAliasing,
+			Weather, Crowds, GroundDetail, WakesDust, SmoothArt,
+			Count
+		};
 		static constexpr int32 OkId = 100;
-		static constexpr double Top = 34, Pitch = 12, LabelX = 28, ValueX = 172;
+		static constexpr double Top = 30, Pitch = 12, LabelX = 28, ValueX = 172;
+		int32 PageIndex = 0;
 		TArray<FIntPoint> Resolutions;
 
+		static TArray<int32> RowsOf(int32 P)
+		{
+			if (P == 0) return { Page, Look, Window, Resolution, VSync, FrameLimit, Upscaling, FrameGen, Hdr, MotionBlur, ViewDistance };
+			if (P == 1) return { Page, Quality, Shadows, GlobalIllumination, Reflections, Textures, Effects, PostProcessing, Foliage, Shading, DrawDistance, AntiAliasing };
+			return { Page, Weather, Crowds, GroundDetail, WakesDust, SmoothArt };
+		}
+		void Layout()
+		{
+			Scn.Boxes.Reset();
+			FocusOrder.Reset();
+			const TArray<int32> Rows = RowsOf(PageIndex);
+			for (int32 I = 0; I < Rows.Num(); ++I)
+			{
+				Scn.Boxes.Add({ Rows[I], 20, int32(Top + I * Pitch) - 2, 280, int32(Pitch) });
+				FocusOrder.Add(Rows[I]);
+			}
+			Scn.Boxes.Add({ OkId, 140, int32(Top + Rows.Num() * Pitch) + 4, 40, 12 });
+			FocusOrder.Add(OkId);
+			Focus = FMath::Clamp(Focus, 0, FocusOrder.Num() - 1);
+		}
 		virtual bool Load() override
 		{
 			if (!LoadScreen(*this, TEXT("LANDSCN"))) return false;
 			Scn.Texts.Reset();
 			Scn.AniSprites.Reset();
 			Scn.Keys.Reset();
-			Scn.Boxes.Reset();
-			for (int32 Row = 0; Row < Count; ++Row)
-			{
-				Scn.Boxes.Add({ Row, 20, int32(Top + Row * Pitch) - 2, 280, int32(Pitch) });
-				FocusOrder.Add(Row);
-			}
-			Scn.Boxes.Add({ OkId, 140, int32(Top + int32(Count) * Pitch) + 4, 40, 12 });
-			FocusOrder.Add(OkId);
+			Layout();
 			UKismetSystemLibrary::GetSupportedFullscreenResolutions(Resolutions);
 			return true;
 		}
 		static UGameUserSettings* Settings() { return GEngine ? GEngine->GetGameUserSettings() : nullptr; }
 		static bool HasFrameGeneration() { return IConsoleManager::Get().FindConsoleVariable(TEXT("r.Streamline.DLSSG.Enable")) != nullptr; }
 		static const TArray<float>& FrameLimits() { static const TArray<float> L = { 0.f, 30.f, 60.f, 120.f, 144.f, 165.f, 240.f }; return L; }
+		static FString Level(int32 L)
+		{
+			static const TCHAR* Levels[] = { TEXT("LOW"), TEXT("MEDIUM"), TEXT("HIGH"), TEXT("EPIC"), TEXT("CINEMATIC") };
+			return L >= 0 && L <= 4 ? Levels[L] : TEXT("CUSTOM");
+		}
+		// The engine's quality groups, one setting each.
+		static int32 GroupLevel(UGameUserSettings* S, int32 Row)
+		{
+			switch (Row)
+			{
+			case Shadows: return S->GetShadowQuality();
+			case GlobalIllumination: return S->GetGlobalIlluminationQuality();
+			case Reflections: return S->GetReflectionQuality();
+			case Textures: return S->GetTextureQuality();
+			case Effects: return S->GetVisualEffectQuality();
+			case PostProcessing: return S->GetPostProcessingQuality();
+			case Foliage: return S->GetFoliageQuality();
+			case Shading: return S->GetShadingQuality();
+			case DrawDistance: return S->GetViewDistanceQuality();
+			case AntiAliasing: return S->GetAntiAliasingQuality();
+			default: return -1;
+			}
+		}
+		static void SetGroupLevel(UGameUserSettings* S, int32 Row, int32 L)
+		{
+			switch (Row)
+			{
+			case Shadows: S->SetShadowQuality(L); break;
+			case GlobalIllumination: S->SetGlobalIlluminationQuality(L); break;
+			case Reflections: S->SetReflectionQuality(L); break;
+			case Textures: S->SetTextureQuality(L); break;
+			case Effects: S->SetVisualEffectQuality(L); break;
+			case PostProcessing: S->SetPostProcessingQuality(L); break;
+			case Foliage: S->SetFoliageQuality(L); break;
+			case Shading: S->SetShadingQuality(L); break;
+			case DrawDistance: S->SetViewDistanceQuality(L); break;
+			case AntiAliasing: S->SetAntiAliasingQuality(L); break;
+			default: break;
+			}
+		}
 
 		FString Label(int32 Row) const
 		{
-			static const TCHAR* Labels[Count] = { TEXT("LOOK"), TEXT("DISPLAY"), TEXT("RESOLUTION"), TEXT("VSYNC"), TEXT("FRAME LIMIT"),
-				TEXT("QUALITY"), TEXT("UPSCALING"), TEXT("FRAME GENERATION"), TEXT("MOTION BLUR"), TEXT("HDR"), TEXT("VIEW DISTANCE") };
-			return Labels[Row];
+			switch (Row)
+			{
+			case Page: return TEXT("PAGE");
+			case Look: return TEXT("LOOK");
+			case Window: return TEXT("DISPLAY");
+			case Resolution: return TEXT("RESOLUTION");
+			case VSync: return TEXT("VSYNC");
+			case FrameLimit: return TEXT("FRAME LIMIT");
+			case Upscaling: return TEXT("UPSCALING");
+			case FrameGen: return TEXT("FRAME GENERATION");
+			case Hdr: return TEXT("HDR");
+			case MotionBlur: return TEXT("MOTION BLUR");
+			case ViewDistance: return TEXT("VIEW DISTANCE");
+			case Quality: return TEXT("OVERALL QUALITY");
+			case Shadows: return TEXT("SHADOWS");
+			case GlobalIllumination: return TEXT("GI LIGHTING");
+			case Reflections: return TEXT("REFLECTIONS");
+			case Textures: return TEXT("TEXTURES");
+			case Effects: return TEXT("EFFECTS");
+			case PostProcessing: return TEXT("POST PROCESSING");
+			case Foliage: return TEXT("FOLIAGE");
+			case Shading: return TEXT("SHADING");
+			case DrawDistance: return TEXT("DRAW DISTANCE");
+			case AntiAliasing: return TEXT("ANTI-ALIASING");
+			case Weather: return TEXT("WEATHER");
+			case Crowds: return TEXT("CROWDS AND FLAGS");
+			case GroundDetail: return TEXT("GRASS AND STONES");
+			case WakesDust: return TEXT("WAKES AND DUST");
+			case SmoothArt: return TEXT("SMOOTH LETTERING");
+			default: return FString();
+			}
 		}
 		FString Value(int32 Row) const
 		{
@@ -637,6 +728,7 @@ namespace
 			auto OnOff = [](bool b) { return FString(b ? TEXT("ON") : TEXT("OFF")); };
 			switch (Row)
 			{
+			case Page: { static const TCHAR* Pages[] = { TEXT("DISPLAY"), TEXT("QUALITY"), TEXT("REMASTER") }; return Pages[PageIndex]; }
 			case Look: return G->Look ? TEXT("REMASTERED") : TEXT("CLASSIC");
 			case Window:
 			{
@@ -656,17 +748,17 @@ namespace
 				const float L = S ? S->GetFrameRateLimit() : 0.f;
 				return L <= 0.f ? FString(TEXT("NONE")) : FString::Printf(TEXT("%d FPS"), FMath::RoundToInt(L));
 			}
-			case Quality:
-			{
-				static const TCHAR* Levels[] = { TEXT("LOW"), TEXT("MEDIUM"), TEXT("HIGH"), TEXT("EPIC"), TEXT("CINEMATIC") };
-				const int32 L = S ? S->GetOverallScalabilityLevel() : -1;
-				return L >= 0 && L <= 4 ? Levels[L] : TEXT("CUSTOM");
-			}
 			case Upscaling: return G->bNativeResolution ? TEXT("NATIVE") : TEXT("QUALITY");
 			case FrameGen: return HasFrameGeneration() ? OnOff(G->bFrameGeneration) : TEXT("N/A");
-			case MotionBlur: return OnOff(G->bMotionBlur);
 			case Hdr: return S && S->SupportsHDRDisplayOutput() ? OnOff(S->IsHDREnabled()) : TEXT("N/A");
-			default: return FString();
+			case MotionBlur: return OnOff(G->bMotionBlur);
+			case Quality: return Level(S ? S->GetOverallScalabilityLevel() : -1);
+			case Weather: return G->Weather == 0 ? TEXT("ALWAYS CLEAR") : G->Weather == 2 ? TEXT("ALWAYS FOUL") : TEXT("CHANGEABLE");
+			case Crowds: return OnOff(G->bCrowds);
+			case GroundDetail: { static const TCHAR* D[] = { TEXT("NONE"), TEXT("SPARSE"), TEXT("SOME"), TEXT("FULL") }; return D[FMath::Clamp(G->GroundDetail, 0, 3)]; }
+			case WakesDust: return OnOff(G->bEffects);
+			case SmoothArt: return OnOff(G->bSmoothArt);
+			default: return S ? Level(GroupLevel(S, Row)) : FString(TEXT("-"));
 			}
 		}
 		virtual void Draw(FBRRMenuPainter& P) override
@@ -674,10 +766,12 @@ namespace
 			UBRRGameInstance* G = Menu->Game();
 			const int32 Focused = FocusOrder.IsValidIndex(Focus) ? FocusOrder[Focus] : -1;
 			P.Box(16, 4, 288, 192, FLinearColor(0.f, 0.f, 0.f, 0.6f));
-			P.Text(TEXT("GRAPHICS"), 160 - FBRRMenuPainter::TextWidth(Menu, TEXT("GRAPHICS"), 3) * 0.5, 8, 3, -1, Scn.Palette, 1);
-			for (int32 Row = 0; Row < Count; ++Row)
+			P.Text(TEXT("GRAPHICS"), 160 - FBRRMenuPainter::TextWidth(Menu, TEXT("GRAPHICS"), 3) * 0.5, 6, 3, -1, Scn.Palette, 1);
+			const TArray<int32> Rows = RowsOf(PageIndex);
+			for (int32 I = 0; I < Rows.Num(); ++I)
 			{
-				const double Y = Top + Row * Pitch;
+				const int32 Row = Rows[I];
+				const double Y = Top + I * Pitch;
 				const int32 Ramp = Row == Focused ? FBRRMenuPainter::FocusRamp : -1;
 				P.Text(Label(Row), LabelX, Y, 0, Ramp, Scn.Palette);
 				if (Row == ViewDistance)
@@ -692,13 +786,17 @@ namespace
 					P.Text(Row == Focused ? FString::Printf(TEXT("< %s >"), *V) : V, Row == Focused ? ValueX - 16 : ValueX, Y, 0, Ramp, Scn.Palette);
 				}
 			}
-			P.Text(TEXT("OK"), 152, Top + int32(Count) * Pitch + 6, 0, Focused == OkId ? FBRRMenuPainter::FocusRamp : -1, Scn.Palette);
+			P.Text(TEXT("OK"), 152, Top + Rows.Num() * Pitch + 6, 0, Focused == OkId ? FBRRMenuPainter::FocusRamp : -1, Scn.Palette);
 			// What the focused row is for, where it does nothing in the look now chosen.
 			const TCHAR* Note = nullptr;
+			UGameUserSettings* S = Settings();
 			if (Focused == ViewDistance && G->Look) Note = TEXT("THE CLASSIC LOOK'S VIEW DISTANCE");
+			else if (Focused > ViewDistance && !G->Look) Note = TEXT("THE REMASTERED LOOK ONLY");
 			else if ((Focused == Upscaling || Focused == FrameGen || Focused == MotionBlur) && !G->Look) Note = TEXT("THE REMASTERED LOOK ONLY");
-			else if (Focused == Quality && Settings() && Settings()->GetOverallScalabilityLevel() >= 0 && Settings()->GetOverallScalabilityLevel() < 2) Note = TEXT("LUMEN NEEDS HIGH OR ABOVE");
-			else if (Focused == Resolution && Settings() && Settings()->GetFullscreenMode() == EWindowMode::WindowedFullscreen) Note = TEXT("BORDERLESS USES THE DESKTOP'S");
+			else if (Focused == GlobalIllumination && S && S->GetGlobalIlluminationQuality() < 2) Note = TEXT("LUMEN NEEDS HIGH OR ABOVE");
+			else if (Focused == Quality && S && S->GetOverallScalabilityLevel() >= 0 && S->GetOverallScalabilityLevel() < 2) Note = TEXT("LUMEN NEEDS HIGH OR ABOVE");
+			else if (Focused == Resolution && S && S->GetFullscreenMode() == EWindowMode::WindowedFullscreen) Note = TEXT("BORDERLESS USES THE DESKTOP'S");
+			else if (Focused == Weather || Focused == Crowds || Focused == GroundDetail) Note = TEXT("FROM THE NEXT RACE");
 			if (Note) P.Text(Note, 160 - FBRRMenuPainter::TextWidth(Menu, Note, 0) * 0.5, 186, 0, -1, Scn.Palette);
 		}
 		void Change(int32 Row, int32 Dir)
@@ -706,8 +804,10 @@ namespace
 			UBRRGameInstance* G = Menu->Game();
 			UGameUserSettings* S = Settings();
 			auto Step = [Dir](int32 Index, int32 Num) { return Num > 0 ? (Index + Dir + Num) % Num : 0; };
+			bool bUserSettings = false;
 			switch (Row)
 			{
+			case Page: PageIndex = Step(PageIndex, 3); Layout(); return;
 			case Look: G->Look = G->Look ? 0 : 1; break;
 			case Window:
 				if (S)
@@ -727,6 +827,7 @@ namespace
 						for (const FIntPoint& R : Resolutions) if (R.X < D.X && R.Y < D.Y && R.X * R.Y > Best.X * Best.Y) Best = R;
 						S->SetScreenResolution(Best);
 					}
+					bUserSettings = true;
 				}
 				break;
 			case Resolution:
@@ -735,28 +836,35 @@ namespace
 					int32 Index = Resolutions.IndexOfByKey(S->GetScreenResolution());
 					if (Index == INDEX_NONE) Index = Resolutions.Num() - 1;
 					S->SetScreenResolution(Resolutions[Step(Index, Resolutions.Num())]);
+					bUserSettings = true;
 				}
 				break;
-			case VSync: if (S) S->SetVSyncEnabled(!S->IsVSyncEnabled()); break;
+			case VSync: if (S) { S->SetVSyncEnabled(!S->IsVSyncEnabled()); bUserSettings = true; } break;
 			case FrameLimit:
 				if (S)
 				{
 					const TArray<float>& L = FrameLimits();
 					int32 Index = L.IndexOfByPredicate([S](float F) { return FMath::IsNearlyEqual(F, S->GetFrameRateLimit()); });
 					S->SetFrameRateLimit(L[Step(FMath::Max(Index, 0), L.Num())]);
+					bUserSettings = true;
 				}
-				break;
-			case Quality:
-				if (S) S->SetOverallScalabilityLevel(Step(FMath::Clamp(S->GetOverallScalabilityLevel(), 0, 4), 5));
 				break;
 			case Upscaling: G->bNativeResolution = !G->bNativeResolution; break;
 			case FrameGen: if (HasFrameGeneration()) G->bFrameGeneration = !G->bFrameGeneration; break;
-			case MotionBlur: G->bMotionBlur = !G->bMotionBlur; break;
 			case Hdr: if (S && S->SupportsHDRDisplayOutput()) S->EnableHDRDisplayOutput(!S->IsHDREnabled()); break;
+			case MotionBlur: G->bMotionBlur = !G->bMotionBlur; break;
 			case ViewDistance: G->ViewCells = FMath::Clamp(G->ViewCells + Dir * 2, BRR::ViewCellsMin, BRR::ViewCellsMax); break;
-			default: return;
+			case Quality: if (S) { S->SetOverallScalabilityLevel(Step(FMath::Clamp(S->GetOverallScalabilityLevel(), 0, 4), 5)); bUserSettings = true; } break;
+			case Weather: G->Weather = Step(G->Weather, 3); break;
+			case Crowds: G->bCrowds = !G->bCrowds; break;
+			case GroundDetail: G->GroundDetail = Step(G->GroundDetail, 4); break;
+			case WakesDust: G->bEffects = !G->bEffects; break;
+			case SmoothArt: G->bSmoothArt = !G->bSmoothArt; break;
+			default:
+				if (S && GroupLevel(S, Row) >= -1) { SetGroupLevel(S, Row, Step(FMath::Clamp(GroupLevel(S, Row), 0, 4), 5)); bUserSettings = true; }
+				break;
 			}
-			if (S && (Row == Window || Row == Resolution || Row == VSync || Row == FrameLimit || Row == Quality)) S->ApplySettings(false);
+			if (S && bUserSettings) S->ApplySettings(false);
 			G->ApplySettings();
 		}
 		virtual void OnBox(int32 Id) override

@@ -1,6 +1,7 @@
 #include "BRRArt.h"
 
 #include "BRRPixelArt.h"
+#include "BRRRefine.h"
 #include "BRRWorld.h"
 #include "Engine/Texture2D.h"
 #include "HAL/IConsoleManager.h"
@@ -20,6 +21,17 @@ namespace
 		static TMap<TWeakObjectPtr<const UTexture2D>, FArtInfo> Map;
 		return Map;
 	}
+}
+
+bool BRRArt::Remastered()
+{
+	static const IConsoleVariable* Look = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.Look"));
+	return !Look || Look->GetInt() != 0;
+}
+
+FBRRMesh BRRArt::LookMesh(const FBRRMesh& Mesh)
+{
+	return Remastered() ? BRR::SubdivideSmooth(Mesh, 2, 50.f) : Mesh;
 }
 
 bool BRRArt::SmoothWanted()

@@ -1014,6 +1014,7 @@ namespace
 					FLinearColor Colour(V.Color);
 					const EBRRLiquid Liquid = V.Land <= 7 ? Assets.World->LiquidOf(V.Land) : EBRRLiquid::None;
 					Colour.A = Liquid == EBRRLiquid::Water ? 2.f / 3.f : Liquid == EBRRLiquid::Ice ? 1.f / 3.f : Liquid == EBRRLiquid::Lava ? 0.f : 1.f;
+					if (V.Land == BRR::GlowLand) Colour.A = 0.f; // a lamp: glowing, as the lava
 					Colors[Instance] = FVector4f(Colour);
 					Corners[K] = Instance;
 				}
@@ -1094,13 +1095,22 @@ namespace
 		};
 		for (int32 I = 0; I < 4; ++I) Make(FString::Printf(TEXT("SM_BRR_Grass%d"), I), BRR::MakeGrassTuft(I));
 		for (int32 I = 0; I < 3; ++I) Make(FString::Printf(TEXT("SM_BRR_Stone%d"), I), BRR::MakeStone(I, 2));
+		// The crowd (ABRRCrowd): each kind of spectator's shirt, tinted per person, and the rest of him.
+		for (int32 V = 0; V < BRR::SpectatorVariants; ++V)
+		{
+			FBRRMesh Shirt, Rest;
+			BRR::MakeSpectator(V, Shirt, Rest);
+			Make(FString::Printf(TEXT("SM_BRR_Fan%d_Shirt"), V), Shirt);
+			Make(FString::Printf(TEXT("SM_BRR_Fan%d_Rest"), V), Rest);
+		}
 	}
 
 	FVehicleAssets MakeVehicle(FLevelAssets& Assets, const FBRRVehicleMesh& Vehicle)
 	{
 		FVehicleAssets Out;
 		Out.Body = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Body"), *Vehicle.Name), Smoothed(Vehicle.Body, BodySmoothing), false, ESurface::Paint);
-		const FBRRMesh RoundBody = BRR::SubdivideSmooth(Vehicle.Body, 2, BodyCrease);
+		FBRRMesh RoundBody = BRR::SubdivideSmooth(Vehicle.Body, 2, BodyCrease);
+		BRR::AddVehicleLamps(RoundBody);
 		MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Body_HD"), *Vehicle.Name), RoundBody, false, ESurface::Paint); // ABRRLook swaps it in
 		double Lowest = Vehicle.Body.GetBounds().Min.Z;
 		for (int32 I = 0; I < Vehicle.Wheels.Num(); ++I)
@@ -1272,7 +1282,9 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 		for (const FBRRVehicleMesh& Vehicle : Painted.Vehicles)
 		{
 			MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Body_C%d"), *Vehicle.Name, Colour), Smoothed(Vehicle.Body, BodySmoothing), false, ESurface::Paint);
-			MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Body_C%d_HD"), *Vehicle.Name, Colour), BRR::SubdivideSmooth(Vehicle.Body, 2, BodyCrease), false, ESurface::Paint);
+			FBRRMesh RoundRepaint = BRR::SubdivideSmooth(Vehicle.Body, 2, BodyCrease);
+			BRR::AddVehicleLamps(RoundRepaint);
+			MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Body_C%d_HD"), *Vehicle.Name, Colour), RoundRepaint, false, ESurface::Paint);
 		}
 	}
 

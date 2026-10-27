@@ -45,6 +45,10 @@ public:
 	void Apply(bool bRemastered, bool bPathTracing, bool bFrameGeneration, bool bNativeResolution);
 	bool IsRemastered() const { return bRemastered; }
 
+	// The race's weather and hour (ABRRWeather): the sun this many degrees up (its bearing the
+	// level's own), this bright against a clear day's, and the mist's density.
+	void SetMood(float SunElevation, float SunBrightness, float MistDensity);
+
 	// Which upscaler the remastered look runs ("DLSS" or "TSR").
 	FString Upscaler() const;
 

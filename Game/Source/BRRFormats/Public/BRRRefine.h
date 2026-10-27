@@ -24,6 +24,14 @@ namespace BRR
 	// linearly; smooth-shaded at CreaseAngle.
 	BRRFORMATS_API FBRRMesh SubdivideSmooth(const FBRRMesh& Mesh, int32 Levels, float CreaseAngleDegrees);
 
+	// FBRRVertex::Land on a part that shines of itself (a lamp): the remastered look's materials
+	// draw it glowing (the lava's way, MakeMesh's alpha 0).
+	constexpr uint8 GlowLand = 0xFE;
+
+	// A vehicle body given lamps (the remastered look's): two white headlamps on its nose and two
+	// red tail lamps on its tail, set into the body's own surface where they fall, sized to it.
+	BRRFORMATS_API void AddVehicleLamps(FBRRMesh& Body);
+
 	// A wheel rounded: subdivided, and every point put back at the distance from the axle its
 	// corners are at, so the original's six- or eight-sided tyre turns into a circle. Smooth-shaded
 	// across the tread, sharp at its shoulders.

@@ -6,6 +6,7 @@
 #include "HAL/IConsoleManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBRRWake, Log, All);
+static TAutoConsoleVariable<int32> CVarEffects(TEXT("brr.Effects"), 1, TEXT("The remastered look's wakes and dust haze: 1 on, 0 off."));
 static TAutoConsoleVariable<int32> CVarWakeDebug(TEXT("brr.WakeDebug"), 0, TEXT("1: draws the wakes and the dust plain and opaque; 2: the dust white and solid in its own material."));
 
 namespace
@@ -138,6 +139,8 @@ float ABRRWake::GroundAt(const FVector& P) const
 
 void ABRRWake::Update(const TArray<FTransform>& Poses, float DeltaSeconds, bool bOn)
 {
+	static const IConsoleVariable* Effects = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.Effects"));
+	bOn = bOn && (!Effects || Effects->GetInt() != 0);
 	if (!bOn || !Material || Rows == 0)
 	{
 		if (Foam->GetNumSections() > 0) Foam->ClearAllMeshSections();

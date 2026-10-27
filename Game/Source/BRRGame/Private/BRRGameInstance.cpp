@@ -31,6 +31,11 @@ void UBRRGameInstance::Init()
 	GConfig->GetBool(ConfigSection, TEXT("NativeResolution"), bNativeResolution, GGameUserSettingsIni);
 	GConfig->GetBool(ConfigSection, TEXT("FrameGeneration"), bFrameGeneration, GGameUserSettingsIni);
 	GConfig->GetBool(ConfigSection, TEXT("MotionBlur"), bMotionBlur, GGameUserSettingsIni);
+	GConfig->GetInt(ConfigSection, TEXT("Weather"), Weather, GGameUserSettingsIni);
+	GConfig->GetBool(ConfigSection, TEXT("Crowds"), bCrowds, GGameUserSettingsIni);
+	GConfig->GetInt(ConfigSection, TEXT("GroundDetail"), GroundDetail, GGameUserSettingsIni);
+	GConfig->GetBool(ConfigSection, TEXT("Effects"), bEffects, GGameUserSettingsIni);
+	GConfig->GetBool(ConfigSection, TEXT("SmoothArt"), bSmoothArt, GGameUserSettingsIni);
 	ApplySettings();
 }
 
@@ -48,6 +53,11 @@ void UBRRGameInstance::ApplySettings() const
 	Set(TEXT("brr.DLAA"), bNativeResolution ? TEXT("1") : TEXT("0"));
 	Set(TEXT("brr.FrameGeneration"), bFrameGeneration ? TEXT("1") : TEXT("0"));
 	Set(TEXT("r.MotionBlurQuality"), bMotionBlur ? TEXT("4") : TEXT("0"));
+	Set(TEXT("brr.Weather"), FString::FromInt(Weather));
+	Set(TEXT("brr.Crowds"), bCrowds ? TEXT("1") : TEXT("0"));
+	Set(TEXT("brr.GroundDetail"), FString::FromInt(GroundDetail));
+	Set(TEXT("brr.Effects"), bEffects ? TEXT("1") : TEXT("0"));
+	Set(TEXT("brr.SmoothArt"), bSmoothArt ? TEXT("1") : TEXT("0"));
 	BRRAudio::SetVolumes(SoundVolume, MusicVolume);
 }
 
@@ -88,6 +98,11 @@ void UBRRGameInstance::SaveSettings() const
 	GConfig->SetBool(ConfigSection, TEXT("NativeResolution"), bNativeResolution, GGameUserSettingsIni);
 	GConfig->SetBool(ConfigSection, TEXT("FrameGeneration"), bFrameGeneration, GGameUserSettingsIni);
 	GConfig->SetBool(ConfigSection, TEXT("MotionBlur"), bMotionBlur, GGameUserSettingsIni);
+	GConfig->SetInt(ConfigSection, TEXT("Weather"), Weather, GGameUserSettingsIni);
+	GConfig->SetBool(ConfigSection, TEXT("Crowds"), bCrowds, GGameUserSettingsIni);
+	GConfig->SetInt(ConfigSection, TEXT("GroundDetail"), GroundDetail, GGameUserSettingsIni);
+	GConfig->SetBool(ConfigSection, TEXT("Effects"), bEffects, GGameUserSettingsIni);
+	GConfig->SetBool(ConfigSection, TEXT("SmoothArt"), bSmoothArt, GGameUserSettingsIni);
 	GConfig->Flush(false, GGameUserSettingsIni);
 	ApplySettings();
 }

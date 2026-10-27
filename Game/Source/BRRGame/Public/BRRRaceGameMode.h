@@ -79,6 +79,12 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<class ABRRFilm> Film;
+
+	UPROPERTY()
+	TObjectPtr<class ABRRWeather> Weather;
+
+	UPROPERTY()
+	TObjectPtr<class ABRRCrowd> Crowd;
 	FTransform LookAtCamera;
 	bool bLookAt = false;
 

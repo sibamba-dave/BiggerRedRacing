@@ -1,4 +1,5 @@
 #include "BRRAnimDecor.h"
+#include "BRRArt.h"
 
 #include "BRRLevelMaterials.h"
 #include "BRRWorld.h"
@@ -31,7 +32,7 @@ void ABRRAnimDecor::Build(const FBRRWorld& World, const FString& Level)
 			{
 				Comp = NewObject<UProceduralMeshComponent>(this);
 				Comp->SetupAttachment(GetRootComponent());
-				BRR::FillLevelMesh(Comp, Step, false, MaterialFor);
+				BRR::FillLevelMesh(Comp, BRRArt::LookMesh(Step), false, MaterialFor);
 				Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 				Comp->SetCastShadow(false);
 				Comp->SetVisibility(false);

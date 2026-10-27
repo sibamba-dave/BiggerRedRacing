@@ -40,7 +40,7 @@ void BRR::FillLevelMesh(UProceduralMeshComponent* Comp, const FBRRMesh& Mesh, bo
 			{
 				const FBRRVertex& V = Section.Vertices[T + K];
 				Triangles.Add(Positions.Add(FVector(V.Position)));
-				Normals.Add(Normal);
+				Normals.Add(Section.Vertices[T + K].Normal.IsNearlyZero() ? Normal : FVector(Section.Vertices[T + K].Normal));
 				UVs.Add(FVector2D(V.UV));
 				Colors.Add(V.Color);
 			}

@@ -97,6 +97,19 @@ void ABRRLook::Build(const FVector& SunDirection, UMaterialParameterCollection* 
 	P.VignetteIntensity = 0.25f;
 }
 
+void ABRRLook::SetMood(float SunElevation, float SunBrightness, float MistDensity)
+{
+	if (Sun)
+	{
+		FRotator R = Sun->GetActorRotation();
+		R.Pitch = -FMath::Clamp(SunElevation, 2.f, 85.f);
+		Sun->SetActorRotation(R);
+		Sun->GetLightComponent()->SetIntensity(10.f * SunBrightness);
+	}
+	if (Fog) Fog->GetComponent()->SetFogDensity(MistDensity);
+	if (SkyLight) SkyLight->GetLightComponent()->RecaptureSky();
+}
+
 UStaticMesh* ABRRLook::MeshFor(UStaticMesh* Mesh, bool bInRemastered)
 {
 	const bool bIsHD = Mesh->GetName().EndsWith(TEXT("_HD"));

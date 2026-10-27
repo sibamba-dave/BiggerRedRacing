@@ -1,4 +1,5 @@
 #include "BRRWrecks.h"
+#include "BRRArt.h"
 
 #include "BRRLevelMaterials.h"
 #include "BRRRace.h"
@@ -55,9 +56,9 @@ void ABRRWrecks::Build(const TArray<FBRRWreck>& Wrecks, const FString& Level)
 		FPiece& P = Pieces.AddDefaulted_GetRef();
 		P.Instance = W.Instance;
 		P.StepMesh = W.StepMesh;
-		P.Intact = MakeComponent(W.Intact, true);
+		P.Intact = MakeComponent(BRRArt::LookMesh(W.Intact), true);
 		PieceOfComponent.Add(P.Intact, Pieces.Num() - 1);
-		for (const FBRRMesh& Step : W.Steps) P.Steps.Add(MakeComponent(Step, false));
+		for (const FBRRMesh& Step : W.Steps) P.Steps.Add(MakeComponent(BRRArt::LookMesh(Step), false));
 	}
 }
 

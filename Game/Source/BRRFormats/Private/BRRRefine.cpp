@@ -244,6 +244,59 @@ namespace
 	}
 }
 
+void BRR::AddVehicleLamps(FBRRMesh& Body)
+{
+	const FBox3f Box = Body.GetBounds();
+	if (!Box.IsValid) return;
+	const FVector3f E = Box.GetSize();
+	// Where a line along X at (Y, Z) meets the body, from the front (Front) or the back.
+	auto SurfaceX = [&](float Y, float Z, bool bFront, float& OutX)
+	{
+		bool bHit = false;
+		for (const FBRRMeshSection& S : Body.Sections)
+			for (int32 T = 0; T + 2 < S.Vertices.Num(); T += 3)
+			{
+				const FVector3f A = S.Vertices[T].Position, B = S.Vertices[T + 1].Position, C = S.Vertices[T + 2].Position;
+				const float Den = (B.Y - A.Y) * (C.Z - A.Z) - (C.Y - A.Y) * (B.Z - A.Z);
+				if (FMath::Abs(Den) < 1e-4f) continue;
+				const float U = ((Y - A.Y) * (C.Z - A.Z) - (C.Y - A.Y) * (Z - A.Z)) / Den;
+				const float V = ((B.Y - A.Y) * (Z - A.Z) - (Y - A.Y) * (B.Z - A.Z)) / Den;
+				if (U < 0 || V < 0 || U + V > 1) continue;
+				const float X = A.X + U * (B.X - A.X) + V * (C.X - A.X);
+				if (!bHit || (bFront ? X > OutX : X < OutX)) OutX = X, bHit = true;
+			}
+		return bHit;
+	};
+	FBRRMeshSection& Lamps = Body.Sections.AddDefaulted_GetRef();
+	const float R = FMath::Clamp(E.Y * 0.075f, 4.f, 14.f);
+	const float Z = Box.Min.Z + E.Z * 0.38f;
+	for (const bool bFront : { true, false })
+		for (const float Side : { -1.f, 1.f })
+		{
+			const float Y = Box.GetCenter().Y + Side * E.Y * 0.32f;
+			float X = 0;
+			if (!SurfaceX(Y, Z, bFront, X)) continue;
+			const float Dir = bFront ? 1.f : -1.f;
+			const FColor Lens = bFront ? FColor(255, 246, 225) : FColor(225, 28, 22);
+			const int32 Sides = 14;
+			// A shallow dome standing a centimetre proud of the body.
+			const FVector3f Hub(X + Dir * (1.f + R * 0.25f), Y, Z);
+			for (int32 K = 0; K < Sides; ++K)
+			{
+				const float A0 = 2.f * PI * K / Sides, A1 = 2.f * PI * (K + 1) / Sides;
+				const FVector3f P0(X + Dir * 1.f, Y + FMath::Cos(A0) * R, Z + FMath::Sin(A0) * R), P1(X + Dir * 1.f, Y + FMath::Cos(A1) * R, Z + FMath::Sin(A1) * R);
+				FBRRVertex V[3];
+				V[0].Position = P0; V[1].Position = bFront ? P1 : Hub; V[2].Position = bFront ? Hub : P1;
+				for (FBRRVertex& Vx : V) { Vx.Color = Lens; Vx.Land = GlowLand; }
+				// Outward along X (MakeMesh's winding: the normal is (C - A) x (B - A)).
+				const FVector3f N = (V[2].Position - V[0].Position) ^ (V[1].Position - V[0].Position);
+				if ((N.X * Dir) < 0) Swap(V[1], V[2]);
+				Lamps.Vertices.Append(V, 3);
+			}
+		}
+	if (Lamps.Vertices.IsEmpty()) Body.Sections.Pop();
+}
+
 FBRRMesh BRR::SubdivideSmooth(const FBRRMesh& Mesh, int32 Levels, float CreaseAngleDegrees)
 {
 	const float CosCrease = FMath::Cos(FMath::DegreesToRadians(CreaseAngleDegrees));

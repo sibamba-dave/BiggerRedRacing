@@ -71,6 +71,8 @@ void ABRRDust::Build(const FBRRWorld& World)
 
 void ABRRDust::Update(const TArray<FTransform>& Poses, const FVector& CameraRight, const FVector& CameraUp, float DeltaSeconds, bool bOn)
 {
+	static const IConsoleVariable* Effects = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.Effects"));
+	bOn = bOn && (!Effects || Effects->GetInt() != 0);
 	if (!bOn || !Material || Rows == 0)
 	{
 		if (Haze->GetNumSections() > 0) Haze->ClearAllMeshSections();

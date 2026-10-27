@@ -1,4 +1,5 @@
 #include "BRRScatter.h"
+#include "HAL/IConsoleManager.h"
 
 #include "BRRRefine.h"
 #include "BRRWorld.h"
@@ -28,10 +29,26 @@ int32 ABRRScatter::NumInstances() const
 	return N;
 }
 
+namespace
+{
+	TAutoConsoleVariable<int32> CVarGroundDetail(TEXT("brr.GroundDetail"), 3, TEXT("The remastered look's grass and stones: 0 none, 1 a quarter, 2 three fifths, 3 all (from the next race)."));
+}
+
 void ABRRScatter::Build(const FBRRWorld& World)
 {
 	const double Start = FPlatformTime::Seconds();
-	const TArray<BRR::FBRRScatter> Items = BRR::ScatterGround(World, Reach);
+	// brr.GroundDetail: none, a quarter, three fifths, all.
+	static const IConsoleVariable* Detail = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.GroundDetail"));
+	const int32 Level = Detail ? FMath::Clamp(Detail->GetInt(), 0, 3) : 3;
+	if (Level == 0) return;
+	TArray<BRR::FBRRScatter> Items = BRR::ScatterGround(World, Reach);
+	if (Level < 3)
+	{
+		const int32 Keep = Level == 1 ? 4 : 5; // one in four, three in five
+		TArray<BRR::FBRRScatter> Kept;
+		for (int32 I = 0; I < Items.Num(); ++I) if (Level == 1 ? I % Keep == 0 : I % Keep < 3) Kept.Add(Items[I]);
+		Items = MoveTemp(Kept);
+	}
 
 	// One layer per shape: four grass tufts, then the three stones for each stone kind.
 	auto Load = [](const TCHAR* Name) { return LoadObject<UStaticMesh>(nullptr, *FString::Printf(TEXT("/Game/BRR/Meshes/%s.%s"), Name, Name), nullptr, LOAD_NoWarn | LOAD_Quiet); };

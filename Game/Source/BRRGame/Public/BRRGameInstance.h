@@ -90,6 +90,11 @@ public:
 	bool bNativeResolution = false; // brr.DLAA: the remastered look at full resolution, not upscaled
 	bool bFrameGeneration = true;   // brr.FrameGeneration
 	bool bMotionBlur = true;        // r.MotionBlurQuality
+	int32 Weather = 1;              // brr.Weather: 0 clear, 1 drawn for each race, 2 foul
+	bool bCrowds = true;            // brr.Crowds
+	int32 GroundDetail = 3;         // brr.GroundDetail: 0 none .. 3 all
+	bool bEffects = true;           // brr.Effects: the wakes and the dust haze
+	bool bSmoothArt = true;         // brr.SmoothArt
 	void ApplySettings() const;
 	void SaveSettings() const;
 };

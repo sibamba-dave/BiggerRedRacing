@@ -18,6 +18,8 @@
 #include "BRRWake.h"
 #include "BRRDust.h"
 #include "BRRFilm.h"
+#include "BRRWeather.h"
+#include "BRRCrowd.h"
 #include "Misc/App.h"
 #include "GameFramework/HUD.h"
 #include "BRRWrecks.h"
@@ -298,6 +300,18 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 	DrawRange = LoadObject<UMaterialParameterCollection>(nullptr, TEXT("/Game/BRR/Materials/MPC_BRR.MPC_BRR"));
 	Look = GetWorld()->SpawnActor<ABRRLook>();
 	Look->Build(World.SunDirection, DrawRange);
+	Weather = GetWorld()->SpawnActor<ABRRWeather>();
+	Weather->Build(LevelName, Look);
+	Crowd = GetWorld()->SpawnActor<ABRRCrowd>();
+	{
+		TArray<FVector> Routes;
+		for (int32 R = 0; R < Race->NumRacers(); ++R)
+		{
+			const TArray<FVector> Path = Race->GhostPath(R);
+			for (int32 I = 0; I < Path.Num(); I += 8) Routes.Add(Path[I]); // a point every few metres is plenty
+		}
+		Crowd->Build(World, Routes);
+	}
 	Photo = GetWorld()->SpawnActor<ABRRPhoto>();
 	FParse::Value(FCommandLine::Get(), TEXT("BRRPhoto="), PhotoAt);
 	Sprites = GetWorld()->SpawnActor<ABRRSprites>();
@@ -569,11 +583,14 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 	if (Wake)
 	{
 		Wake->Update(Drawn, DeltaSeconds, Look && Look->IsRemastered());
-		if (Dust && RaceCamera)
+		if (RaceCamera)
 		{
 			const FRotationMatrix View(RaceCamera->GetActorRotation());
-			Dust->Update(Drawn, View.GetUnitAxis(EAxis::Y), View.GetUnitAxis(EAxis::Z), DeltaSeconds, Look && Look->IsRemastered());
+			const bool bRemasteredNow = Look && Look->IsRemastered();
+			if (Dust) Dust->Update(Drawn, View.GetUnitAxis(EAxis::Y), View.GetUnitAxis(EAxis::Z), DeltaSeconds, bRemasteredNow);
+			if (Weather) Weather->Update(RaceCamera->GetActorLocation(), View.GetUnitAxis(EAxis::Y), View.GetUnitAxis(EAxis::Z), DeltaSeconds, bRemasteredNow);
 		}
+		if (Crowd) Crowd->Update(Drawn, GetWorld()->GetTimeSeconds(), Look && Look->IsRemastered());
 	}
 	for (int32 R = 0; R < Ghosts.Num(); ++R)
 	{
