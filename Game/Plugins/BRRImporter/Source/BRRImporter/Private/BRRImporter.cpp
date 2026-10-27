@@ -838,6 +838,21 @@ namespace
 			UMaterialEditingLibrary::ConnectMaterialProperty(MakeCustom(Mat, TEXT("return 0.04;"), CMOT_Float1, {}), TEXT(""), MP_Roughness);
 			UMaterialEditingLibrary::ConnectMaterialProperty(MakeCustom(Mat, TEXT("return 0.5;"), CMOT_Float1, {}), TEXT(""), MP_Specular);
 			UMaterialEditingLibrary::ConnectMaterialProperty(MakeRipples(Mat), TEXT(""), MP_Normal);
+			{
+				// The surface itself bobs: three slow trains summed into a vertical offset, swelling
+				// as the rain stands on the water (MPC Wetness). The ripple normals above stay the
+				// close-up detail; this is the body of the water moving.
+				UMaterialExpression* WavePos = UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionWorldPosition::StaticClass(), -1100, 1000);
+				UMaterialExpression* WaveTime = UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionTime::StaticClass(), -1100, 1100);
+				UMaterialExpression* Wet = MakeCollectionValue(Mat, Collection, TEXT("Wetness"), -1100, 1200);
+				UMaterialExpressionCustom* Waves = MakeCustom(Mat, TEXT(
+					"const float4 W[3] = { float4(0.8, 0.6, 1700.0, 0.55), float4(-0.5, 0.87, 1100.0, 0.8), float4(0.2, -0.98, 700.0, 1.1) };\n"
+					"float h = 0;\n"
+					"for (int i = 0; i < 3; i++) h += sin(dot(W[i].xy, P.xy) * 6.2831853 / W[i].z - T * W[i].w);\n"
+					"return float3(0, 0, h * (4.0 + 6.0 * Wet));"), CMOT_Float3,
+					{ { TEXT("P"), WavePos }, { TEXT("T"), WaveTime }, { TEXT("Wet"), Wet } });
+				UMaterialEditingLibrary::ConnectMaterialProperty(Waves, TEXT(""), MP_WorldPositionOffset);
+			}
 			UMaterialEditingLibrary::RecompileMaterial(Mat);
 			SaveAsset(Mat);
 			M.Water = Mat;
