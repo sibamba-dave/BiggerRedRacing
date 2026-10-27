@@ -485,9 +485,12 @@ void ABRRRaceGameMode::SyncRaceLights()
 	if (LampPosts) LampPosts->SetActorHiddenInGame(!bOn);
 }
 
-void ABRRRaceGameMode::HandleLookChanged(bool)
+void ABRRRaceGameMode::HandleLookChanged(bool bRemastered)
 {
 	SyncRaceLights();
+	// The dual-look wrecks and animated decor switch their drawn set with the look.
+	if (Wrecks) Wrecks->SetLook(bRemastered);
+	if (AnimDecor) AnimDecor->SetLook(bRemastered);
 }
 
 void ABRRRaceGameMode::Tick(float DeltaSeconds)

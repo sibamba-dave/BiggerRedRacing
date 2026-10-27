@@ -24,16 +24,20 @@ public:
 	// ElapsedSeconds is the race clock (since the level started), as for the billboards.
 	void Update(double ElapsedSeconds);
 
+	// F5: which look's poses show (ABRRLook::OnLookChanged).
+	void SetLook(bool bRemastered);
+
 	int32 NumSlots() const { return Slots.Num(); }
 
 private:
 	struct FSlot
 	{
 		int64 StepMs = 0;
-		TArray<UProceduralMeshComponent*> Steps; // null where a step adds nothing
+		TArray<UProceduralMeshComponent*> Steps[2]; // [0] classic, [1] remastered; null where a step adds nothing
 		int32 Shown = -1;
 	};
 	TArray<FSlot> Slots;
+	int32 LookSet = 1;
 
 	UPROPERTY()
 	TArray<TObjectPtr<UProceduralMeshComponent>> Components;

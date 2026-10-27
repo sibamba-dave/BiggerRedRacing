@@ -4,6 +4,10 @@
 //
 // Built at runtime rather than imported: the flipbooks come to over a thousand distinct poses on
 // the busiest levels. The importer only leaves a static preview of the standing pieces.
+//
+// Collision is one invisible component per piece from the ORIGINAL mesh, whatever look is drawn:
+// both looks collide as the race's geometry. The drawn pieces exist in both looks (the original,
+// and the rounded remaster), and F5 switches them by visibility alone (SetLook, no hitch).
 #pragma once
 
 #include "CoreMinimal.h"
@@ -32,22 +36,29 @@ public:
 	// Shows each piece as the race has it. Race also receives the knocks Chaos reports.
 	void Sync(FBRRRace& Race);
 
+	// F5: which look's drawn pieces show (ABRRLook::OnLookChanged).
+	void SetLook(bool bRemastered);
+
 	int32 NumPieces() const { return Pieces.Num(); }
 
 private:
 	struct FPiece
 	{
 		int32 Instance = -1;
-		UProceduralMeshComponent* Intact = nullptr;
-		TArray<UProceduralMeshComponent*> Steps;
+		UProceduralMeshComponent* Collision = nullptr; // the original mesh, invisible, both looks
+		UProceduralMeshComponent* Intact[2] = {};      // drawn: [0] classic, [1] remastered
+		TArray<UProceduralMeshComponent*> Steps[2];
 		TArray<int32> StepMesh;
 		int32 Shown = -1;      // index into Steps, -1 = the intact piece
 		bool bDown = false;
 		bool bSettled = false;
 	};
+	enum class EPart : uint8 { Collision, Drawn };
 
-	UProceduralMeshComponent* MakeComponent(const FBRRMesh& Mesh, bool bSolid);
+	UProceduralMeshComponent* MakeComponent(const FBRRMesh& Mesh, EPart Part);
+	UProceduralMeshComponent* Drawn(const FPiece& P) const;
 	UMaterialInterface* MaterialFor(int32 Atlas, bool bTwoSided);
+	int32 LookSet = 1;
 
 	UFUNCTION()
 	void OnPieceHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
