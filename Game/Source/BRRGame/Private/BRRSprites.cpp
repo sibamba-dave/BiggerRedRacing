@@ -9,6 +9,7 @@ ABRRSprites::ABRRSprites()
 	Quads = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("Quads"));
 	Quads->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Quads->SetCastShadow(false);
+	Quads->SetVisibleInRayTracing(false); // camera-facing rasteriser quads are wrong in the ray-traced scene
 	SetRootComponent(Quads);
 }
 
@@ -28,8 +29,38 @@ void ABRRSprites::Build(const FBRRWorld& World, const FString& Level)
 	}
 }
 
-void ABRRSprites::Update(const FBRRRace& Race, const FRotator& CameraRotation, double ElapsedSeconds)
+void ABRRSprites::Update(const FBRRRace& Race, const FVector& CameraLocation, const FRotator& CameraRotation, double ElapsedSeconds, float RangeCm)
 {
+	// The quads only need rebuilding when something they depend on moved: a flipbook or anim
+	// frame, the camera's facing (they billboard), or the camera's place (the range cull).
+	// Between those, the sections stand as built - the countdown, pauses and straights cost nothing.
+	const double ElapsedMs = FMath::Max(ElapsedSeconds, 0.0) * 1000.0;
+	TArray<int32> Ks;
+	Ks.Reserve(Sprites.Num());
+	for (const FBRRSprite& S : Sprites)
+	{
+		int32 K = 0;
+		if (S.WreckInstance >= 0)
+		{
+			const double Down = Race.WreckSeconds(S.WreckInstance);
+			if (Down >= 0) K = 1 + FMath::Min(FMath::FloorToInt32(Down / BRR::WreckStepSeconds), BRR::WreckStepCount - 1);
+			K = FMath::Min(K, S.Frames.Num() - 1);
+		}
+		else if (S.AnimSlot >= 0 && S.Frames.Num() > 1 && AnimStepSeconds.IsValidIndex(S.AnimSlot) && AnimStepSeconds[S.AnimSlot] > 0)
+		{
+			const int64 StepMs = FMath::RoundToInt64(AnimStepSeconds[S.AnimSlot] * 1000.0);
+			K = int32((int64(ElapsedMs) / StepMs) % S.Frames.Num());
+		}
+		Ks.Add(K);
+	}
+	if (Ks == LastKs && LastRange == RangeCm && CameraRotation.Equals(LastRotation, 0.25)
+		&& FVector::DistSquared(CameraLocation, LastLocation) < 50.0 * 50.0)
+		return;
+	LastKs = MoveTemp(Ks);
+	LastRotation = CameraRotation;
+	LastLocation = CameraLocation;
+	LastRange = RangeCm;
+
 	struct FSectionData
 	{
 		TArray<FVector> Positions;
@@ -44,25 +75,12 @@ void ABRRSprites::Update(const FBRRRace& Race, const FRotator& CameraRotation, d
 	const FVector Right = View.GetScaledAxis(EAxis::Y);
 	const FVector Up = View.GetScaledAxis(EAxis::Z);
 	const FVector Facing = -View.GetScaledAxis(EAxis::X);
-	const double ElapsedMs = FMath::Max(ElapsedSeconds, 0.0) * 1000.0;
 
-	for (const FBRRSprite& S : Sprites)
+	for (int32 I = 0; I < Sprites.Num(); ++I)
 	{
-		int32 K = 0;
-		if (S.WreckInstance >= 0)
-		{
-			// Frame 0 standing, 1 + step of the flipbook once knocked over.
-			const double Down = Race.WreckSeconds(S.WreckInstance);
-			if (Down >= 0) K = 1 + FMath::Min(FMath::FloorToInt32(Down / BRR::WreckStepSeconds), BRR::WreckStepCount - 1);
-			K = FMath::Min(K, S.Frames.Num() - 1);
-		}
-		else if (S.AnimSlot >= 0 && S.Frames.Num() > 1 && AnimStepSeconds.IsValidIndex(S.AnimSlot) && AnimStepSeconds[S.AnimSlot] > 0)
-		{
-			// LevelAnim::step_at, in whole milliseconds as the original's clock counts.
-			const int64 StepMs = FMath::RoundToInt64(AnimStepSeconds[S.AnimSlot] * 1000.0);
-			K = int32((int64(ElapsedMs) / StepMs) % S.Frames.Num());
-		}
-		const FBRRSprite::FFrame& F = S.Frames[K];
+		const FBRRSprite& S = Sprites[I];
+		if (RangeCm > 0 && FVector::DistSquared(FVector(S.Centre), CameraLocation) > double(RangeCm) * RangeCm) continue;
+		const FBRRSprite::FFrame& F = S.Frames[LastKs[I]];
 		if (!F.bOn) continue;
 		const int32* Section = SectionOfAtlas.Find(F.Atlas);
 		if (!Section) continue;

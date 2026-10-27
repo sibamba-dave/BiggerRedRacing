@@ -565,7 +565,15 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 		const APlayerController* PC = GetWorld()->GetFirstPlayerController();
 		const FRotator Facing = PC && PC->PlayerCameraManager ? PC->PlayerCameraManager->GetCameraRotation()
 			: RaceCamera ? RaceCamera->GetActorRotation() : FRotator::ZeroRotator;
-		Sprites->Update(*Race, Facing, GetWorld()->GetTimeSeconds());
+		const FVector Eye = PC && PC->PlayerCameraManager ? PC->PlayerCameraManager->GetCameraLocation()
+			: RaceCamera ? RaceCamera->GetActorLocation() : FVector::ZeroVector;
+		// The cull: 400 m remastered; in classic 1.5x the live view distance, so nothing the
+		// cell mask would show is missing (the mask clips by view depth, the cull by range), and
+		// none at all when the classic view is unlimited.
+		const bool bRemasteredLook = Look && Look->IsRemastered();
+		const int32 Cells = bRemasteredLook ? 0 : CVarViewCells.GetValueOnGameThread();
+		Sprites->Update(*Race, Eye, Facing, GetWorld()->GetTimeSeconds(),
+			bRemasteredLook ? 40000.f : Cells > 0 ? float(Cells * BRR::TerrainCellCm) * 1.5f : 0.f);
 	}
 	if (AnimDecor) AnimDecor->Update(GetWorld()->GetTimeSeconds());
 	// Every racer as drawn this frame: the ghosts between their ticks, the player where it is.
