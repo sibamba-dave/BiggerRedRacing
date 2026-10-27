@@ -36,4 +36,6 @@ Re-run: `UnrealEditor.exe Game\BiggerRedRacing.uproject /Game/BRR/DIRT1/L_DIRT1 
 - Airborne behaviour (the original's air pitch/roll rates and righting), bounce, the tilter, nitro,
   damage.
 - Vehicles other than the JEEP have not been drive-tested; they use the same fit.
-- Helicopters and hovercraft need their own movement.
+- Boats, hovercraft and helicopters (nothing on them rolls, so Chaos has nothing to drive) run on
+  the original's own physics instead: the race steps the player's `VehicleSim` from the controls
+  (`FBRRRace::TickSimulated`) and the pawn only shows it. Not compared against the original yet.

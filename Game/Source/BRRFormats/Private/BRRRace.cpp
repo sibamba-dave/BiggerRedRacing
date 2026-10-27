@@ -346,6 +346,7 @@ struct FBRRRace::FImpl
 	int32 WorldParticleBase = INDEX_NONE;
 	uint32 TimerTicks = 0;        // the original's 14 ms counter, which the emitter reads
 	uint32 BandClock = 0;
+	bool bSimPlayer = false;      // the player runs on the original's physics (SetPlayerSimulated)
 
 	void LinkField()
 	{
@@ -357,8 +358,50 @@ struct FBRRRace::FImpl
 			Cars[I].field_count = int(Cars.size());
 			Cars[I].field_self = int(I);
 			Cars[I].rules = &Rules;
-			Cars[I].replayed = true; // nobody is stepped by the original physics here
+			// Nobody is stepped by the original physics here - but a simulated player.
+			Cars[I].replayed = !(bSimPlayer && int32(I) == Player);
 			Cars[I].world = &Scenery;
+		}
+	}
+
+	// The half of a tick after the player's: the camera, the rules, the ghosts, the ground
+	// effects and the sound.
+	void AdvanceField(bool bCarContact)
+	{
+		bigred::VehicleSim& P = Cars[Player];
+		CameraPrev = Camera.now;
+		Camera.step(P, Terrain);
+		CameraAimPrev = CameraAim;
+		CameraAim = AimOf(P);
+		CameraOpenPrev = CameraOpen;
+		CameraOpen += ((P.in_tunnel || Camera.under_roof() ? 0.0 : 1.0) - CameraOpen) * 0.15;
+
+		LinkField();
+		Race.tick(Field.data(), int(Field.size()));
+		if (Race.started())
+		{
+			for (size_t B = 0; B < Cars.size(); ++B)
+			{
+				if (!Tracks[B].valid()) continue;
+				Ghosts[B].rate = GhostRate;
+				Ghosts[B].tick(Cars[B]);
+				Cars[B].dress_replayed();
+			}
+			RubberBand();
+		}
+		// The ground effects, in the original's order: every car emits right after the physics,
+		// then the field ages twice - it runs on the 14 ms timer, the physics on every other tick.
+		for (bigred::VehicleSim& Car : Cars)
+		{
+			if (Car.tune) Particles.emit(Car, TimerTicks);
+		}
+		Particles.tick();
+		Particles.tick();
+		TimerTicks += 2;
+		if (Sound)
+		{
+			Sound->OnTick(Race, Cars, Camera.now, bCarContact, bRecovered);
+			bRecovered = false;
 		}
 	}
 
@@ -702,45 +745,70 @@ void FBRRRace::Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity,
 			I.PlayerBounce = FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * PerSecond;
 		}
 
-		I.CameraPrev = I.Camera.now;
-		I.Camera.step(P, I.Terrain);
-		I.CameraAimPrev = I.CameraAim;
-		I.CameraAim = I.AimOf(P);
-		I.CameraOpenPrev = I.CameraOpen;
-		I.CameraOpen += ((P.in_tunnel || I.Camera.under_roof() ? 0.0 : 1.0) - I.CameraOpen) * 0.15;
-
-		I.LinkField();
-		I.Race.tick(I.Field.data(), int(I.Field.size()));
-		if (I.Race.started())
-		{
-			for (size_t B = 0; B < I.Cars.size(); ++B)
-			{
-				if (!I.Tracks[B].valid()) continue;
-				I.Ghosts[B].rate = I.GhostRate;
-				I.Ghosts[B].tick(I.Cars[B]);
-				I.Cars[B].dress_replayed();
-			}
-			I.RubberBand();
-		}
-		// The ground effects, in the original's order: every car emits right after the physics,
-		// then the field ages twice - it runs on the 14 ms timer, the physics on every other tick.
-		for (bigred::VehicleSim& Car : I.Cars)
-		{
-			if (Car.tune) I.Particles.emit(Car, I.TimerTicks);
-		}
-		I.Particles.tick();
-		I.Particles.tick();
-		I.TimerTicks += 2;
-		if (I.Sound)
-		{
-			I.Sound->OnTick(I.Race, I.Cars, I.Camera.now, bCarContact, I.bRecovered);
-			I.bRecovered = false;
-		}
+		I.AdvanceField(bCarContact);
 	}
 	catch (const std::exception& E)
 	{
 		UE_LOG(LogTemp, Error, TEXT("FBRRRace::Tick: %s"), UTF8_TO_TCHAR(E.what()));
 	}
+}
+
+void FBRRRace::SetPlayerSimulated(bool bOn)
+{
+	Impl->bSimPlayer = bOn;
+	Impl->LinkField();
+}
+
+bool FBRRRace::IsPlayerSimulated() const { return Impl->bSimPlayer; }
+
+void FBRRRace::TickSimulated(const FInput& In)
+{
+	FImpl& I = *Impl;
+	try
+	{
+		bigred::VehicleSim& P = I.Cars[I.Player];
+		P.replayed = false;
+		// The physics is frozen through the countdown (VehicleSim::place_on_grid).
+		if (I.Race.started())
+		{
+			bigred::VehicleInput Orders;
+			Orders.accel = In.bAccel;
+			Orders.brake = In.bBrake;
+			Orders.left = In.bLeft;
+			Orders.right = In.bRight;
+			Orders.nitro = In.bBoost;
+			Orders.recover = In.bRecover;
+			P.step(Orders);
+			I.bRecovered |= In.bRecover;
+		}
+		I.BoostAccel = 0; // the step's own thrust
+		I.AdvanceField(P.vehicle_hit >= 0);
+	}
+	catch (const std::exception& E)
+	{
+		UE_LOG(LogTemp, Error, TEXT("FBRRRace::TickSimulated: %s"), UTF8_TO_TCHAR(E.what()));
+	}
+}
+
+FVector FBRRRace::PlayerSimVelocity() const
+{
+	// The game's polar ground velocity and its vertical one, 1/512 units per tick (+Y down).
+	const bigred::VehicleSim& P = Impl->Cars[Impl->Player];
+	const double Angle = double(P.travel) * 2.0 * PI / 65536.0;
+	const double Scale = BRR::CmPerUnit / (512.0 * TickSeconds);
+	return FVector(FMath::Cos(Angle) * P.speed * Scale, FMath::Sin(Angle) * P.speed * Scale, -P.vy * Scale);
+}
+
+void FBRRRace::RecoverPlayerAt(const FTransform& Pose)
+{
+	FImpl& I = *Impl;
+	bigred::VehicleSim& P = I.Cars[I.Player];
+	const FVector G = UEToGame(Pose.GetLocation());
+	P.respawn.x = int32(FMath::RoundToInt64(G.X));
+	P.respawn.z = int32(FMath::RoundToInt64(G.Z));
+	P.respawn.yaw_bam16 = int32(FMath::RoundToInt64(Pose.Rotator().Yaw * 65536.0 / 360.0)) & 0xFFFF;
+	P.recover();
+	I.bRecovered = true;
 }
 
 void FBRRRace::EnableSound(bool bCommentary)

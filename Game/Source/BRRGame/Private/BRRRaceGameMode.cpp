@@ -292,6 +292,7 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 			PlayerCar = GetWorld()->SpawnActor<ABRRVehiclePawn>(ABRRVehiclePawn::StaticClass(), Start);
 			PlayerCar->Setup(*Data, Body, Wheels, Handling.Surfaces[0], Start);
 			PlayerCar->SetSurfaces(Handling);
+			Race->SetPlayerSimulated(PlayerCar->IsSimulated());
 			const FString Dir = FString::Printf(TEXT("/Game/BRR/%s/Meshes/"), *LevelName);
 			if (UStaticMesh* Cabin = LoadObject<UStaticMesh>(nullptr, *(Dir + FString::Printf(TEXT("SM_%s_Cabin"), *Vehicle)), nullptr, LOAD_NoWarn | LOAD_Quiet))
 			{
@@ -341,7 +342,23 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 		const double F = DeltaSeconds > 0 ? FMath::Clamp(TickAt / DeltaSeconds, 0.0, 1.0) : 1.0;
 		const FTransform AtTick(FQuat::Slerp(LastPlayerPose.GetRotation(), PlayerPose.GetRotation(), F),
 			FMath::Lerp(LastPlayerPose.GetLocation(), PlayerPose.GetLocation(), F));
-		Race->Tick(AtTick, FMath::Lerp(LastPlayerVelocity, PlayerVelocity, F), PlayerCar->IsBoostKeyDown());
+		if (PlayerCar->IsSimulated())
+		{
+			bool bRecover = false;
+			const FBRRDriveInput Keys = PlayerCar->TakeSimulatedInput(bRecover);
+			FBRRRace::FInput In;
+			In.bAccel = Keys.bAccel;
+			In.bBrake = Keys.bBrake;
+			In.bLeft = Keys.bLeft;
+			In.bRight = Keys.bRight;
+			In.bBoost = Keys.bBoost;
+			In.bRecover = bRecover;
+			Race->TickSimulated(In);
+		}
+		else
+		{
+			Race->Tick(AtTick, FMath::Lerp(LastPlayerVelocity, PlayerVelocity, F), PlayerCar->IsBoostKeyDown());
+		}
 		PlayerCar->bBoosting = Race->IsPlayerBoosting();
 		PlayerCar->BoostAccel = Race->PlayerBoostAccel();
 		PlayerCar->SetSurface(CVarSurfaceHandling.GetValueOnGameThread() ? Race->PlayerSurface() : 0);
@@ -405,8 +422,14 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 			Me.bFinished ? TEXT(" - FINISHED") : TEXT(""));
 	}
 
-	// Ghosts and the camera drawn between their last two ticks.
+	// Ghosts and the camera drawn between their last two ticks - and a simulated player.
 	const double Alpha = Accumulator / FBRRRace::TickSeconds;
+	if (PlayerCar->IsSimulated())
+	{
+		const int32 P = Race->PlayerIndex();
+		PlayerCar->SetSimulatedPose(FTransform(FQuat::Slerp(PrevPose[P].GetRotation(), CurrPose[P].GetRotation(), Alpha),
+			FMath::Lerp(PrevPose[P].GetLocation(), CurrPose[P].GetLocation(), Alpha)), Race->PlayerSimVelocity());
+	}
 	if (RaceCamera)
 	{
 		const bool bRemastered = CVarLook.GetValueOnGameThread() != 0;
@@ -611,7 +634,9 @@ void ABRRRaceGameMode::UpdateAutopilot()
 	{
 		const int32 Ahead = FMath::Min(AutopilotCursor + 40, Last);
 		const FVector Dir = (AutopilotLine[Ahead] - AutopilotLine[AutopilotCursor]).GetSafeNormal2D();
-		PlayerCar->Recover(FTransform(Dir.Rotation(), AutopilotLine[AutopilotCursor] + FVector(0, 0, 150.0)));
+		const FTransform Back(Dir.Rotation(), AutopilotLine[AutopilotCursor] + FVector(0, 0, 150.0));
+		if (PlayerCar->IsSimulated()) Race->RecoverPlayerAt(Back);
+		else PlayerCar->Recover(Back);
 		AutopilotStuck = 0;
 		++AutopilotRecoveries;
 		UE_LOG(LogBRRRace, Display, TEXT("Autopilot: recovered onto the line (%d) at point %d/%d, was at %s"), AutopilotRecoveries,

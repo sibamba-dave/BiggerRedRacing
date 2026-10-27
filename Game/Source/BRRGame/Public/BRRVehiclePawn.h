@@ -69,6 +69,14 @@ public:
 	// Puts the car back on its wheels where it is (or at Where), at rest.
 	void Recover(const TOptional<FTransform>& Where = {});
 
+	// A vehicle with nothing that rolls - a boat, a hovercraft, a helicopter - which Chaos cannot
+	// drive: the race runs it on the original's physics (FBRRRace::SetPlayerSimulated), and the
+	// pawn only shows it, its controls read by the game mode (TakeSimulatedInput) and its pose set
+	// from the race each frame (SetSimulatedPose).
+	bool IsSimulated() const { return bSimulated; }
+	FBRRDriveInput TakeSimulatedInput(bool& bOutRecover);
+	void SetSimulatedPose(const FTransform& BodyOrigin, const FVector& Velocity);
+
 	// The cabin view (FBRRRace::IsPlayerInCabin): the vehicle's interior and its parts shown in
 	// place of the body, the eye at the vehicle's `internal` offset, and the dashboard's gauges
 	// redrawn onto its sheet (FBRRRace::DrawDashboard) through UpdateDashboard.
@@ -126,6 +134,9 @@ public:
 	TObjectPtr<class UTexture2D> DashTexture;
 
 private:
+	bool bSimulated = false;
+	bool bRecoverKey = false;  // R since the last TakeSimulatedInput (simulated only)
+	FVector SimVelocity = FVector::ZeroVector;
 	bool bBoostKey = false;
 	double ImpactSpeed = 0;
 	bool bRecovered = false;

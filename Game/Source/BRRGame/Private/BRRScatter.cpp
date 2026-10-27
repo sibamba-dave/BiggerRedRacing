@@ -17,6 +17,7 @@ namespace
 ABRRScatter::ABRRScatter()
 {
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+	RootComponent->SetMobility(EComponentMobility::Static); // its static layers attach only to a static root
 	Tags.Add(TEXT("BRRRemasterOnly"));
 }
 

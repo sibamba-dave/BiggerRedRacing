@@ -103,6 +103,21 @@ public:
 	// bBoostKey the player's boost key this tick.
 	void Tick(const FTransform& PlayerPose, const FVector& PlayerVelocity, bool bBoostKey = false);
 
+	// The vehicles Chaos cannot drive - boats, hovercraft, helicopters: nothing on them rolls -
+	// run on the original's own physics instead (VehicleSim::step), the race stepping the player
+	// from its controls through TickSimulated, and the pawn drawn where RacerTransform puts it.
+	// Held on the grid until the lights go out, as the original holds every car.
+	struct FInput
+	{
+		bool bAccel = false, bBrake = false, bLeft = false, bRight = false, bBoost = false, bRecover = false;
+	};
+	void SetPlayerSimulated(bool bOn);
+	bool IsPlayerSimulated() const;
+	void TickSimulated(const FInput& In);
+	// The simulated player's velocity, cm/s (UE), and its put-back at Pose, at rest.
+	FVector PlayerSimVelocity() const;
+	void RecoverPlayerAt(const FTransform& Pose);
+
 	// The player's boost, run by the original's rules (VehicleSim::update_nitro): mode 1 fires one
 	// burst per press, mode 2 burns the stock while held. While it runs the original holds the
 	// accelerator down and ignores the brake, and adds its own thrust - tapering to nothing at the

@@ -215,6 +215,18 @@ void ABRRVehiclePawn::Setup(const FBRRVehicleMesh& Vehicle, UStaticMesh* Body, c
 	UE_LOG(LogBRRVehicle, Display, TEXT("%s: %d Chaos wheels r=%.0fcm, wheelbase %.2fm, ratio %.2f, torque %.0f Nm, brake %.0f Nm/wheel, %d yaw-curve points"),
 		*Vehicle.Name, Rolling.Num(), WheelRadius, WheelBaseM, Ratio, Movement->EngineSetup.MaxTorque, BrakeTorque, YawCurve.Num());
 
+	// Nothing rolls: no Chaos drive to give it. The original's physics moves it (IsSimulated);
+	// the box stays for queries only, so nothing pushes it about between the race's ticks.
+	bSimulated = Rolling.IsEmpty();
+	if (bSimulated)
+	{
+		Movement->Deactivate();
+		Movement->SetComponentTickEnabled(false);
+		Chassis->SetSimulatePhysics(false);
+		Chassis->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		UE_LOG(LogBRRVehicle, Display, TEXT("%s: on the original's physics"), *Vehicle.Name);
+	}
+
 	SetActorTransform(FTransform(BodyOrigin.GetRotation(), BodyOrigin.TransformPosition(-BodyOffset)), false, nullptr, ETeleportType::ResetPhysics);
 }
 
@@ -226,12 +238,29 @@ FTransform ABRRVehiclePawn::GetBodyOriginTransform() const
 
 FVector ABRRVehiclePawn::GetVelocity() const
 {
+	if (bSimulated) return SimVelocity;
 	return Chassis ? Chassis->GetPhysicsLinearVelocity() : FVector::ZeroVector;
 }
 
 double ABRRVehiclePawn::GetForwardSpeed() const
 {
+	if (bSimulated) return SimVelocity | GetActorForwardVector();
 	return Movement ? Movement->GetForwardSpeed() : 0.0;
+}
+
+FBRRDriveInput ABRRVehiclePawn::TakeSimulatedInput(bool& bOutRecover)
+{
+	bOutRecover = bRecoverKey && !bControlsLocked;
+	bRecoverKey = false;
+	if (bControlsLocked) return FBRRDriveInput();
+	return ScriptedInput.IsSet() ? *ScriptedInput : ReadPlayerInput();
+}
+
+void ABRRVehiclePawn::SetSimulatedPose(const FTransform& BodyOrigin, const FVector& Velocity)
+{
+	SetActorTransform(FTransform(BodyOrigin.GetRotation(), BodyOrigin.TransformPosition(-BodyOffset)), false, nullptr, ETeleportType::TeleportPhysics);
+	SimVelocity = Velocity;
+	Chassis->ComponentVelocity = Velocity;
 }
 
 void ABRRVehiclePawn::Recover(const TOptional<FTransform>& Where)
@@ -401,6 +430,17 @@ FBRRDriveInput ABRRVehiclePawn::ReadPlayerInput() const
 void ABRRVehiclePawn::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	if (bSimulated)
+	{
+		// The race reads the controls (TakeSimulatedInput); only the recover key's press is kept.
+		if (const APlayerController* PC = Cast<APlayerController>(GetController()))
+		{
+			bRecoverKey |= PC->WasInputKeyJustPressed(EKeys::R) || PC->WasInputKeyJustPressed(EKeys::Gamepad_FaceButton_Top);
+		}
+		bBoostKey = !bControlsLocked && (ScriptedInput.IsSet() ? ScriptedInput->bBoost : ReadPlayerInput().bBoost);
+		return;
+	}
 
 	FBRRDriveInput In = ScriptedInput.IsSet() ? *ScriptedInput : ReadPlayerInput();
 	if (bControlsLocked)
