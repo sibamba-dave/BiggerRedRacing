@@ -31,3 +31,6 @@ Tools/dosbox-x/
 # Python bytecode from the Tools scripts
 __pycache__/
 Tools/upscale/
+
+# CC0 ground materials, fetched and packed by Tools/fetch_ground.py
+Tools/ground/

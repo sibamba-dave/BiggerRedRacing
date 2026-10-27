@@ -160,6 +160,22 @@ enlargement and only structure (cobbles, rock edges, lettering) keeps the model'
 `--refinish` redoes that step, and the normal/roughness maps, without the model. Grass and dirt get
 no real detail this way - there is none in the source for a model to find.
 
+### Ground materials
+That detail comes instead from CC0 PBR materials (ambientCG): dirt, grass, sand, snow, rock,
+asphalt and the moon's dust. `Tools/fetch_ground.py` downloads them and packs each into
+`Tools/ground/<kind>.png` (git-ignored): its normal, its roughness, and its brightness held to a
+mean of one half. The import makes them one texture array (`T_BRR_Ground`) and tags every terrain
+triangle with its kind (`FBRRWorld::GroundOf`, in UV1). The surface types are handling, not looks,
+and the palette art is stylised, so the level's theme decides first (the moon is dust, SNOW
+snow), then the colour the original paints the triangle (green grass, grey made ground or rock,
+the rest earth). The remastered look lays the kind's material in the world every 3 m: its
+brightness modulates the original's colour (which stays the original's), and its relief and
+roughness join the page's own. It fades out between 40 and 160 m, where the tiling would show.
+The classic look is untouched. Without the packed files the import still runs, with no detail.
+```
+Tools\upscale\.venv\Scripts\python -I Tools\fetch_ground.py
+```
+
 ## Reference captures of the original
 The original runs in DOSBox-X for side-by-side checks. Put the portable 64-bit build in
 `Tools/dosbox-x/` (git-ignored), copy the rip's `RACING\` to `Tools/dosbox-x/c/RACING\`, and start it

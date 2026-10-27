@@ -55,6 +55,11 @@ struct FBRRImage
 // them all as the original's palette art; the remastered look shades each as what it is.
 enum class EBRRLiquid : uint8 { None, Water, Ice, Lava };
 
+// What the remastered look lays over a ground surface as its fine detail and relief (a CC0
+// material, Tools/fetch_ground.py; the colour stays the original's). In the order of the
+// importer's texture array, after None.
+enum class EBRRGround : uint8 { None, Dirt, Grass, Sand, Snow, Rock, Asphalt, Regolith, Count };
+
 struct FBRRVertex
 {
 	FVector3f Position; // UE cm
@@ -236,6 +241,15 @@ struct BRRFORMATS_API FBRRWorld
 	// WATER circuits race on their river as TRACK; elsewhere SLIPPY is the lakes and the sea,
 	// except on SNOW, where it is ice, and on MOON, lava.
 	EBRRLiquid LiquidOf(uint8 Land) const;
+
+	// What a terrain triangle's ground is made of, from its surface type and the colour the original
+	// paints it (Average: its texels' mean, or its flat colour). The surface types are handling, not
+	// looks - TRACK is dirt on one circuit and tarmac on another, whole hillsides are CLIFFS - and the
+	// palette art stylised, so the theme decides first (the moon is dust, SNOW snow), then the colour:
+	// green grass, grey made ground or rock, the rest earth. Liquids and air are nothing.
+	EBRRGround GroundOf(uint8 Land, FColor Average) const;
+	// The mean colour of a page's opaque texels under a triangle's UVs.
+	static FColor AverageTexels(const FBRRImage& Page, FVector2f A, FVector2f B, FVector2f C);
 
 	// Loads <Level>.LEV from DataDir (the folder holding ALWAYS.WAP) plus each named vehicle in
 	// team colour `Colour`. Returns false with OutError on any failure.

@@ -6,6 +6,11 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/Texture2D.h"
+#include "Engine/Texture2DArray.h"
+#include "Materials/MaterialExpressionPixelDepth.h"
+#include "Materials/MaterialExpressionTextureCoordinate.h"
+#include "Materials/MaterialExpressionTextureSampleParameter2DArray.h"
+#include "Materials/MaterialExpressionVertexNormalWS.h"
 #include "GameFramework/PlayerStart.h"
 #include "HAL/FileManager.h"
 #include "MaterialEditingLibrary.h"
@@ -149,7 +154,49 @@ namespace
 		UMaterial* Sky = nullptr;      // the original's banded sky, from an 18x1 palette strip
 		UMaterial* Display = nullptr;  // replaces the tonemapper: scene colour out as sRGB, untouched
 		UTexture2D* FlatDetail = nullptr; // a page's normal/roughness map where it has no upscale: flat, average
+		UTexture2DArray* Ground = nullptr; // the ground materials' detail, a slice per EBRRGround after None
 	};
+
+	// The ground materials Tools/fetch_ground.py packs (normal X/Y, roughness, brightness), one
+	// slice each, in EBRRGround's order. Without them, one neutral slice: no detail, the import
+	// otherwise the same.
+	UTexture2DArray* MakeGroundArray(const FString& PackageName)
+	{
+		static const TCHAR* Kinds[] = { TEXT("dirt"), TEXT("grass"), TEXT("sand"), TEXT("snow"), TEXT("rock"), TEXT("asphalt"), TEXT("regolith") };
+		static_assert(UE_ARRAY_COUNT(Kinds) == int32(EBRRGround::Count) - 1, "a slice per ground kind");
+		const FString Dir = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("../Tools/ground"));
+		TArray<uint8> Data;
+		int32 Size = 0, Slices = 0;
+		for (const TCHAR* Kind : Kinds)
+		{
+			FImage Image;
+			if (!FImageUtils::LoadImage(*(Dir / Kind + TEXT(".png")), Image) || (Size && (Image.SizeX != Size || Image.SizeY != Size)))
+			{
+				UE_LOG(LogBRRImport, Warning, TEXT("No ground material %s in %s (Tools/fetch_ground.py): the remastered ground has no detail"), Kind, *Dir);
+				Slices = 0;
+				break;
+			}
+			Image.ChangeFormat(ERawImageFormat::BGRA8, Image.GammaSpace);
+			Size = Image.SizeX;
+			Data.Append(Image.RawData);
+			++Slices;
+		}
+		if (Slices == 0)
+		{
+			Size = 4;
+			Slices = 1;
+			Data.Reset();
+			for (int32 I = 0; I < 16; ++I) Data.Append({ 191, 128, 128, 128 }); // BGRA: flat, rough 0.75, average
+		}
+		UTexture2DArray* Texture = NewAsset<UTexture2DArray>(PackageName);
+		Texture->Source.Init(Size, Size, Slices, 1, TSF_BGRA8, Data.GetData());
+		Texture->SRGB = false;
+		Texture->LODGroup = TEXTUREGROUP_World;
+		Texture->CompressionSettings = TC_BC7;
+		Texture->PostEditChange();
+		SaveAsset(Texture);
+		return Texture;
+	}
 
 	UMaterialExpressionCustom* MakeCustom(UMaterial* Mat, const FString& Code, ECustomMaterialOutputType Output,
 		TArray<TPair<FName, UMaterialExpression*>> Inputs)
@@ -220,6 +267,61 @@ namespace
 			Input.Input.Connect(In.Get<2>(), In.Get<1>());
 		}
 		return Custom;
+	}
+
+	// The remastered ground's detail (EBRRGround in UV1.x, by MakeMesh: the terrain only): its CC0
+	// material laid in the world every 3 m, projected along the face's main axis, modulating the
+	// original's colour by its brightness and adding its relief and roughness to the page's own;
+	// fading out by 160 m, where its tiling would show. Returns the colour (float3) and the
+	// detail (float4) to hand ConnectLook in place of the ones given.
+	TPair<UMaterialExpression*, UMaterialExpression*> AddGround(UMaterial* Mat, UMaterialParameterCollection* Collection, UTexture2DArray* Ground,
+		UMaterialExpression* Colour, int32 ColourOutput, UMaterialExpression* Detail)
+	{
+		auto Make = [Mat](UClass* Class, int32 X, int32 Y) { return UMaterialEditingLibrary::CreateMaterialExpression(Mat, Class, X, Y); };
+		auto* Kind = Cast<UMaterialExpressionTextureCoordinate>(Make(UMaterialExpressionTextureCoordinate::StaticClass(), -1400, 1500));
+		Kind->CoordinateIndex = 1;
+		UMaterialExpression* Position = Make(UMaterialExpressionWorldPosition::StaticClass(), -1400, 1600);
+		UMaterialExpression* Facing = Make(UMaterialExpressionVertexNormalWS::StaticClass(), -1400, 1700);
+		UMaterialExpression* Depth = Make(UMaterialExpressionPixelDepth::StaticClass(), -1400, 1800);
+		UMaterialExpression* Remaster = MakeCollectionValue(Mat, Collection, TEXT("Remaster"), -1400, 1900);
+		UMaterialExpressionCustom* Coord = MakeCustomOutputs(Mat, TEXT(
+			"float3 a = abs(N);\n"
+			"float2 uv = a.z >= max(a.x, a.y) ? P.xy : a.x >= a.y ? P.yz : P.xz;\n"
+			"return float3(uv / 300.0, max(K.x - 1, 0));"), CMOT_Float3,
+			{ MakeTuple(FName(TEXT("P")), Position, 0), MakeTuple(FName(TEXT("N")), Facing, 0), MakeTuple(FName(TEXT("K")), (UMaterialExpression*)Kind, 0) }, 1500);
+		auto* Sample = Cast<UMaterialExpressionTextureSampleParameter2DArray>(Make(UMaterialExpressionTextureSampleParameter2DArray::StaticClass(), -900, 1500));
+		Sample->ParameterName = TEXT("Ground");
+		Sample->Texture = Ground;
+		Sample->SamplerType = SAMPLERTYPE_LinearColor;
+		Sample->SamplerSource = SSM_Wrap_WorldGroupSettings;
+		Sample->Coordinates.Connect(0, Coord);
+		// The sample's normal (DirectX: X along u, Y along v) into the world, by the projection's axes.
+		UMaterialExpressionCustom* World = MakeCustomOutputs(Mat, TEXT(
+			"float2 xy = T.rg * 2 - 1;\n"
+			"float3 t = float3(xy, sqrt(saturate(1 - dot(xy, xy))));\n"
+			"float3 a = abs(N);\n"
+			"if (a.z >= max(a.x, a.y)) return float3(t.x, t.y, t.z * sign(N.z));\n"
+			"if (a.x >= a.y) return float3(t.z * sign(N.x), t.x, t.y);\n"
+			"return float3(t.x, t.z * sign(N.y), t.y);"), CMOT_Float3,
+			{ MakeTuple(FName(TEXT("T")), (UMaterialExpression*)Sample, 5), MakeTuple(FName(TEXT("N")), Facing, 0) }, 1600);
+		auto* ToTangent = Cast<UMaterialExpressionTransform>(Make(UMaterialExpressionTransform::StaticClass(), -500, 1600));
+		ToTangent->Input.Connect(0, World);
+		ToTangent->TransformSourceType = TRANSFORMSOURCE_World;
+		ToTangent->TransformType = TRANSFORM_Tangent;
+		const TCHAR* On = TEXT("float on = (K.x > 0.5 && R > 0.5) ? saturate(1 - (Z - 4000) / 12000) : 0;\n");
+		TArray<TTuple<FName, UMaterialExpression*, int32>> Common = { MakeTuple(FName(TEXT("K")), (UMaterialExpression*)Kind, 0),
+			MakeTuple(FName(TEXT("R")), Remaster, 0), MakeTuple(FName(TEXT("Z")), Depth, 0), MakeTuple(FName(TEXT("T")), (UMaterialExpression*)Sample, 5) };
+		TArray<TTuple<FName, UMaterialExpression*, int32>> ColourInputs = Common;
+		ColourInputs.Add(MakeTuple(FName(TEXT("C")), Colour, ColourOutput));
+		UMaterialExpressionCustom* NewColour = MakeCustomOutputs(Mat, FString(On) + TEXT("return C.rgb * lerp(1, T.a * 2, on * 0.55);"), CMOT_Float3, ColourInputs, 1700);
+		TArray<TTuple<FName, UMaterialExpression*, int32>> DetailInputs = Common;
+		DetailInputs.Add(MakeTuple(FName(TEXT("D")), Detail, 0));
+		DetailInputs.Add(MakeTuple(FName(TEXT("G")), (UMaterialExpression*)ToTangent, 0));
+		UMaterialExpressionCustom* NewDetail = MakeCustomOutputs(Mat, FString(On) + TEXT(
+			"float3 g = normalize(lerp(float3(0, 0, 1), normalize(G), on * 0.8));\n"
+			"float3 n = normalize(float3(D.xy + g.xy, D.z * g.z));\n"
+			"return float4(n, D.w + on * (T.b - 0.75) * 0.8);"), CMOT_Float4, DetailInputs, 1800);
+		return { NewColour, NewDetail };
 	}
 
 	// The two looks off one material, switched at runtime by MPC_BRR.Remaster (ABRRRaceGameMode):
@@ -316,6 +418,7 @@ namespace
 			SaveAsset(Texture);
 			M.FlatDetail = Texture;
 		}
+		M.Ground = MakeGroundArray(Root / TEXT("Textures/T_BRR_Ground"));
 		{
 			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Textured"));
 			Mat->bUsedWithNanite = true; // the terrain and the decor are Nanite (MakeMesh)
@@ -348,7 +451,8 @@ namespace
 			UMaterialExpression* Remaster = MakeCollectionValue(Mat, Collection, TEXT("Remaster"), -800, 500);
 			UMaterialExpressionCustom* Colour = MakeCustomOutputs(Mat, TEXT("return lerp(A, B, R);"), CMOT_Float4,
 				{ MakeTuple(FName(TEXT("A")), (UMaterialExpression*)Classic, 5), MakeTuple(FName(TEXT("B")), (UMaterialExpression*)Smooth, 5), MakeTuple(FName(TEXT("R")), Remaster, 0) }, 500);
-			ConnectLook(Mat, Collection, Colour, 0, Detail);
+			const TPair<UMaterialExpression*, UMaterialExpression*> Ground = AddGround(Mat, Collection, M.Ground, Colour, 0, Detail);
+			ConnectLook(Mat, Collection, Ground.Key, 0, Ground.Value);
 			auto* Mask = MakeCustomOutputs(Mat, TEXT("return C.a * D;"), CMOT_Float1,
 				{ MakeTuple(FName(TEXT("C")), (UMaterialExpression*)Colour, 0), MakeTuple(FName(TEXT("D")), MakeDrawRange(Mat, Collection), 0) }, 600);
 			UMaterialEditingLibrary::ConnectMaterialProperty(Mask, TEXT(""), MP_OpacityMask);
@@ -421,7 +525,8 @@ namespace
 			auto* Detail = Cast<UMaterialExpressionConstant4Vector>(
 				UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionConstant4Vector::StaticClass(), -800, 1300));
 			Detail->Constant = FLinearColor(0, 0, 1, 0.5f); // flat colours have no relief
-			ConnectLook(Mat, Collection, Decode, 0, Detail);
+			const TPair<UMaterialExpression*, UMaterialExpression*> Ground = AddGround(Mat, Collection, M.Ground, Decode, 0, Detail);
+			ConnectLook(Mat, Collection, Ground.Key, 0, Ground.Value);
 			Mat->BlendMode = BLEND_Masked;
 			UMaterialEditingLibrary::ConnectMaterialProperty(MakeDrawRange(Mat, Collection), TEXT(""), MP_OpacityMask);
 			UMaterialEditingLibrary::RecompileMaterial(Mat);
@@ -520,7 +625,7 @@ namespace
 		TVertexInstanceAttributesRef<FVector2f> UVs = Attributes.GetVertexInstanceUVs();
 		TVertexInstanceAttributesRef<FVector4f> Colors = Attributes.GetVertexInstanceColors();
 		TPolygonGroupAttributesRef<FName> SlotNames = Attributes.GetPolygonGroupMaterialSlotNames();
-		UVs.SetNumChannels(1);
+		UVs.SetNumChannels(2); // 1: the terrain's ground kind (AddGround)
 
 		const int32 Verts = Source.NumTriangles() * 3;
 		Desc.ReserveNewVertices(Verts);
@@ -528,6 +633,7 @@ namespace
 		Desc.ReserveNewTriangles(Source.NumTriangles());
 
 		UStaticMesh* Mesh = NewAsset<UStaticMesh>(Assets.Dir / TEXT("Meshes") / Name);
+		int32 GroundCounts[int32(EBRRGround::Count)] = {};
 		for (const FBRRMeshSection& Section : Source.Sections)
 		{
 			UMaterialInstanceConstant* Material = Assets.MaterialFor(Section.Atlas, Section.bTwoSided, Surface);
@@ -540,6 +646,15 @@ namespace
 			{
 				const FVector3f A = Section.Vertices[T].Position;
 				const FVector3f Normal = ((Section.Vertices[T + 2].Position - A) ^ (Section.Vertices[T + 1].Position - A)).GetSafeNormal();
+				EBRRGround Ground = EBRRGround::None;
+				if (const uint8 Land = Section.Vertices[T].Land; Land != 0xFF)
+				{
+					const bool bPage = Assets.World->Atlases.IsValidIndex(Section.Atlas);
+					const FColor Average = bPage ? FBRRWorld::AverageTexels(Assets.World->Atlases[Section.Atlas], Section.Vertices[T].UV,
+						Section.Vertices[T + 1].UV, Section.Vertices[T + 2].UV) : Section.Vertices[T].Color;
+					Ground = Assets.World->GroundOf(Land, Average);
+					++GroundCounts[int32(Ground)];
+				}
 				TStaticArray<FVertexInstanceID, 3> Corners;
 				for (int32 K = 0; K < 3; ++K)
 				{
@@ -549,6 +664,7 @@ namespace
 					const FVertexInstanceID Instance = Desc.CreateVertexInstance(Vertex);
 					Normals[Instance] = Normal;
 					UVs.Set(Instance, 0, V.UV);
+					UVs.Set(Instance, 1, FVector2f(float(Ground), 0.f));
 					// The build sRGB-encodes the colour back to the palette bytes (M_BRR_Flat); the
 					// alpha carries the liquid (ConnectLook).
 					FLinearColor Colour(V.Color);
@@ -561,6 +677,11 @@ namespace
 			}
 		}
 
+		if (Source.Sections.Num() && Source.Sections[0].Vertices.Num() && Source.Sections[0].Vertices[0].Land != 0xFF)
+		{
+			UE_LOG(LogBRRImport, Display, TEXT("%s ground: none %d, dirt %d, grass %d, sand %d, snow %d, rock %d, asphalt %d, regolith %d"), *Name,
+				GroundCounts[0], GroundCounts[1], GroundCounts[2], GroundCounts[3], GroundCounts[4], GroundCounts[5], GroundCounts[6], GroundCounts[7]);
+		}
 		FStaticMeshSourceModel& Model = Mesh->AddSourceModel();
 		Model.BuildSettings.bRecomputeNormals = false;
 		Model.BuildSettings.bRecomputeTangents = true;

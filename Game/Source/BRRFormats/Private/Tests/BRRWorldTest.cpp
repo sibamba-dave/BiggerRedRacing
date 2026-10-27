@@ -221,4 +221,52 @@ bool FBRRWorldGroundDecalsTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBRRWorldGroundKindsTest, "BRR.Formats.World.GroundKinds",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FBRRWorldGroundKindsTest::RunTest(const FString& Parameters)
+{
+	const FString DataDir = BRR::GetDataDir();
+	if (DataDir.IsEmpty())
+	{
+		AddWarning(TEXT("BRR data dir not found (set BRR_DATA_DIR); skipping."));
+		return true;
+	}
+	static const TCHAR* Names[] = { TEXT("none"), TEXT("dirt"), TEXT("grass"), TEXT("sand"), TEXT("snow"), TEXT("rock"), TEXT("asphalt"), TEXT("regolith") };
+	// Each theme's ground mostly what it looks like.
+	const TPair<const TCHAR*, EBRRGround> Expect[] = { { TEXT("DIRT1"), EBRRGround::Grass }, { TEXT("CITY4"), EBRRGround::Asphalt },
+		{ TEXT("SNOW1"), EBRRGround::Snow }, { TEXT("MOON1"), EBRRGround::Regolith } };
+	TArray<FString> Levels;
+	IFileManager::Get().FindFiles(Levels, *(DataDir / TEXT("*.LEV")), true, false);
+	for (FString& L : Levels) L = FPaths::GetBaseFilename(L).ToUpper();
+	Levels.Sort();
+	for (const FString& Level : Levels)
+	{
+		FBRRWorld World;
+		FString Error;
+		if (!TestTrue(FString::Printf(TEXT("%s loads: %s"), *Level, *Error), FBRRWorld::Load(DataDir, Level, {}, 1, World, Error))) continue;
+		int32 Count[int32(EBRRGround::Count)] = {};
+		for (const FBRRMeshSection& S : World.Terrain.Sections)
+		{
+			for (int32 T = 0; T + 2 < S.Vertices.Num(); T += 3)
+			{
+				const FColor Average = World.Atlases.IsValidIndex(S.Atlas)
+					? FBRRWorld::AverageTexels(World.Atlases[S.Atlas], S.Vertices[T].UV, S.Vertices[T + 1].UV, S.Vertices[T + 2].UV) : S.Vertices[T].Color;
+				++Count[int32(World.GroundOf(S.Vertices[T].Land, Average))];
+			}
+		}
+		FString Line;
+		for (int32 K = 0; K < int32(EBRRGround::Count); ++K) Line += FString::Printf(TEXT(" %s %d"), Names[K], Count[K]);
+		AddInfo(FString::Printf(TEXT("GROUND %s:%s"), *Level, *Line));
+		for (const TPair<const TCHAR*, EBRRGround>& E : Expect)
+		{
+			if (Level != E.Key) continue;
+			int32 Most = 1;
+			for (int32 K = 2; K < int32(EBRRGround::Count); ++K) if (Count[K] > Count[Most]) Most = K;
+			TestEqual(FString::Printf(TEXT("%s: the ground is mostly %s"), *Level, Names[int32(E.Value)]), Most, int32(E.Value));
+		}
+	}
+	return true;
+}
+
 #endif

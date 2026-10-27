@@ -71,6 +71,51 @@ EBRRLiquid FBRRWorld::LiquidOf(uint8 Land) const
 	return EBRRLiquid::Water;
 }
 
+EBRRGround FBRRWorld::GroundOf(uint8 Land, FColor Average) const
+{
+	constexpr uint8 Track = 0, Grippy = 1, Cliffs = 3, Grass = 4, Sand = 5, Ramps = 6, Air = 7;
+	if (Land > 7 || Land == Air || LiquidOf(Land) != EBRRLiquid::None) return EBRRGround::None;
+	auto Is = [this](const TCHAR* Theme) { return LevelName.StartsWith(Theme, ESearchCase::IgnoreCase); };
+	// The palette art is stylised (SNOW's snow is lilac, the moon red and tan): the theme first.
+	if (Is(TEXT("MOON"))) return EBRRGround::Regolith;
+	if (Is(TEXT("SNOW"))) return Land == Cliffs ? EBRRGround::Rock : EBRRGround::Snow;
+	if (Land == Sand) return EBRRGround::Sand;
+	// Then the colour as painted (hue in degrees, saturation, value; sRGB, not linearised): green
+	// is grass whatever the type says (whole hillsides are CLIFFS), grey is made ground or rock,
+	// the rest earth.
+	const FLinearColor Hsv = FLinearColor(Average.R / 255.f, Average.G / 255.f, Average.B / 255.f).LinearRGBToHSV();
+	const float Hue = Hsv.R, Sat = Hsv.G, Value = Hsv.B;
+	if (Hue >= 65.f && Hue <= 170.f && Sat > 0.2f) return EBRRGround::Grass;
+	const bool bRoad = Land == Track || Land == Grippy || Land == Ramps;
+	if (bRoad && Is(TEXT("CITY")) && Sat < 0.35f) return EBRRGround::Asphalt; // the streets, kerbs and markings among them
+	if (Sat < 0.2f) return bRoad ? EBRRGround::Asphalt : Land == Cliffs ? EBRRGround::Rock : EBRRGround::Dirt;
+	if (bRoad && Hue >= 20.f && Hue < 55.f && Value > 0.65f) return EBRRGround::Sand;
+	return EBRRGround::Dirt;
+}
+
+FColor FBRRWorld::AverageTexels(const FBRRImage& Page, FVector2f A, FVector2f B, FVector2f C)
+{
+	if (Page.Width <= 0 || Page.Height <= 0) return FColor::Black;
+	const FVector2f Min(FMath::Min3(A.X, B.X, C.X), FMath::Min3(A.Y, B.Y, C.Y));
+	const FVector2f Max(FMath::Max3(A.X, B.X, C.X), FMath::Max3(A.Y, B.Y, C.Y));
+	const int32 X0 = FMath::Clamp(FMath::FloorToInt32(Min.X * Page.Width), 0, Page.Width - 1);
+	const int32 X1 = FMath::Clamp(FMath::CeilToInt32(Max.X * Page.Width) - 1, X0, Page.Width - 1);
+	const int32 Y0 = FMath::Clamp(FMath::FloorToInt32(Min.Y * Page.Height), 0, Page.Height - 1);
+	const int32 Y1 = FMath::Clamp(FMath::CeilToInt32(Max.Y * Page.Height) - 1, Y0, Page.Height - 1);
+	const int32 Step = FMath::Max(1, FMath::Max(X1 - X0, Y1 - Y0) / 32);
+	uint64 Sum[3] = {}, N = 0;
+	for (int32 Y = Y0; Y <= Y1; Y += Step)
+	{
+		for (int32 X = X0; X <= X1; X += Step)
+		{
+			const FColor& P = Page.Pixels[Y * Page.Width + X];
+			if (P.A == 0) continue;
+			Sum[0] += P.R; Sum[1] += P.G; Sum[2] += P.B; ++N;
+		}
+	}
+	return N ? FColor(uint8(Sum[0] / N), uint8(Sum[1] / N), uint8(Sum[2] / N)) : FColor::Black;
+}
+
 double FBRRWorld::GroundHeightAt(double UEX, double UEY) const
 {
 	if (MapWidth <= 0 || MapHeight <= 0 || HeightMap.Num() != MapWidth * MapHeight) return 0.0;
