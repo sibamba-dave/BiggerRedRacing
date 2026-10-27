@@ -452,7 +452,7 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 			FBRRMesh Puffs;
 			const FRotationMatrix View(RaceCamera->GetActorRotation());
 			Race->GetParticles(View.GetUnitAxis(EAxis::Y), View.GetUnitAxis(EAxis::Z), Puffs);
-			Particles->Update(Puffs, LevelName);
+			Particles->Update(Puffs, LevelName, bRemastered);
 		}
 		UE_LOG(LogBRRRace, VeryVerbose, TEXT("camera %s rot %s | car %s rot %s"), *RaceCamera->GetActorLocation().ToCompactString(),
 			*RaceCamera->GetActorRotation().ToCompactString(), *PlayerCar->GetBodyOriginTransform().GetLocation().ToCompactString(),

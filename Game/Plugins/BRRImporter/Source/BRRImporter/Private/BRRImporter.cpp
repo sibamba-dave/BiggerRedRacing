@@ -93,8 +93,48 @@ namespace
 
 	// bMips: a mip chain for the remastered look's filtered sampling (the classic look reads only
 	// the top mip); the palette and sky strips are lookup tables and have none.
-	UTexture2D* MakeTexture(const FString& PackageName, const FBRRImage& Image, bool bMips = false)
+	UTexture2D* MakeTexture(const FString& PackageName, const FBRRImage& Source, bool bMips = false)
 	{
+		FBRRImage Image = Source;
+		if (bMips)
+		{
+			// The see-through texels take the colour of the art beside them (their alpha stays 0):
+			// left black, the filtering and the mips averaged them into the sprites' edges, and a
+			// small sprite seen from afar - spray, dust, a tree - came out dark. The classic look
+			// masks them out whatever their colour.
+			const int32 W = Image.Width, H = Image.Height;
+			TArray<bool> Known;
+			Known.SetNumUninitialized(Image.Pixels.Num());
+			for (int32 I = 0; I < Image.Pixels.Num(); ++I) Known[I] = Image.Pixels[I].A >= 128;
+			for (int32 Pass = 0; Pass < 16; ++Pass)
+			{
+				TArray<int32> Filled;
+				for (int32 Y = 0; Y < H; ++Y)
+				{
+					for (int32 X = 0; X < W; ++X)
+					{
+						const int32 I = Y * W + X;
+						if (Known[I]) continue;
+						int32 R = 0, G = 0, B = 0, N = 0;
+						for (int32 DY = -1; DY <= 1; ++DY)
+						{
+							for (int32 DX = -1; DX <= 1; ++DX)
+							{
+								const int32 NX = X + DX, NY = Y + DY;
+								if (NX < 0 || NY < 0 || NX >= W || NY >= H || !Known[NY * W + NX]) continue;
+								const FColor& C = Image.Pixels[NY * W + NX];
+								R += C.R, G += C.G, B += C.B, ++N;
+							}
+						}
+						if (N == 0) continue;
+						Image.Pixels[I] = FColor(uint8(R / N), uint8(G / N), uint8(B / N), Image.Pixels[I].A);
+						Filled.Add(I);
+					}
+				}
+				if (Filled.IsEmpty()) break;
+				for (int32 I : Filled) Known[I] = true;
+			}
+		}
 		UTexture2D* Texture = NewAsset<UTexture2D>(PackageName);
 		// FColor is BGRA in memory, which is exactly TSF_BGRA8.
 		Texture->Source.Init(Image.Width, Image.Height, 1, 1, TSF_BGRA8, reinterpret_cast<const uint8*>(Image.Pixels.GetData()));
@@ -162,6 +202,7 @@ namespace
 		UMaterial* Scatter = nullptr;      // the scattered ground detail: the instance's colour, lit (remastered only)
 		UMaterial* TexturedHD = nullptr;   // Textured, tessellated and displaced: the refined terrain's
 		UMaterial* Water = nullptr;        // the remastered look's open water (single layer water)
+		UMaterial* Effect = nullptr;       // the race's spray, dust and sparks (ABRRParticles): unlit in both looks
 	};
 
 	// The ground materials Tools/fetch_ground.py packs (normal X/Y, roughness, brightness), one
@@ -556,6 +597,43 @@ namespace
 			M.Water = Mat;
 		}
 		{
+			// The ground effects: unlit in both looks. Classic as Textured's classic path, the palette
+			// exact; remastered the smooth page at Brightness - about what a sunlit surface of that
+			// colour gives (ABRRLook's 10 lux sun) - so a splash is not darkened by the water it
+			// stands in, the shadow it is in, or the occlusion of the ground around it.
+			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Effect"));
+			Mat->SetShadingModel(MSM_Unlit);
+			Mat->BlendMode = BLEND_Masked;
+			Mat->TwoSided = true;
+			UTexture2D* Default = LoadObject<UTexture2D>(nullptr, TEXT("/Engine/EngineResources/DefaultTexture.DefaultTexture"));
+			auto* Classic = Cast<UMaterialExpressionTextureSampleParameter2D>(
+				UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionTextureSampleParameter2D::StaticClass(), -800, 0));
+			Classic->ParameterName = TEXT("Atlas");
+			Classic->Texture = Default;
+			Classic->MipValueMode = TMVM_MipLevel;
+			Classic->ConstMipValue = 0;
+			auto* Smooth = Cast<UMaterialExpressionTextureSampleParameter2D>(
+				UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionTextureSampleParameter2D::StaticClass(), -800, 250));
+			Smooth->ParameterName = TEXT("AtlasHD");
+			Smooth->Texture = Default;
+			Smooth->SamplerSource = SSM_Wrap_WorldGroupSettings;
+			auto* Brightness = Cast<UMaterialExpressionScalarParameter>(
+				UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionScalarParameter::StaticClass(), -800, 450));
+			Brightness->ParameterName = TEXT("Brightness");
+			Brightness->DefaultValue = 3.f;
+			UMaterialExpression* Remaster = MakeCollectionValue(Mat, Collection, TEXT("Remaster"), -800, 550);
+			UMaterialExpressionCustom* Colour = MakeCustomOutputs(Mat, TEXT("return R > 0.5 ? float4(B.rgb * L, B.a) : A;"), CMOT_Float4,
+				{ MakeTuple(FName(TEXT("A")), (UMaterialExpression*)Classic, 5), MakeTuple(FName(TEXT("B")), (UMaterialExpression*)Smooth, 5),
+				  MakeTuple(FName(TEXT("L")), (UMaterialExpression*)Brightness, 0), MakeTuple(FName(TEXT("R")), Remaster, 0) }, 500);
+			UMaterialEditingLibrary::ConnectMaterialProperty(MakeCustom(Mat, TEXT("return C.rgb;"), CMOT_Float3, { { TEXT("C"), Colour } }), TEXT(""), MP_EmissiveColor);
+			auto* Mask = MakeCustomOutputs(Mat, TEXT("return C.a * D;"), CMOT_Float1,
+				{ MakeTuple(FName(TEXT("C")), (UMaterialExpression*)Colour, 0), MakeTuple(FName(TEXT("D")), MakeDrawRange(Mat, Collection), 0) }, 600);
+			UMaterialEditingLibrary::ConnectMaterialProperty(Mask, TEXT(""), MP_OpacityMask);
+			UMaterialEditingLibrary::RecompileMaterial(Mat);
+			SaveAsset(Mat);
+			M.Effect = Mat;
+		}
+		{
 			// Band index from the view direction's elevation, as ORR's sky shader picks it.
 			FString Bands;
 			for (int32 B = 0; B < 16; ++B) Bands += FString::Printf(TEXT("%s%.2f"), B ? TEXT(",") : TEXT(""), BRR::SkyBandDegrees[B]);
@@ -633,7 +711,8 @@ namespace
 
 	// What a mesh is made of, for the remastered look: the scenery's matte ground and decor, a
 	// vehicle's glossy paint (the whole body: the original paints it all one way), its rubber tyres.
-	enum class ESurface : uint8 { Ground, Paint, Rubber, Refined };
+	// Effect: the race's ground effects (M_BRR_Effect).
+	enum class ESurface : uint8 { Ground, Paint, Rubber, Refined, Effect };
 
 	// Per-level asset state shared by every mesh: one texture per used atlas page, one material
 	// instance per (atlas, sidedness, surface).
@@ -654,9 +733,9 @@ namespace
 
 			const FString Name = FString::Printf(TEXT("MI_%s_%s%s%s"), *Prefix,
 				Atlas == INDEX_NONE ? TEXT("Flat") : *FString::Printf(TEXT("Atlas%02d"), Atlas), bTwoSided ? TEXT("_2S") : TEXT(""),
-				Surface == ESurface::Paint ? TEXT("_Paint") : Surface == ESurface::Rubber ? TEXT("_Rubber") : Surface == ESurface::Refined ? TEXT("_HD") : TEXT(""));
+				Surface == ESurface::Paint ? TEXT("_Paint") : Surface == ESurface::Rubber ? TEXT("_Rubber") : Surface == ESurface::Refined ? TEXT("_HD") : Surface == ESurface::Effect ? TEXT("_FX") : TEXT(""));
 			UMaterialInstanceConstant* MI = NewAsset<UMaterialInstanceConstant>(Dir / TEXT("Materials") / Name);
-			MI->SetParentEditorOnly(Atlas == INDEX_NONE ? Masters.Flat : Surface == ESurface::Refined ? Masters.TexturedHD : Masters.Textured);
+			MI->SetParentEditorOnly(Atlas == INDEX_NONE ? Masters.Flat : Surface == ESurface::Refined ? Masters.TexturedHD : Surface == ESurface::Effect ? Masters.Effect : Masters.Textured);
 			if (Atlas != INDEX_NONE)
 			{
 				UTexture2D*& Texture = Textures.FindOrAdd(Atlas);
@@ -974,7 +1053,7 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 	}
 	MakeScatterMeshes(Options.DestRoot, Assets.Masters);
 	// The ground effects' sheets: no mesh draws them, the race's particles do (ABRRParticles).
-	for (int32 Page = 0; Page < World.ParticleAtlasCount; ++Page) Assets.MaterialFor(World.ParticleAtlasBase + Page, true, ESurface::Ground);
+	for (int32 Page = 0; Page < World.ParticleAtlasCount; ++Page) Assets.MaterialFor(World.ParticleAtlasBase + Page, true, ESurface::Effect);
 	TArray<FVehicleAssets> VehicleAssets;
 	for (const FBRRVehicleMesh& Vehicle : World.Vehicles) VehicleAssets.Add(MakeVehicle(Assets, Vehicle));
 
