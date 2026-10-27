@@ -99,6 +99,23 @@ void ABRRLook::Build(const FVector& SunDirection, UMaterialParameterCollection* 
 	P.AmbientOcclusionIntensity = 0.5f;
 	P.bOverride_VignetteIntensity = true;
 	P.VignetteIntensity = 0.25f;
+	// Local exposure keeps tunnel mouths and headlit night roads readable without washing the day
+	// out, and a restrained lens flare sells the real lights at dusk.
+	P.bOverride_LocalExposureHighlightContrastScale = true;
+	P.LocalExposureHighlightContrastScale = 0.85f;
+	P.bOverride_LocalExposureShadowContrastScale = true;
+	P.LocalExposureShadowContrastScale = 0.85f;
+	P.bOverride_LensFlareIntensity = true;
+	P.LensFlareIntensity = 0.15f;
+	// MegaLights (stochastic many-light sampling on hardware ray tracing): only this volume asks
+	// for it, so the classic look never runs it. It is what lets every headlamp and lamp post
+	// cast a shadow (ABRRRaceGameMode::BuildRaceLights).
+	static const IConsoleVariable* Mega = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.MegaLights"));
+	if (!Mega || Mega->GetInt() != 0)
+	{
+		P.bOverride_bMegaLights = true;
+		P.bMegaLights = true;
+	}
 }
 
 void ABRRLook::SetMood(const FBRRMood& Mood)

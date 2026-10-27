@@ -87,6 +87,8 @@ namespace
 	TAutoConsoleVariable<bool> CVarCommentary(TEXT("brr.Commentary"), true,
 		TEXT("The circuit's commentator (applies from the next race)."));
 
+	TAutoConsoleVariable<int32> CVarMegaLights(TEXT("brr.MegaLights"), 1,
+		TEXT("The remastered look's many-light sampling (engine MegaLights, hardware ray tracing): 1 every headlamp and lamp post casts a shadow, 0 only the player's (from the next race)."));
 	TAutoConsoleVariable<bool> CVarLogPerf(TEXT("brr.LogPerf"), false,
 		TEXT("Logs the frame rate, the race's pace against the wall clock and the player's speed every five seconds."));
 
@@ -419,8 +421,11 @@ void ABRRRaceGameMode::AddCarLights(UStaticMeshComponent* Body, bool bShadowed)
 void ABRRRaceGameMode::BuildRaceLights(const FBRRWorld& World, const TArray<FVector>& Routes)
 {
 	bDarkRace = Weather && (Weather->SunElevationDegrees() < 15.f || Weather->RainStrength() > 0.4f);
+	// Under MegaLights every headlamp affords a shadow; without it, only the player's.
+	static const IConsoleVariable* Mega = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.MegaLights"));
+	const bool bManyShadows = !Mega || Mega->GetInt() != 0;
 	AddCarLights(PlayerCar ? PlayerCar->BodyMesh.Get() : nullptr, /*bShadowed=*/true);
-	for (ABRRGhostCar* Ghost : Ghosts) if (Ghost) AddCarLights(Ghost->BodyMesh.Get(), false);
+	for (ABRRGhostCar* Ghost : Ghosts) if (Ghost) AddCarLights(Ghost->BodyMesh.Get(), bManyShadows);
 
 	// The gantry's own glow: a small light per state, showing and hiding with its mesh.
 	static const FColor GantryColours[4] = { FColor(255, 40, 30), FColor(255, 120, 30), FColor(255, 170, 40), FColor(40, 220, 60) };
@@ -472,7 +477,7 @@ void ABRRRaceGameMode::BuildRaceLights(const FBRRWorld& World, const TArray<FVec
 			Spot->SetAttenuationRadius(1200.f);
 			Spot->SetInnerConeAngle(35.f);
 			Spot->SetOuterConeAngle(60.f);
-			Spot->SetCastShadows(false);
+			Spot->SetCastShadows(bManyShadows); // a pole's own pool of shadow, on MegaLights' budget
 			Spot->RegisterComponent();
 		}
 		UE_LOG(LogBRRRace, Display, TEXT("%s: %d lamp posts lit (of %d)"), *LevelName, FMath::Min(Lamps.Num(), 48), Lamps.Num());
