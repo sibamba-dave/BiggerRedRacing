@@ -29,6 +29,7 @@
 #include "Materials/MaterialExpressionConstant3Vector.h"
 #include "Materials/MaterialExpressionMultiply.h"
 #include "Materials/MaterialExpressionTime.h"
+#include "Materials/MaterialExpressionLocalPosition.h"
 #include "Materials/MaterialExpressionTransform.h"
 #include "Materials/MaterialExpressionWorldPosition.h"
 #include "Materials/MaterialParameterCollection.h"
@@ -498,6 +499,24 @@ namespace
 			Remaster.ParameterName = TEXT("Remaster");
 			Remaster.DefaultValue = 0.f;
 			Collection->ScalarParameters.Add(Remaster);
+			for (int32 R = 0; R < 6; ++R)
+			{
+				// A racer's world position each frame (w: 1 while racing, 0 unused): the crowd's
+				// cheering reads these in the shader (M_BRR_Crowd), so no instance is ever touched.
+				FCollectionVectorParameter Racer;
+				Racer.ParameterName = FName(*FString::Printf(TEXT("Racer%d"), R));
+				Racer.DefaultValue = FLinearColor(0, 0, 0, 0);
+				Collection->VectorParameters.Add(Racer);
+			}
+			for (const TCHAR* Name : { TEXT("WeatherVelX"), TEXT("WeatherVelY"), TEXT("WeatherFall") })
+			{
+				// The falling weather's drift and fall speeds (cm/s), set once per race
+				// (ABRRWeather): M_BRR_Rain and M_BRR_Snow move every drop in the shader.
+				FCollectionScalarParameter P;
+				P.ParameterName = Name;
+				P.DefaultValue = 0.f;
+				Collection->ScalarParameters.Add(P);
+			}
 			Collection->PostEditChange();
 			SaveAsset(Collection);
 		}
@@ -553,6 +572,157 @@ namespace
 			UMaterialEditingLibrary::RecompileMaterial(Mat);
 			SaveAsset(Mat);
 			M.Scatter = Mat;
+		}
+		{
+			// The spectators (ABRRCrowd): the scatter shading plus the cheering, all in the shader.
+			// Each instance bobs on its own phase (custom data 3-5) and jumps as a racer - the six
+			// MPC Racer vectors, written once a frame - comes near, so after its build the crowd
+			// costs the CPU nothing.
+			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Crowd"));
+			Mat->bUsedWithNanite = true;
+			Mat->bUsedWithInstancedStaticMeshes = true;
+			Mat->SetShadingModel(MSM_DefaultLit);
+			Mat->TwoSided = true;
+			auto Make = [Mat](UClass* Class, int32 X, int32 Y) { return UMaterialEditingLibrary::CreateMaterialExpression(Mat, Class, X, Y); };
+			UMaterialExpression* Colour = Make(UMaterialExpressionVertexColor::StaticClass(), -700, 0);
+			TArray<TPair<FName, UMaterialExpression*>> Inputs = { { TEXT("Srgb"), Colour } };
+			TArray<TPair<FName, UMaterialExpression*>> WaveIn;
+			for (int32 I = 0; I < 6; ++I)
+			{
+				auto* Data = Cast<UMaterialExpressionPerInstanceCustomData>(Make(UMaterialExpressionPerInstanceCustomData::StaticClass(), -700, 150 + I * 100));
+				Data->DataIndex = I;
+				Data->ConstDefaultValue = I < 3 ? 0.5f : 0.f;
+				(I < 3 ? Inputs : WaveIn).Add({ FName(*FString::Printf(TEXT("I%d"), I)), Data });
+			}
+			UMaterialExpressionCustom* Base = MakeCustom(Mat, TEXT(
+				"float3 c = saturate(Srgb.rgb);\n"
+				"float3 shade = lerp(pow((c + 0.055) / 1.055, 2.4), c / 12.92, step(c, 0.04045));\n"
+				"return shade * float3(I0, I1, I2);"), CMOT_Float3, Inputs);
+			UMaterialEditingLibrary::ConnectMaterialProperty(Base, TEXT(""), MP_BaseColor);
+			WaveIn.Add({ TEXT("T"), Make(UMaterialExpressionTime::StaticClass(), -700, 800) });
+			WaveIn.Add({ TEXT("WP"), Make(UMaterialExpressionWorldPosition::StaticClass(), -700, 900) });
+			auto* Local = Cast<UMaterialExpressionLocalPosition>(Make(UMaterialExpressionLocalPosition::StaticClass(), -700, 1000));
+			Local->LocalOrigin = ELocalPositionOrigin::Instance;
+			Local->IncludedOffsets = EPositionIncludedOffsets::ExcludeOffsets;
+			WaveIn.Add({ TEXT("LP"), Local });
+			for (int32 R = 0; R < 6; ++R)
+				WaveIn.Add({ FName(*FString::Printf(TEXT("R%d"), R)),
+					MakeCollectionValue(Mat, Collection, FName(*FString::Printf(TEXT("Racer%d"), R)), -700, 1100 + R * 100) });
+			// I3 phase, I4 pace, I5 jump share (0 for the sitting variant). The lean pivots at the
+			// feet, as the CPU crowd's roll did: its reach grows with the vertex's height.
+			UMaterialExpressionCustom* Wave = MakeCustom(Mat, TEXT(
+				"float t = T * I4 * 6.0 + I3;\n"
+				"float near = 1e9;\n"
+				"near = min(near, lerp(1e9, distance(WP.xy, R0.xy), step(0.5, R0.w)));\n"
+				"near = min(near, lerp(1e9, distance(WP.xy, R1.xy), step(0.5, R1.w)));\n"
+				"near = min(near, lerp(1e9, distance(WP.xy, R2.xy), step(0.5, R2.w)));\n"
+				"near = min(near, lerp(1e9, distance(WP.xy, R3.xy), step(0.5, R3.w)));\n"
+				"near = min(near, lerp(1e9, distance(WP.xy, R4.xy), step(0.5, R4.w)));\n"
+				"near = min(near, lerp(1e9, distance(WP.xy, R5.xy), step(0.5, R5.w)));\n"
+				"float excite = 1.0 - smoothstep(2200.0, 4000.0, near);\n"
+				"float jump = max(0.0, sin(t)) * 28.0 * excite * I5;\n"
+				"float lean = sin(t * 0.37) * (2.0 + 6.0 * excite) * 0.0175 * max(LP.z, 0.0);\n"
+				"return float3(0.0, lean, jump);"), CMOT_Float3, WaveIn);
+			UMaterialEditingLibrary::ConnectMaterialProperty(Wave, TEXT(""), MP_WorldPositionOffset);
+			auto* Rough = Cast<UMaterialExpressionScalarParameter>(Make(UMaterialExpressionScalarParameter::StaticClass(), -300, 300));
+			Rough->DefaultValue = 0.8f;
+			Rough->ParameterName = TEXT("Roughness");
+			UMaterialEditingLibrary::ConnectMaterialProperty(Rough, TEXT(""), MP_Roughness);
+			UMaterialEditingLibrary::RecompileMaterial(Mat);
+			SaveAsset(Mat);
+		}
+		{
+			// The flags' cloth (ABRRCrowd): built once and waved in the shader along the vertex
+			// normal (the cloth's side). UV0 runs along (U) and down (V) the cloth; UV1 carries the
+			// flag's width and its phase.
+			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Cloth"));
+			Mat->SetShadingModel(MSM_DefaultLit);
+			Mat->TwoSided = true;
+			auto Make = [Mat](UClass* Class, int32 X, int32 Y) { return UMaterialEditingLibrary::CreateMaterialExpression(Mat, Class, X, Y); };
+			UMaterialExpression* Colour = Make(UMaterialExpressionVertexColor::StaticClass(), -700, 0);
+			UMaterialExpressionCustom* Base = MakeCustom(Mat, TEXT(
+				"float3 c = saturate(Srgb.rgb);\n"
+				"return lerp(pow((c + 0.055) / 1.055, 2.4), c / 12.92, step(c, 0.04045));"), CMOT_Float3, { { TEXT("Srgb"), Colour } });
+			UMaterialEditingLibrary::ConnectMaterialProperty(Base, TEXT(""), MP_BaseColor);
+			auto* Along = Cast<UMaterialExpressionTextureCoordinate>(Make(UMaterialExpressionTextureCoordinate::StaticClass(), -700, 200));
+			auto* Seed = Cast<UMaterialExpressionTextureCoordinate>(Make(UMaterialExpressionTextureCoordinate::StaticClass(), -700, 300));
+			Seed->CoordinateIndex = 1;
+			UMaterialExpressionCustom* Wave = MakeCustom(Mat, TEXT(
+				"float wave = sin(UV.x * 7.0 - T * 6.0 + Seed.y) * Seed.x * 0.07 * UV.x\n"
+				"           + sin(UV.x * 13.0 - T * 9.0) * Seed.x * 0.02 * UV.x;\n"
+				"return N * wave;"), CMOT_Float3,
+				{ { TEXT("UV"), Along }, { TEXT("Seed"), Seed }, { TEXT("N"), Make(UMaterialExpressionVertexNormalWS::StaticClass(), -700, 400) },
+				  { TEXT("T"), Make(UMaterialExpressionTime::StaticClass(), -700, 500) } });
+			UMaterialEditingLibrary::ConnectMaterialProperty(Wave, TEXT(""), MP_WorldPositionOffset);
+			auto* Rough = Cast<UMaterialExpressionScalarParameter>(Make(UMaterialExpressionScalarParameter::StaticClass(), -300, 300));
+			Rough->DefaultValue = 0.7f;
+			Rough->ParameterName = TEXT("Roughness");
+			UMaterialEditingLibrary::ConnectMaterialProperty(Rough, TEXT(""), MP_Roughness);
+			UMaterialEditingLibrary::RecompileMaterial(Mat);
+			SaveAsset(Mat);
+		}
+		for (const bool bSnow : { false, true })
+		{
+			// The falling weather (ABRRWeather): a box of drops built once, all four corners of each
+			// quad on the drop's point. The shader falls, drifts and wraps every drop in the box
+			// (4000 x 4000 x 2200, as BRRWeather.cpp builds it) and spreads the corners - rain into
+			// a streak stretched along its fall, snow into a small flake that wanders as it sinks.
+			// UV0 is the corner, UV1 the drop's seed, the vertex colour the drop's own.
+			UMaterial* Mat = NewAsset<UMaterial>(Root / (bSnow ? TEXT("Materials/M_BRR_Snow") : TEXT("Materials/M_BRR_Rain")));
+			Mat->SetShadingModel(MSM_Unlit);
+			Mat->BlendMode = BLEND_Translucent;
+			Mat->TwoSided = true;
+			auto Make = [Mat](UClass* Class, int32 X, int32 Y) { return UMaterialEditingLibrary::CreateMaterialExpression(Mat, Class, X, Y); };
+			UMaterialExpression* Vertex = Make(UMaterialExpressionVertexColor::StaticClass(), -900, 0);
+			UMaterialExpression* Corner = Make(UMaterialExpressionTextureCoordinate::StaticClass(), -900, 150);
+			auto* Seed = Cast<UMaterialExpressionTextureCoordinate>(Make(UMaterialExpressionTextureCoordinate::StaticClass(), -900, 250));
+			Seed->CoordinateIndex = 1;
+			auto* Local = Cast<UMaterialExpressionLocalPosition>(Make(UMaterialExpressionLocalPosition::StaticClass(), -900, 350));
+			Local->LocalOrigin = ELocalPositionOrigin::Primitive;
+			Local->IncludedOffsets = EPositionIncludedOffsets::ExcludeOffsets;
+			auto Axis = [&](float X, float Y, int32 GraphY)
+			{
+				auto* Dir = Cast<UMaterialExpressionConstant3Vector>(Make(UMaterialExpressionConstant3Vector::StaticClass(), -1100, GraphY));
+				Dir->Constant = FLinearColor(X, Y, 0);
+				auto* World = Cast<UMaterialExpressionTransform>(Make(UMaterialExpressionTransform::StaticClass(), -900, GraphY));
+				World->Input.Connect(0, Dir);
+				World->TransformSourceType = TRANSFORMSOURCE_View;
+				World->TransformType = TRANSFORM_World;
+				return World;
+			};
+			TArray<TPair<FName, UMaterialExpression*>> In = {
+				{ TEXT("LP"), Local }, { TEXT("U"), Corner }, { TEXT("S"), Seed },
+				{ TEXT("T"), Make(UMaterialExpressionTime::StaticClass(), -900, 450) },
+				{ TEXT("VX"), MakeCollectionValue(Mat, Collection, TEXT("WeatherVelX"), -900, 550) },
+				{ TEXT("VY"), MakeCollectionValue(Mat, Collection, TEXT("WeatherVelY"), -900, 650) },
+				{ TEXT("F"), MakeCollectionValue(Mat, Collection, TEXT("WeatherFall"), -900, 750) },
+				{ TEXT("R"), Axis(1, 0, 850) } };
+			if (bSnow) In.Add({ TEXT("UP"), Axis(0, 1, 950) });
+			UMaterialExpressionCustom* Wpo = MakeCustom(Mat, bSnow ? TEXT(
+				"float3 p = LP;\n"
+				"p.z = frac((p.z - T * F) / 2200.0) * 2200.0;\n"
+				"p.x = frac((p.x + T * VX + sin(p.z * 0.01 + S.y) * 33.0) / 4000.0) * 4000.0;\n"
+				"p.y = frac((p.y + T * VY + cos(p.z * 0.013 + S.y) * 33.0) / 4000.0) * 4000.0;\n"
+				"float2 c = U.xy * 2.0 - 1.0;\n"
+				"return (p - LP) + R * (c.x * 2.2) + UP * (c.y * 2.2);") : TEXT(
+				"float3 p = LP;\n"
+				"p.z = frac((p.z - T * F) / 2200.0) * 2200.0;\n"
+				"p.x = frac((p.x + T * VX) / 4000.0) * 4000.0;\n"
+				"p.y = frac((p.y + T * VY) / 4000.0) * 4000.0;\n"
+				"float2 c = U.xy * 2.0 - 1.0;\n"
+				"float3 along = normalize(float3(VX, VY, -max(F, 1.0))) * 45.0;\n"
+				"return (p - LP) + R * (c.x * 0.8) + along * c.y;"), CMOT_Float3, In);
+			UMaterialEditingLibrary::ConnectMaterialProperty(Wpo, TEXT(""), MP_WorldPositionOffset);
+			UMaterialExpressionCustom* Opacity = MakeCustomOutputs(Mat, bSnow ? TEXT(
+				"float2 c = U.xy * 2.0 - 1.0;\n"
+				"return saturate(1 - length(c)) * A;") : TEXT(
+				"float2 c = U.xy * 2.0 - 1.0;\n"
+				"return saturate(1 - abs(c.x)) * saturate(1 - c.y * c.y) * A;"), CMOT_Float1,
+				{ MakeTuple(FName(TEXT("A")), Vertex, 4), MakeTuple(FName(TEXT("U")), Corner, 0) }, 0);
+			UMaterialEditingLibrary::ConnectMaterialProperty(Opacity, TEXT(""), MP_Opacity);
+			UMaterialEditingLibrary::ConnectMaterialProperty(MakeCustom(Mat, TEXT("return C.rgb * 1.5;"), CMOT_Float3, { { TEXT("C"), Vertex } }), TEXT(""), MP_EmissiveColor);
+			UMaterialEditingLibrary::RecompileMaterial(Mat);
+			SaveAsset(Mat);
 		}
 		for (const bool bHD : { false, true })
 		{

@@ -589,9 +589,20 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 			const FRotationMatrix View(RaceCamera->GetActorRotation());
 			const bool bRemasteredNow = Look && Look->IsRemastered();
 			if (Dust) Dust->Update(Drawn, View.GetUnitAxis(EAxis::Y), View.GetUnitAxis(EAxis::Z), DeltaSeconds, bRemasteredNow);
-			if (Weather) Weather->Update(RaceCamera->GetActorLocation(), View.GetUnitAxis(EAxis::Y), View.GetUnitAxis(EAxis::Z), DeltaSeconds, bRemasteredNow);
+			if (Weather) Weather->Update(RaceCamera->GetActorLocation(), bRemasteredNow);
 		}
-		if (Crowd) Crowd->Update(Drawn, GetWorld()->GetTimeSeconds(), Look && Look->IsRemastered());
+		if (Crowd)
+		{
+			// The cheering runs in the shader: it reads the racers from MPC_BRR (M_BRR_Crowd).
+			const bool bRemastered = Look && Look->IsRemastered();
+			if (bRemastered && DrawRange)
+				for (int32 R = 0; R < 6; ++R)
+				{
+					const FLinearColor At = R < Drawn.Num() ? FLinearColor(Drawn[R].GetLocation().X, Drawn[R].GetLocation().Y, Drawn[R].GetLocation().Z, 1.f) : FLinearColor(0, 0, 0, 0);
+					UKismetMaterialLibrary::SetVectorParameterValue(GetWorld(), DrawRange, FName(*FString::Printf(TEXT("Racer%d"), R)), At);
+				}
+			Crowd->Update(bRemastered);
+		}
 	}
 	for (int32 R = 0; R < Ghosts.Num(); ++R)
 	{

@@ -1,10 +1,12 @@
 #include "BRRWeather.h"
 
 #include "BRRLook.h"
+#include "Kismet/KismetMaterialLibrary.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "HAL/IConsoleManager.h"
 #include "Materials/MaterialInterface.h"
+#include "Materials/MaterialParameterCollection.h"
 #include "ProceduralMeshComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBRRWeather, Log, All);
@@ -61,9 +63,50 @@ void ABRRWeather::Build(const FString& Level, ABRRLook* Look)
 	Wind = FVector(FMath::Cos(WindAngle), FMath::Sin(WindAngle), 0) * WindSpeed;
 	if (Look) Look->SetMood(SunElevation, Sun, Mist);
 
-	Drops.Reset();
-	const int32 Count = Kind == EFall::Rain ? int32(3500 * Strength) + 400 : Kind == EFall::Snow ? int32(2500 * Strength) + 300 : 0;
-	for (int32 I = 0; I < Count; ++I) Drops.Add(FVector(Random.FRand() * BoxSize, Random.FRand() * BoxSize, Random.FRand() * BoxHeight));
+	// The box of drops, built once: all four corners of a quad sit on the drop's point, and the
+	// material (M_BRR_Rain / M_BRR_Snow) falls, wraps and spreads them in the shader. The only
+	// per-frame work left is carrying the actor along with the camera.
+	const bool bRain = Kind == EFall::Rain;
+	const int32 Count = bRain ? int32(3500 * Strength) + 400 : Kind == EFall::Snow ? int32(2500 * Strength) + 300 : 0;
+	if (Count > 0)
+	{
+		Material = LoadObject<UMaterialInterface>(nullptr, bRain ? TEXT("/Game/BRR/Materials/M_BRR_Rain.M_BRR_Rain") : TEXT("/Game/BRR/Materials/M_BRR_Snow.M_BRR_Snow"), nullptr, LOAD_NoWarn | LOAD_Quiet);
+		UMaterialParameterCollection* Mpc = LoadObject<UMaterialParameterCollection>(nullptr, TEXT("/Game/BRR/Materials/MPC_BRR.MPC_BRR"), nullptr, LOAD_NoWarn | LOAD_Quiet);
+		if (!Material || !Mpc)
+		{
+			UE_LOG(LogBRRWeather, Warning, TEXT("No %s or MPC weather speeds: re-import a level; the sky stays dry"), bRain ? TEXT("M_BRR_Rain") : TEXT("M_BRR_Snow"));
+		}
+		else
+		{
+			const FVector Velocity = Wind * (bRain ? 0.6f : 1.f);
+			UKismetMaterialLibrary::SetScalarParameterValue(GetWorld(), Mpc, TEXT("WeatherVelX"), Velocity.X);
+			UKismetMaterialLibrary::SetScalarParameterValue(GetWorld(), Mpc, TEXT("WeatherVelY"), Velocity.Y);
+			UKismetMaterialLibrary::SetScalarParameterValue(GetWorld(), Mpc, TEXT("WeatherFall"), bRain ? 900.f : 110.f);
+			TArray<FVector> Positions;
+			TArray<int32> Triangles;
+			TArray<FVector> Normals;
+			TArray<FVector2D> Corners, Seeds, Empty;
+			TArray<FColor> Colours;
+			Positions.Reserve(Count * 4);
+			const FColor C = bRain ? FColor(190, 200, 210, uint8(60 + 60 * Strength)) : FColor(250, 252, 255, 210);
+			for (int32 I = 0; I < Count; ++I)
+			{
+				const FVector D(Random.FRand() * BoxSize, Random.FRand() * BoxSize, Random.FRand() * BoxHeight);
+				const int32 Base = Positions.Num();
+				Positions.Append({ D, D, D, D });
+				Corners.Append({ FVector2D(0, 0), FVector2D(1, 0), FVector2D(0, 1), FVector2D(1, 1) });
+				const FVector2D Id(I % 50, I * 0.37f);
+				Seeds.Append({ Id, Id, Id, Id });
+				Colours.Append({ C, C, C, C });
+				Triangles.Append({ Base, Base + 1, Base + 2, Base + 1, Base + 3, Base + 2 });
+			}
+			Normals.Init(FVector::UpVector, Positions.Num());
+			Fall->CreateMeshSection(0, Positions, Triangles, Normals, Corners, Seeds, Empty, Empty, Colours, TArray<FProcMeshTangent>(), false);
+			Fall->SetMaterial(0, Material);
+			Fall->SetVisibleInRayTracing(false);
+			Fall->BoundsScale = 1.5f; // the shader moves drops anywhere in the box
+		}
+	}
 	UE_LOG(LogBRRWeather, Display, TEXT("%s: %s"), *Level, *Describe());
 }
 
@@ -73,45 +116,15 @@ FString ABRRWeather::Describe() const
 	return FString::Printf(TEXT("%s %.0f%%, sun %.0f degrees up, mist %.3f"), What, Strength * 100.f, SunElevation, Mist);
 }
 
-void ABRRWeather::Update(const FVector& CameraLocation, const FVector& CameraRight, const FVector& CameraUp, float DeltaSeconds, bool bOn)
+void ABRRWeather::Update(const FVector& CameraLocation, bool bOn)
 {
-	if (!bOn || Kind == EFall::None || !Material || Drops.IsEmpty())
+	static const IConsoleVariable* Effects = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.Effects"));
+	const bool bShow = bOn && Fall->GetNumSections() > 0 && (!Effects || Effects->GetInt() != 0);
+	if (bShow != bShown)
 	{
-		if (Fall->GetNumSections() > 0) Fall->ClearAllMeshSections();
-		return;
+		bShown = bShow;
+		SetActorHiddenInGame(!bShow);
 	}
-	const float Dt = FMath::Min(DeltaSeconds, 0.1f);
-	const bool bRain = Kind == EFall::Rain;
-	const FVector Velocity = (bRain ? FVector(0, 0, -900.f) : FVector(0, 0, -110.f)) + Wind * (bRain ? 0.6f : 1.f);
-	const FVector Corner = CameraLocation - FVector(BoxSize * 0.5f, BoxSize * 0.5f, BoxHeight * 0.6f);
-	TArray<FVector> Positions;
-	TArray<int32> Triangles;
-	TArray<FVector2D> UVs;
-	TArray<FColor> Colours;
-	Positions.Reserve(Drops.Num() * 4);
-	const FColor C = bRain ? FColor(190, 200, 210, uint8(60 + 60 * Strength)) : FColor(250, 252, 255, 210);
-	const FVector Along = bRain ? -Velocity.GetSafeNormal() * 45.f : CameraUp * 2.2f;
-	const FVector Across = bRain ? CameraRight * 0.8f : CameraRight * 2.2f;
-	for (int32 I = 0; I < Drops.Num(); ++I)
-	{
-		FVector& D = Drops[I];
-		D += Velocity * Dt;
-		if (!bRain) D += FVector(FMath::Sin(D.Z * 0.01f + I) * 30.f, FMath::Cos(D.Z * 0.013f + I) * 30.f, 0) * Dt; // flakes wander
-		// Wrapped in the box, which travels with the camera.
-		FVector W = Corner + D;
-		W.X = Corner.X + FMath::Fmod(FMath::Fmod(W.X - Corner.X, BoxSize) + BoxSize, BoxSize);
-		W.Y = Corner.Y + FMath::Fmod(FMath::Fmod(W.Y - Corner.Y, BoxSize) + BoxSize, BoxSize);
-		W.Z = Corner.Z + FMath::Fmod(FMath::Fmod(W.Z - Corner.Z, BoxHeight) + BoxHeight, BoxHeight);
-		D = W - Corner;
-		const int32 Base = Positions.Num();
-		Positions.Append({ W - Across - Along, W + Across - Along, W - Across + Along, W + Across + Along });
-		const double Seed = double(I % 50);
-		UVs.Append({ FVector2D(Seed, 0), FVector2D(Seed + 1, 0), FVector2D(Seed, 1), FVector2D(Seed + 1, 1) });
-		Colours.Append({ C, C, C, C });
-		Triangles.Append({ Base, Base + 1, Base + 2, Base + 1, Base + 3, Base + 2 });
-	}
-	TArray<FVector> Normals;
-	Normals.Init(FVector::UpVector, Positions.Num());
-	Fall->CreateMeshSection(0, Positions, Triangles, Normals, UVs, Colours, TArray<FProcMeshTangent>(), false);
-	Fall->SetMaterial(0, Material);
+	// The box rides with the camera; the drops fall and wrap inside it, in the shader.
+	if (bShow) SetActorLocation(CameraLocation - FVector(BoxSize * 0.5f, BoxSize * 0.5f, BoxHeight * 0.6f));
 }

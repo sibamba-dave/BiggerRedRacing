@@ -23,14 +23,20 @@ ABRRCrowd::ABRRCrowd()
 	Cloth = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("Cloth"));
 	Cloth->SetupAttachment(RootComponent);
 	Cloth->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Cloth->SetCastShadow(false);
+	Cloth->SetVisibleInRayTracing(false);
+	Cloth->BoundsScale = 2.f; // the shader's wave swings the cloth outside its still-build bounds
 	PrimaryActorTick.bCanEverTick = false;
 	Tags.Add(TEXT("BRRRemasterOnly"));
 }
 
 void ABRRCrowd::Build(const FBRRWorld& World, const TArray<FVector>& Lines)
 {
-	ClothMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BRR/Materials/M_BRR_Scatter.M_BRR_Scatter"), nullptr, LOAD_NoWarn | LOAD_Quiet);
-	Flags = BRR::FindFlags(World);
+	CrowdMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BRR/Materials/M_BRR_Crowd.M_BRR_Crowd"), nullptr, LOAD_NoWarn | LOAD_Quiet);
+	ClothMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BRR/Materials/M_BRR_Cloth.M_BRR_Cloth"), nullptr, LOAD_NoWarn | LOAD_Quiet);
+	if (!ClothMaterial) ClothMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/BRR/Materials/M_BRR_Scatter.M_BRR_Scatter"), nullptr, LOAD_NoWarn | LOAD_Quiet);
+	if (!CrowdMaterial) UE_LOG(LogBRRCrowd, Warning, TEXT("No M_BRR_Crowd: re-import a level; the crowd will stand still"));
+	const TArray<BRR::FBRRFlag> Flags = BRR::FindFlags(World);
 	if (CVarCrowds.GetValueOnGameThread() == 0) return;
 
 	for (int32 V = 0; V < BRR::SpectatorVariants; ++V)
@@ -41,8 +47,10 @@ void ABRRCrowd::Build(const FBRRWorld& World, const TArray<FVector>& Lines)
 			C->SetupAttachment(RootComponent);
 			C->SetStaticMesh(Mesh);
 			C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			C->NumCustomDataFloats = 3;
+			C->NumCustomDataFloats = 6; // 0-2 tint, 3 phase, 4 pace, 5 jump share
 			C->SetCullDistances(0, 25000);
+			C->SetCastShadow(false);
+			if (CrowdMaterial) C->SetMaterial(0, CrowdMaterial);
 			C->RegisterComponent();
 			Parts.Add(C);
 		}
@@ -103,85 +111,74 @@ void ABRRCrowd::Build(const FBRRWorld& World, const TArray<FVector>& Lines)
 				bool bOk = false;
 				const double Z = Ground(Spot.X, Spot.Y, bOk);
 				if (!bOk || NearRoute(Spot)) continue;
-				FPerson& P = People.AddDefaulted_GetRef();
 				const FVector To = (Anchor.Location - Spot).GetSafeNormal2D();
-				P.Stand = FTransform(FRotator(0, To.Rotation().Yaw + Rnd.FRandRange(-30.f, 30.f), 0), FVector(Spot.X, Spot.Y, Z - 2.0), FVector(Rnd.FRandRange(0.92f, 1.1f)));
-				P.Variant = Rnd.RandRange(0, BRR::SpectatorVariants - 1);
-				P.Phase = Rnd.FRandRange(0.f, 2.f * PI);
-				P.Pace = Rnd.FRandRange(0.8f, 1.4f);
-				UInstancedStaticMeshComponent* Shirt = Parts[P.Variant * 2];
-				UInstancedStaticMeshComponent* Rest = Parts[P.Variant * 2 + 1];
-				P.Instance = Shirt->AddInstance(P.Stand, true);
-				Rest->AddInstance(P.Stand, true);
+				const FTransform Stand(FRotator(0, To.Rotation().Yaw + Rnd.FRandRange(-30.f, 30.f), 0), FVector(Spot.X, Spot.Y, Z - 2.0), FVector(Rnd.FRandRange(0.92f, 1.1f)));
+				const int32 Variant = Rnd.RandRange(0, BRR::SpectatorVariants - 1);
+				const float Phase = Rnd.FRandRange(0.f, 2.f * PI), Pace = Rnd.FRandRange(0.8f, 1.4f);
+				const float Jump = Variant == 3 ? 0.f : 1.f; // the sitting variant stays seated
+				UInstancedStaticMeshComponent* Shirt = Parts[Variant * 2];
+				UInstancedStaticMeshComponent* Rest = Parts[Variant * 2 + 1];
+				const int32 Instance = Shirt->AddInstance(Stand, true);
+				Rest->AddInstance(Stand, true);
 				const FLinearColor Tint = Shirts[Rnd.RandRange(0, UE_ARRAY_COUNT(Shirts) - 1)] * 2.f;
-				Shirt->SetCustomData(P.Instance, { Tint.R, Tint.G, Tint.B });
+				Shirt->SetCustomData(Instance, { Tint.R, Tint.G, Tint.B, Phase, Pace, Jump });
 				const float Skin = Rnd.FRandRange(0.8f, 1.15f);
-				Rest->SetCustomData(P.Instance, { Skin, Skin, Skin });
+				Rest->SetCustomData(Instance, { Skin, Skin, Skin, Phase, Pace, Jump });
+				++PeopleCount;
 			}
 		}
 	}
-	UE_LOG(LogBRRCrowd, Display, TEXT("%d spectators, %d flags"), People.Num(), Flags.Num());
+
+	// Once, after the build: the instances' custom data reaches the GPU (SetCustomData does not
+	// dirty the render state itself; nothing per-frame will).
+	for (UInstancedStaticMeshComponent* C : Parts) C->MarkRenderStateDirty();
+
+	// The flags: cloth built once hanging still; the shader runs the wave down it. UV1 carries
+	// each flag's width (the wave's reach) and its index (its phase).
+	if (!Flags.IsEmpty())
+	{
+		TArray<FVector> Positions;
+		TArray<int32> Triangles;
+		TArray<FVector> Normals;
+		TArray<FVector2D> UVs, Seeds, Empty;
+		TArray<FColor> Colours;
+		constexpr int32 NX = 10, NY = 6;
+		for (int32 F = 0; F < Flags.Num(); ++F)
+		{
+			const BRR::FBRRFlag& Flag = Flags[F];
+			const FVector Out = FVector(Flag.Out).GetSafeNormal();
+			const FVector Side = FVector::CrossProduct(Out, FVector::UpVector).GetSafeNormal();
+			const FColor C(FMath::Min(Flag.Colour.R * 2, 255), FMath::Min(Flag.Colour.G * 2, 255), FMath::Min(Flag.Colour.B * 2, 255));
+			const int32 Base = Positions.Num();
+			for (int32 Y = 0; Y <= NY; ++Y)
+				for (int32 X = 0; X <= NX; ++X)
+				{
+					const float U = float(X) / NX, V = float(Y) / NY;
+					Positions.Add(FVector(Flag.Top) + Out * (U * Flag.Width) - FVector(0, 0, V * Flag.Height + U * U * Flag.Height * 0.08f));
+					Normals.Add(Side);
+					UVs.Add(FVector2D(U, V));
+					Seeds.Add(FVector2D(Flag.Width, F));
+					Colours.Add((X / 2 + Y / 2) % 2 ? C : FColor(C.R * 9 / 10, C.G * 9 / 10, C.B * 9 / 10));
+				}
+			for (int32 Y = 0; Y < NY; ++Y)
+				for (int32 X = 0; X < NX; ++X)
+				{
+					const int32 A = Base + Y * (NX + 1) + X;
+					Triangles.Append({ A, A + 1, A + NX + 1, A + 1, A + NX + 2, A + NX + 1 });
+				}
+		}
+		Cloth->CreateMeshSection(0, Positions, Triangles, Normals, UVs, Seeds, Empty, Empty, Colours, TArray<FProcMeshTangent>(), false);
+		if (ClothMaterial) Cloth->SetMaterial(0, ClothMaterial);
+	}
+	UE_LOG(LogBRRCrowd, Display, TEXT("%d spectators, %d flags"), PeopleCount, Flags.Num());
 }
 
-void ABRRCrowd::Update(const TArray<FTransform>& Racers, double Seconds, bool bOn)
+void ABRRCrowd::Update(bool bOn)
 {
+	bOn = bOn && CVarCrowds.GetValueOnGameThread() != 0;
 	if (bOn != bShown)
 	{
 		bShown = bOn;
 		SetActorHiddenInGame(!bOn);
 	}
-	if (!bOn) return;
-	// The crowd: everybody bobbing a little, jumping up as a car comes near.
-	for (FPerson& P : People)
-	{
-		float Near = 1e9f;
-		for (const FTransform& R : Racers) Near = FMath::Min(Near, float(FVector::Dist2D(R.GetLocation(), P.Stand.GetLocation())));
-		const float Want = Near < 4000.f ? 1.f : 0.f;
-		P.Excitement = FMath::Lerp(P.Excitement, Want, Want > P.Excitement ? 0.15f : 0.02f);
-		const float T = float(Seconds) * P.Pace * 6.f + P.Phase;
-		const bool bSitting = P.Variant == 3;
-		const float Jump = bSitting ? 0.f : FMath::Max(0.f, FMath::Sin(T)) * 28.f * P.Excitement;
-		const float Sway = FMath::Sin(T * 0.37f) * (2.f + 6.f * P.Excitement);
-		FTransform Now = P.Stand;
-		Now.AddToTranslation(FVector(0, 0, Jump));
-		Now.SetRotation(P.Stand.GetRotation() * FQuat(FVector::ForwardVector, FMath::DegreesToRadians(Sway)));
-		Parts[P.Variant * 2]->UpdateInstanceTransform(P.Instance, Now, true, false, true);
-		Parts[P.Variant * 2 + 1]->UpdateInstanceTransform(P.Instance, Now, true, false, true);
-	}
-	for (UInstancedStaticMeshComponent* C : Parts) C->MarkRenderStateDirty();
-
-	// The flags: cloth flying off the pole, a wave running down it.
-	if (Flags.IsEmpty() || CVarCrowds.GetValueOnGameThread() == 0) return;
-	TArray<FVector> Positions;
-	TArray<int32> Triangles;
-	TArray<FVector> Normals;
-	TArray<FVector2D> UVs;
-	TArray<FColor> Colours;
-	constexpr int32 NX = 10, NY = 6;
-	for (int32 F = 0; F < Flags.Num(); ++F)
-	{
-		const BRR::FBRRFlag& Flag = Flags[F];
-		const FVector Out = FVector(Flag.Out).GetSafeNormal();
-		const FVector Side = FVector::CrossProduct(Out, FVector::UpVector).GetSafeNormal();
-		const FColor C(FMath::Min(Flag.Colour.R * 2, 255), FMath::Min(Flag.Colour.G * 2, 255), FMath::Min(Flag.Colour.B * 2, 255));
-		const int32 Base = Positions.Num();
-		for (int32 Y = 0; Y <= NY; ++Y)
-			for (int32 X = 0; X <= NX; ++X)
-			{
-				const float U = float(X) / NX, V = float(Y) / NY;
-				const float Wave = FMath::Sin(U * 7.f - float(Seconds) * 6.f + F) * Flag.Width * 0.07f * U + FMath::Sin(U * 13.f - float(Seconds) * 9.f) * Flag.Width * 0.02f * U;
-				Positions.Add(FVector(Flag.Top) + Out * (U * Flag.Width) - FVector(0, 0, V * Flag.Height + U * U * Flag.Height * 0.08f) + Side * Wave);
-				Normals.Add(Side);
-				UVs.Add(FVector2D(U, V));
-				Colours.Add((X / 2 + Y / 2) % 2 ? C : FColor(C.R * 9 / 10, C.G * 9 / 10, C.B * 9 / 10));
-			}
-		for (int32 Y = 0; Y < NY; ++Y)
-			for (int32 X = 0; X < NX; ++X)
-			{
-				const int32 A = Base + Y * (NX + 1) + X;
-				Triangles.Append({ A, A + 1, A + NX + 1, A + 1, A + NX + 2, A + NX + 1 });
-			}
-	}
-	Cloth->CreateMeshSection(0, Positions, Triangles, Normals, UVs, Colours, TArray<FProcMeshTangent>(), false);
-	if (ClothMaterial) Cloth->SetMaterial(0, ClothMaterial);
 }

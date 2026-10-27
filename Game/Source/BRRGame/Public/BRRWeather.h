@@ -4,8 +4,10 @@
 // on the moon - at a strength of its own. brr.Weather: 0 always a clear day, 1 drawn (the default),
 // 2 always foul.
 //
-// The rain and snow are a box of streaks and flakes about the camera, on the dust's soft material
-// (M_BRR_Haze). Hidden in the classic look (tagged BRRRemasterOnly), which keeps the original's sky.
+// The rain and snow are a box of streaks and flakes about the camera, built once and animated
+// entirely in the shader (M_BRR_Rain / M_BRR_Snow, speeds in MPC_BRR): each frame only carries the
+// box along with the camera. Hidden in the classic look (tagged BRRRemasterOnly), which keeps the
+// original's sky. brr.Effects 0 hides the fall (as it does the wakes and dust).
 #pragma once
 
 #include "CoreMinimal.h"
@@ -28,8 +30,8 @@ public:
 	// Draws the race's weather for Level and sets the sun and the mist (ABRRLook::SetMood).
 	void Build(const FString& Level, ABRRLook* Look);
 
-	// Each frame: the falling rain or snow about the camera.
-	void Update(const FVector& CameraLocation, const FVector& CameraRight, const FVector& CameraUp, float DeltaSeconds, bool bOn);
+	// Each frame: carries the box of falling rain or snow along with the camera.
+	void Update(const FVector& CameraLocation, bool bOn);
 
 	// What was drawn, for the log and the menus.
 	FString Describe() const;
@@ -46,6 +48,6 @@ private:
 	float SunElevation = 35;   // degrees
 	float Mist = 0;            // fog density
 	FVector Wind = FVector::ZeroVector; // cm/s
-	TArray<FVector> Drops;     // in the box about the camera, relative to its corner
 	FRandomStream Random;
+	bool bShown = true;
 };

@@ -3,6 +3,9 @@
 // checkpoints, off the track and out of the water, facing the racing and jumping up as the cars come
 // by; and the flags on their poles, flying in the wind (BRR::FindFlags; the props give the poles).
 // Its people are the import's (SM_BRR_Fan<n>_Shirt / _Rest, BRR::MakeSpectator), each shirt tinted.
+// Everything animates in the shader (M_BRR_Crowd, M_BRR_Cloth): the build writes each person's
+// phase and pace as instance data, the race writes the racers' positions into MPC_BRR once a frame,
+// and after that no instance or vertex is touched again.
 // brr.Crowds 0 leaves the stands empty. Hidden in the classic look (tagged BRRRemasterOnly).
 #pragma once
 
@@ -26,9 +29,9 @@ public:
 	ABRRCrowd();
 	// Lines: where the cars go (the ghosts' routes): nobody stands within a lane's reach of them.
 	void Build(const FBRRWorld& World, const TArray<FVector>& Lines);
-	// Each frame: the racers' places (for the cheering), the wind, the clock.
-	void Update(const TArray<FTransform>& Racers, double Seconds, bool bOn);
-	int32 NumPeople() const { return People.Num(); }
+	// Each frame: only shows or hides with the look; the cheering runs in the shader.
+	void Update(bool bOn);
+	int32 NumPeople() const { return PeopleCount; }
 
 private:
 	UPROPERTY()
@@ -36,17 +39,10 @@ private:
 	UPROPERTY()
 	TObjectPtr<UProceduralMeshComponent> Cloth;
 	UPROPERTY()
+	TObjectPtr<UMaterialInterface> CrowdMaterial;
+	UPROPERTY()
 	TObjectPtr<UMaterialInterface> ClothMaterial;
 
-	struct FPerson
-	{
-		FTransform Stand;
-		int32 Variant = 0;
-		int32 Instance = 0;   // in its variant's two components
-		float Phase = 0, Pace = 1;
-		float Excitement = 0;
-	};
-	TArray<FPerson> People;
-	TArray<BRR::FBRRFlag> Flags;
+	int32 PeopleCount = 0;
 	bool bShown = true;
 };
