@@ -11,7 +11,10 @@
 //                brr.PathTracing 1 switches the path tracer on for stills.
 //
 // Materials carry both (MPC_BRR.Remaster); the rest this actor spawns and the renderer settings
-// it sets.
+// it sets. The remastered look's own geometry is shown and hidden here too: actors tagged
+// BRRRemasterOnly (the refined terrain, the scattered detail) and BRRClassicOnly (the original's
+// terrain, which stays solid while hidden), and the _HD version of any drawn-only mesh that has
+// one (the round wheels).
 #pragma once
 
 #include "CoreMinimal.h"
@@ -26,6 +29,7 @@ class ASkyAtmosphere;
 class ASkyLight;
 class AVolumetricCloud;
 class UMaterialParameterCollection;
+class UStaticMesh;
 
 UCLASS()
 class BRRGAME_API ABRRLook : public AActor
@@ -66,4 +70,9 @@ private:
 	TObjectPtr<AExponentialHeightFog> Fog;
 	UPROPERTY()
 	TObjectPtr<APostProcessVolume> Post;
+
+	// Each mesh's other look's version: the original's <mesh>_HD, and back (null: none).
+	UPROPERTY()
+	TMap<TObjectPtr<UStaticMesh>, TObjectPtr<UStaticMesh>> OtherLookMesh;
+	UStaticMesh* MeshFor(UStaticMesh* Mesh, bool bInRemastered);
 };

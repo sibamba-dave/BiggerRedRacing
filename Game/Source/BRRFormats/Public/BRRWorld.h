@@ -66,6 +66,7 @@ struct FBRRVertex
 	FVector2f UV;       // 0..1 within the section's atlas
 	FColor Color;       // flat palette colour (used when the section has no atlas)
 	uint8 Land = 0xFF;  // terrain only: the surface type under the triangle (0-7, FBRRHandlingMetrics::SurfaceName)
+	FVector3f Normal = FVector3f::ZeroVector; // smooth-shaded (BRR::SmoothNormals); zero: the face's own
 };
 
 // Triangle list sharing one atlas page (or none) and one sidedness.
@@ -234,6 +235,25 @@ struct BRRFORMATS_API FBRRWorld
 
 	// Terrain height (UE Z, cm) under a UE X/Y location, bilinear over MAP.MPH.
 	double GroundHeightAt(double UEX, double UEY) const;
+
+	// The remastered look's terrain (BRRRefine.h): how far it lies above the original's at a UE
+	// X/Y, in cm. A Catmull-Rom surface through the physics' own heights at the cell corners,
+	// less the bilinear one through them - nothing at a corner, a curve between - clamped to
+	// RefineClamp and eased to nothing on the track, the ramps and the liquids: the wheels, the
+	// ground decals and the water keep the original's surface exactly.
+	double RefinedOffsetAt(double UEX, double UEY) const;
+	// The terrain subdivided Divisions x Divisions per triangle onto that surface, smooth-shaded.
+	FBRRMesh RefinedTerrain(int32 Divisions) const;
+	static constexpr double RefineClamp = 60.0;
+	TArray<float> CornerZ;       // the physics' height (UE cm) at each cell corner, MapHeight rows of MapWidth (Load)
+	TArray<float> CornerWeight;  // how much of the refinement each corner takes, 0..1 (Load)
+
+	// How deep the remastered look's water is at a UE X/Y, in cm: nothing at the shore, deeper by
+	// WaterDepthStep per cell further out, to WaterDepthMax (the original's water has no bed).
+	double WaterDepthAt(double UEX, double UEY) const;
+	static constexpr double WaterDepthStep = 150.0;
+	static constexpr double WaterDepthMax = 450.0;
+	TArray<float> CornerWaterDepth; // per corner (Load)
 
 	// What a terrain surface type (FBRRVertex::Land) is on this level. The original has no such
 	// notion - water is a surface the boats race on, or the slippery one the cars slide into - so

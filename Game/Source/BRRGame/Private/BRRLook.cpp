@@ -10,6 +10,7 @@
 #include "Engine/ExponentialHeightFog.h"
 #include "Engine/PostProcessVolume.h"
 #include "Engine/SkyLight.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -96,6 +97,20 @@ void ABRRLook::Build(const FVector& SunDirection, UMaterialParameterCollection* 
 	P.VignetteIntensity = 0.25f;
 }
 
+UStaticMesh* ABRRLook::MeshFor(UStaticMesh* Mesh, bool bInRemastered)
+{
+	const bool bIsHD = Mesh->GetName().EndsWith(TEXT("_HD"));
+	if (bIsHD == bInRemastered) return nullptr;
+	if (const TObjectPtr<UStaticMesh>* Known = OtherLookMesh.Find(Mesh)) return *Known;
+	const FString Package = Mesh->GetOutermost()->GetName(), Name = Mesh->GetName();
+	const FString Path = bIsHD ? FString::Printf(TEXT("%s.%s"), *Package.LeftChop(3), *Name.LeftChop(3))
+		: FString::Printf(TEXT("%s_HD.%s_HD"), *Package, *Name);
+	UStaticMesh* Other = LoadObject<UStaticMesh>(nullptr, *Path, nullptr, LOAD_NoWarn | LOAD_Quiet);
+	OtherLookMesh.Add(Mesh, Other);
+	if (Other) OtherLookMesh.Add(Other, Mesh);
+	return Other;
+}
+
 void ABRRLook::Apply(bool bInRemastered, bool bInPathTracing, bool bInFrameGeneration, bool bInNativeResolution)
 {
 	bInPathTracing = bInRemastered && bInPathTracing;
@@ -132,6 +147,14 @@ void ABRRLook::Apply(bool bInRemastered, bool bInPathTracing, bool bInFrameGener
 		if (It->ActorHasTag(TEXT("BRRClassicLook")))
 		{
 			if (APostProcessVolume* Classic = Cast<APostProcessVolume>(*It)) Classic->BlendWeight = bRemastered ? 0.f : 1.f;
+		}
+		if (It->ActorHasTag(TEXT("BRRRemasterOnly"))) It->SetActorHiddenInGame(!bRemastered);
+		if (It->ActorHasTag(TEXT("BRRClassicOnly"))) It->SetActorHiddenInGame(bRemastered);
+		TInlineComponentArray<UStaticMeshComponent*> Meshes(*It);
+		for (UStaticMeshComponent* M : Meshes)
+		{
+			if (M->IsCollisionEnabled() || !M->GetStaticMesh()) continue;
+			if (UStaticMesh* Other = MeshFor(M->GetStaticMesh(), bRemastered)) M->SetStaticMesh(Other);
 		}
 	}
 	if (bRemastered && SkyLight) SkyLight->GetLightComponent()->RecaptureSky();

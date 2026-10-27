@@ -14,6 +14,7 @@
 #include "BRRLook.h"
 #include "BRRPhoto.h"
 #include "BRRSprites.h"
+#include "BRRScatter.h"
 #include "BRRWrecks.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Camera/CameraActor.h"
@@ -248,6 +249,7 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 	Particles = GetWorld()->SpawnActor<ABRRParticles>();
 	Race->SetParticleAtlasBase(World.ParticleAtlasBase);
 	Wrecks->Build(World.Wrecks, LevelName);
+	GetWorld()->SpawnActor<ABRRScatter>()->Build(World);
 	DrawRange = LoadObject<UMaterialParameterCollection>(nullptr, TEXT("/Game/BRR/Materials/MPC_BRR.MPC_BRR"));
 	Look = GetWorld()->SpawnActor<ABRRLook>();
 	Look->Build(World.SunDirection, DrawRange);

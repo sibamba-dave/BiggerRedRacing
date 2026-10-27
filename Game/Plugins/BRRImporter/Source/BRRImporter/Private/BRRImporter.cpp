@@ -7,6 +7,10 @@
 #include "Engine/StaticMeshActor.h"
 #include "Engine/Texture2D.h"
 #include "Engine/Texture2DArray.h"
+#include "BRRRefine.h"
+#include "Materials/MaterialExpressionPerInstanceCustomData.h"
+#include "Materials/MaterialExpressionSingleLayerWaterMaterialOutput.h"
+#include "Materials/MaterialExpressionVectorParameter.h"
 #include "Materials/MaterialExpressionPixelDepth.h"
 #include "Materials/MaterialExpressionTextureCoordinate.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2DArray.h"
@@ -155,6 +159,9 @@ namespace
 		UMaterial* Display = nullptr;  // replaces the tonemapper: scene colour out as sRGB, untouched
 		UTexture2D* FlatDetail = nullptr; // a page's normal/roughness map where it has no upscale: flat, average
 		UTexture2DArray* Ground = nullptr; // the ground materials' detail, a slice per EBRRGround after None
+		UMaterial* Scatter = nullptr;      // the scattered ground detail: the instance's colour, lit (remastered only)
+		UMaterial* TexturedHD = nullptr;   // Textured, tessellated and displaced: the refined terrain's
+		UMaterial* Water = nullptr;        // the remastered look's open water (single layer water)
 	};
 
 	// The ground materials Tools/fetch_ground.py packs (normal X/Y, roughness, brightness), one
@@ -275,7 +282,7 @@ namespace
 	// fading out by 160 m, where its tiling would show. Returns the colour (float3) and the
 	// detail (float4) to hand ConnectLook in place of the ones given.
 	TPair<UMaterialExpression*, UMaterialExpression*> AddGround(UMaterial* Mat, UMaterialParameterCollection* Collection, UTexture2DArray* Ground,
-		UMaterialExpression* Colour, int32 ColourOutput, UMaterialExpression* Detail)
+		UMaterialExpression* Colour, int32 ColourOutput, UMaterialExpression* Detail, bool bDisplace = false)
 	{
 		auto Make = [Mat](UClass* Class, int32 X, int32 Y) { return UMaterialEditingLibrary::CreateMaterialExpression(Mat, Class, X, Y); };
 		auto* Kind = Cast<UMaterialExpressionTextureCoordinate>(Make(UMaterialExpressionTextureCoordinate::StaticClass(), -1400, 1500));
@@ -321,7 +328,40 @@ namespace
 			"float3 g = normalize(lerp(float3(0, 0, 1), normalize(G), on * 0.8));\n"
 			"float3 n = normalize(float3(D.xy + g.xy, D.z * g.z));\n"
 			"return float4(n, D.w + on * (T.b - 0.75) * 0.8);"), CMOT_Float4, DetailInputs, 1800);
+		if (bDisplace)
+		{
+			// Nanite tessellation's displacement (0.5 is none): the material's brightness as its
+			// height, the pebbles and clods standing up out of the ground.
+			UMaterialEditingLibrary::ConnectMaterialProperty(MakeCustomOutputs(Mat, TEXT("return 0.5 + ((K.x > 0.5 && R > 0.5) ? (T.a - 0.5) : 0);"), CMOT_Float1,
+				{ MakeTuple(FName(TEXT("K")), (UMaterialExpression*)Kind, 0), MakeTuple(FName(TEXT("R")), Remaster, 0), MakeTuple(FName(TEXT("T")), (UMaterialExpression*)Sample, 5) }, 1900),
+				TEXT(""), MP_Displacement);
+		}
 		return { NewColour, NewDetail };
+	}
+
+	// The ripples: four travelling waves, a few metres long, summed into a world-space slope and
+	// handed to the material in tangent space (the atlas tiles turn and mirror from cell to cell,
+	// so the waves are laid out in the world, not in UV).
+	UMaterialExpression* MakeRipples(UMaterial* Mat)
+	{
+		auto Make = [Mat](UClass* Class, int32 X, int32 Y) { return UMaterialEditingLibrary::CreateMaterialExpression(Mat, Class, X, Y); };
+		UMaterialExpression* WorldPos = Make(UMaterialExpressionWorldPosition::StaticClass(), -1100, 800);
+		UMaterialExpression* Time = Make(UMaterialExpressionTime::StaticClass(), -1100, 900);
+		UMaterialExpressionCustom* Ripples = MakeCustomOutputs(Mat, TEXT(
+			"const float4 W[4] = { float4(0.8, 0.6, 520, 0.9), float4(-0.5, 0.87, 310, 1.3), float4(0.2, -0.98, 190, 1.7), float4(-0.93, -0.36, 110, 2.3) };\n"
+			"float2 g = 0;\n"
+			"for (int i = 0; i < 4; i++)\n"
+			"{\n"
+			"  float k = 6.2831853 / W[i].z;\n"
+			"  g += W[i].xy * (0.045 * cos(dot(W[i].xy, P.xy) * k - T * W[i].w));\n"
+			"}\n"
+			"return normalize(float3(-g, 1));"), CMOT_Float3,
+			{ MakeTuple(FName(TEXT("P")), WorldPos, 0), MakeTuple(FName(TEXT("T")), Time, 0) }, 800);
+		auto* ToTangent = Cast<UMaterialExpressionTransform>(Make(UMaterialExpressionTransform::StaticClass(), -500, 800));
+		ToTangent->Input.Connect(0, Ripples);
+		ToTangent->TransformSourceType = TRANSFORMSOURCE_World;
+		ToTangent->TransformType = TRANSFORM_Tangent;
+		return ToTangent;
 	}
 
 	// The two looks off one material, switched at runtime by MPC_BRR.Remaster (ABRRRaceGameMode):
@@ -365,25 +405,7 @@ namespace
 		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return R * (k == 1 || k == 2 ? 0.5 : Shine);"), CMOT_Float1, 200), TEXT(""), MP_Specular);
 		UMaterialEditingLibrary::ConnectMaterialProperty(Part(TEXT("return k == 1 ? 0.03 : k == 2 ? 0.1 : k == 3 ? 0.55 : saturate(Rough + (D.w - 0.5));"), CMOT_Float1, 300), TEXT(""), MP_Roughness);
 
-		// The ripples: four travelling waves, a few metres long, summed into a world-space slope
-		// and handed to the material in tangent space (the atlas tiles turn and mirror from cell to
-		// cell, so the waves are laid out in the world, not in UV).
-		UMaterialExpression* WorldPos = Make(UMaterialExpressionWorldPosition::StaticClass(), -1100, 800);
-		UMaterialExpression* Time = Make(UMaterialExpressionTime::StaticClass(), -1100, 900);
-		UMaterialExpressionCustom* Ripples = MakeCustomOutputs(Mat, TEXT(
-			"const float4 W[4] = { float4(0.8, 0.6, 520, 0.9), float4(-0.5, 0.87, 310, 1.3), float4(0.2, -0.98, 190, 1.7), float4(-0.93, -0.36, 110, 2.3) };\n"
-			"float2 g = 0;\n"
-			"for (int i = 0; i < 4; i++)\n"
-			"{\n"
-			"  float k = 6.2831853 / W[i].z;\n"
-			"  g += W[i].xy * (0.045 * cos(dot(W[i].xy, P.xy) * k - T * W[i].w));\n"
-			"}\n"
-			"return normalize(float3(-g, 1));"), CMOT_Float3,
-			{ MakeTuple(FName(TEXT("P")), WorldPos, 0), MakeTuple(FName(TEXT("T")), Time, 0) }, 800);
-		auto* ToTangent = Cast<UMaterialExpressionTransform>(Make(UMaterialExpressionTransform::StaticClass(), -500, 800));
-		ToTangent->Input.Connect(0, Ripples);
-		ToTangent->TransformSourceType = TRANSFORMSOURCE_World;
-		ToTangent->TransformType = TRANSFORM_Tangent;
+		UMaterialExpression* ToTangent = MakeRipples(Mat);
 		UMaterialExpressionCustom* Normal = MakeCustomOutputs(Mat, TEXT("return K == 1 ? normalize(N) : R > 0.5 ? normalize(D.xyz) : float3(0, 0, 1);"), CMOT_Float3,
 			{ MakeTuple(FName(TEXT("N")), (UMaterialExpression*)ToTangent, 0), MakeTuple(FName(TEXT("K")), (UMaterialExpression*)Kind, 0),
 			  MakeTuple(FName(TEXT("R")), Remaster, 0), MakeTuple(FName(TEXT("D")), Detail, 0) }, 900);
@@ -420,8 +442,57 @@ namespace
 		}
 		M.Ground = MakeGroundArray(Root / TEXT("Textures/T_BRR_Ground"));
 		{
-			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Textured"));
+			// The scattered grass and stones (ABRRScatter): the ground's colour under each, from the
+			// instance, shaded by the vertex colour (the grass darker at its root). Only the
+			// remastered look shows them, so there is no classic path.
+			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Scatter"));
+			Mat->bUsedWithNanite = true;
+			Mat->bUsedWithInstancedStaticMeshes = true;
+			Mat->SetShadingModel(MSM_DefaultLit);
+			Mat->TwoSided = true;
+			UMaterialExpression* Colour = UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionVertexColor::StaticClass(), -700, 0);
+			TArray<TPair<FName, UMaterialExpression*>> Inputs = { { TEXT("Srgb"), Colour } };
+			for (int32 I = 0; I < 3; ++I)
+			{
+				auto* Data = Cast<UMaterialExpressionPerInstanceCustomData>(
+					UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionPerInstanceCustomData::StaticClass(), -700, 150 + I * 100));
+				Data->DataIndex = I;
+				Data->ConstDefaultValue = 0.5f;
+				Inputs.Add({ FName(*FString::Printf(TEXT("I%d"), I)), Data });
+			}
+			UMaterialExpressionCustom* Base = MakeCustom(Mat, TEXT(
+				"float3 c = saturate(Srgb.rgb);\n"
+				"float3 shade = lerp(pow((c + 0.055) / 1.055, 2.4), c / 12.92, step(c, 0.04045));\n"
+				"return shade * float3(I0, I1, I2);"), CMOT_Float3, Inputs);
+			UMaterialEditingLibrary::ConnectMaterialProperty(Base, TEXT(""), MP_BaseColor);
+			auto Constant = [&](float Value, int32 Y)
+			{
+				auto* C = Cast<UMaterialExpressionScalarParameter>(UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionScalarParameter::StaticClass(), -300, Y));
+				C->DefaultValue = Value;
+				return C;
+			};
+			auto* Rough = Constant(0.8f, 300);
+			Rough->ParameterName = TEXT("Roughness");
+			UMaterialEditingLibrary::ConnectMaterialProperty(Rough, TEXT(""), MP_Roughness);
+			auto* Spec = Constant(0.3f, 400);
+			Spec->ParameterName = TEXT("Specular");
+			UMaterialEditingLibrary::ConnectMaterialProperty(Spec, TEXT(""), MP_Specular);
+			UMaterialEditingLibrary::RecompileMaterial(Mat);
+			SaveAsset(Mat);
+			M.Scatter = Mat;
+		}
+		for (const bool bHD : { false, true })
+		{
+			UMaterial* Mat = NewAsset<UMaterial>(Root / (bHD ? TEXT("Materials/M_BRR_TexturedHD") : TEXT("Materials/M_BRR_Textured")));
 			Mat->bUsedWithNanite = true; // the terrain and the decor are Nanite (MakeMesh)
+			if (bHD)
+			{
+				// The refined terrain only: Nanite tessellates it and the ground materials displace it,
+				// a few centimetres either way.
+				Mat->bEnableTessellation = true;
+				Mat->DisplacementScaling.Magnitude = 6.f;
+				Mat->DisplacementScaling.Center = 0.5f;
+			}
 			Mat->SetShadingModel(MSM_DefaultLit);
 			Mat->BlendMode = BLEND_Masked;
 			// Classic samples the top mip with the texture's own nearest filter; remastered with
@@ -451,14 +522,38 @@ namespace
 			UMaterialExpression* Remaster = MakeCollectionValue(Mat, Collection, TEXT("Remaster"), -800, 500);
 			UMaterialExpressionCustom* Colour = MakeCustomOutputs(Mat, TEXT("return lerp(A, B, R);"), CMOT_Float4,
 				{ MakeTuple(FName(TEXT("A")), (UMaterialExpression*)Classic, 5), MakeTuple(FName(TEXT("B")), (UMaterialExpression*)Smooth, 5), MakeTuple(FName(TEXT("R")), Remaster, 0) }, 500);
-			const TPair<UMaterialExpression*, UMaterialExpression*> Ground = AddGround(Mat, Collection, M.Ground, Colour, 0, Detail);
+			const TPair<UMaterialExpression*, UMaterialExpression*> Ground = AddGround(Mat, Collection, M.Ground, Colour, 0, Detail, bHD);
 			ConnectLook(Mat, Collection, Ground.Key, 0, Ground.Value);
 			auto* Mask = MakeCustomOutputs(Mat, TEXT("return C.a * D;"), CMOT_Float1,
 				{ MakeTuple(FName(TEXT("C")), (UMaterialExpression*)Colour, 0), MakeTuple(FName(TEXT("D")), MakeDrawRange(Mat, Collection), 0) }, 600);
 			UMaterialEditingLibrary::ConnectMaterialProperty(Mask, TEXT(""), MP_OpacityMask);
 			UMaterialEditingLibrary::RecompileMaterial(Mat);
 			SaveAsset(Mat);
-			M.Textured = Mat;
+			(bHD ? M.TexturedHD : M.Textured) = Mat;
+		}
+		{
+			// The open water (BRR::SplitWater): UE's single layer water over the bed under it, so
+			// it is clear at the banks and its own colour in the deep. Its colour is the level's
+			// (WaterColour, the original's water art's), its surface the ripples.
+			UMaterial* Mat = NewAsset<UMaterial>(Root / TEXT("Materials/M_BRR_Water"));
+			Mat->SetShadingModel(MSM_SingleLayerWater);
+			Mat->BlendMode = BLEND_Opaque;
+			auto* Tint = Cast<UMaterialExpressionVectorParameter>(UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionVectorParameter::StaticClass(), -800, 0));
+			Tint->ParameterName = TEXT("WaterColour");
+			Tint->DefaultValue = FLinearColor(0.02f, 0.08f, 0.12f);
+			auto* Out = Cast<UMaterialExpressionSingleLayerWaterMaterialOutput>(
+				UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionSingleLayerWaterMaterialOutput::StaticClass(), 0, 400));
+			// Per metre: light scattered back in the water's colour, the red absorbed first.
+			Out->ScatteringCoefficients.Connect(0, MakeCustom(Mat, TEXT("return C.rgb * 0.6;"), CMOT_Float3, { { TEXT("C"), Tint } }));
+			Out->AbsorptionCoefficients.Connect(0, MakeCustom(Mat, TEXT("return float3(0.45, 0.09, 0.06) + (1 - C.rgb) * 0.05;"), CMOT_Float3, { { TEXT("C"), Tint } }));
+			Out->PhaseG.Connect(0, MakeCustom(Mat, TEXT("return 0.1;"), CMOT_Float1, {}));
+			UMaterialEditingLibrary::ConnectMaterialProperty(Tint, TEXT(""), MP_BaseColor);
+			UMaterialEditingLibrary::ConnectMaterialProperty(MakeCustom(Mat, TEXT("return 0.04;"), CMOT_Float1, {}), TEXT(""), MP_Roughness);
+			UMaterialEditingLibrary::ConnectMaterialProperty(MakeCustom(Mat, TEXT("return 0.5;"), CMOT_Float1, {}), TEXT(""), MP_Specular);
+			UMaterialEditingLibrary::ConnectMaterialProperty(MakeRipples(Mat), TEXT(""), MP_Normal);
+			UMaterialEditingLibrary::RecompileMaterial(Mat);
+			SaveAsset(Mat);
+			M.Water = Mat;
 		}
 		{
 			// Band index from the view direction's elevation, as ORR's sky shader picks it.
@@ -538,7 +633,7 @@ namespace
 
 	// What a mesh is made of, for the remastered look: the scenery's matte ground and decor, a
 	// vehicle's glossy paint (the whole body: the original paints it all one way), its rubber tyres.
-	enum class ESurface : uint8 { Ground, Paint, Rubber };
+	enum class ESurface : uint8 { Ground, Paint, Rubber, Refined };
 
 	// Per-level asset state shared by every mesh: one texture per used atlas page, one material
 	// instance per (atlas, sidedness, surface).
@@ -559,9 +654,9 @@ namespace
 
 			const FString Name = FString::Printf(TEXT("MI_%s_%s%s%s"), *Prefix,
 				Atlas == INDEX_NONE ? TEXT("Flat") : *FString::Printf(TEXT("Atlas%02d"), Atlas), bTwoSided ? TEXT("_2S") : TEXT(""),
-				Surface == ESurface::Paint ? TEXT("_Paint") : Surface == ESurface::Rubber ? TEXT("_Rubber") : TEXT(""));
+				Surface == ESurface::Paint ? TEXT("_Paint") : Surface == ESurface::Rubber ? TEXT("_Rubber") : Surface == ESurface::Refined ? TEXT("_HD") : TEXT(""));
 			UMaterialInstanceConstant* MI = NewAsset<UMaterialInstanceConstant>(Dir / TEXT("Materials") / Name);
-			MI->SetParentEditorOnly(Atlas == INDEX_NONE ? Masters.Flat : Masters.Textured);
+			MI->SetParentEditorOnly(Atlas == INDEX_NONE ? Masters.Flat : Surface == ESurface::Refined ? Masters.TexturedHD : Masters.Textured);
 			if (Atlas != INDEX_NONE)
 			{
 				UTexture2D*& Texture = Textures.FindOrAdd(Atlas);
@@ -662,7 +757,7 @@ namespace
 					const FVertexID Vertex = Desc.CreateVertex();
 					Positions[Vertex] = V.Position;
 					const FVertexInstanceID Instance = Desc.CreateVertexInstance(Vertex);
-					Normals[Instance] = Normal;
+					Normals[Instance] = V.Normal.IsNearlyZero() ? Normal : V.Normal;
 					UVs.Set(Instance, 0, V.UV);
 					UVs.Set(Instance, 1, FVector2f(float(Ground), 0.f));
 					// The build sRGB-encodes the colour back to the palette bytes (M_BRR_Flat); the
@@ -697,7 +792,8 @@ namespace
 			// Nanite clusters them. The fallback - what ray tracing, Lumen and the collision use -
 			// keeps every triangle, so those see the original's geometry exactly.
 			Mesh->NaniteSettings.bEnabled = true;
-			Mesh->NaniteSettings.FallbackTarget = ENaniteFallbackTarget::PercentTriangles;
+			// Drawn-only meshes (the refined terrain, the scattered detail) take the engine's own fallback.
+			Mesh->NaniteSettings.FallbackTarget = bComplexCollision ? ENaniteFallbackTarget::PercentTriangles : ENaniteFallbackTarget::Auto;
 			Mesh->NaniteSettings.FallbackPercentTriangles = 1.f;
 		}
 		Mesh->CreateBodySetup();
@@ -715,10 +811,42 @@ namespace
 		double GroundOffset = 0; // raise the origin by this to sit the lowest point on the ground
 	};
 
+	// Smooth shading for the remastered look (the classic look is unlit: normals change nothing
+	// there). Up to these angles between faces: the terrain's rolling ground, the scenery's and
+	// the bodies' gentle bends; anything sharper keeps its edge.
+	constexpr float TerrainSmoothing = 50.f, DecorSmoothing = 35.f, BodySmoothing = 25.f;
+	FBRRMesh Smoothed(const FBRRMesh& Mesh, float MaxAngle)
+	{
+		FBRRMesh Out = Mesh;
+		BRR::SmoothNormals(Out, MaxAngle);
+		return Out;
+	}
+
+	// The scattered ground detail's shapes (ABRRScatter), shared by every level: four grass tufts
+	// and three stones, Nanite, on M_BRR_Scatter.
+	void MakeScatterMeshes(const FString& Root, const FMasters& Masters)
+	{
+		FLevelAssets Shared;
+		Shared.Dir = Root;
+		Shared.Prefix = TEXT("BRR");
+		Shared.Masters = Masters;
+		auto Make = [&](const FString& Name, const FBRRMesh& Source)
+		{
+			UStaticMesh* Mesh = MakeMesh(Shared, Name, Source, false, ESurface::Ground, true);
+			if (!Mesh) return;
+			for (FStaticMaterial& M : Mesh->GetStaticMaterials()) M.MaterialInterface = Masters.Scatter;
+			Mesh->GetBodySetup()->CollisionTraceFlag = CTF_UseSimpleAsComplex;
+			Mesh->PostEditChange();
+			SaveAsset(Mesh);
+		};
+		for (int32 I = 0; I < 4; ++I) Make(FString::Printf(TEXT("SM_BRR_Grass%d"), I), BRR::MakeGrassTuft(I));
+		for (int32 I = 0; I < 3; ++I) Make(FString::Printf(TEXT("SM_BRR_Stone%d"), I), BRR::MakeStone(I, 2));
+	}
+
 	FVehicleAssets MakeVehicle(FLevelAssets& Assets, const FBRRVehicleMesh& Vehicle)
 	{
 		FVehicleAssets Out;
-		Out.Body = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Body"), *Vehicle.Name), Vehicle.Body, false, ESurface::Paint);
+		Out.Body = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Body"), *Vehicle.Name), Smoothed(Vehicle.Body, BodySmoothing), false, ESurface::Paint);
 		double Lowest = Vehicle.Body.GetBounds().Min.Z;
 		for (int32 I = 0; I < Vehicle.Wheels.Num(); ++I)
 		{
@@ -727,6 +855,8 @@ namespace
 			{
 				Out.Wheels.Add({ Mesh, Wheel.Socket });
 				Lowest = FMath::Min(Lowest, Wheel.Socket.Z + Wheel.Mesh.GetBounds().Min.Z);
+				// The remastered look's round one (ABRRLook swaps it in by its _HD name).
+				MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Wheel%d_HD"), *Vehicle.Name, I), BRR::RoundWheel(Wheel.Mesh, Wheel.Axle, 4), false, ESurface::Rubber);
 			}
 		}
 		Out.GroundOffset = -Lowest;
@@ -811,8 +941,38 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 		if (Section.Atlas != INDEX_NONE) Assets.TerrainAtlases.Add(Section.Atlas);
 	}
 
-	UStaticMesh* Terrain = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Terrain"), *Level), World.Terrain, true, ESurface::Ground, true);
-	UStaticMesh* Decor = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Decor"), *Level), World.Decor, true, ESurface::Ground, true);
+	UStaticMesh* Terrain = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Terrain"), *Level), Smoothed(World.Terrain, TerrainSmoothing), true, ESurface::Ground, true);
+	UStaticMesh* Decor = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Decor"), *Level), Smoothed(World.Decor, DecorSmoothing), true, ESurface::Ground, true);
+	// The remastered look's terrain: each triangle cut 4 x 4 onto a smooth surface through the
+	// original's heights (FBRRWorld::RefinedTerrain). Drawn only: the original's collides.
+	FBRRMesh RefinedLand, Water, WaterBed;
+	BRR::SplitWater(World, World.RefinedTerrain(4), RefinedLand, Water, WaterBed);
+	UStaticMesh* TerrainHD = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_TerrainHD"), *Level), RefinedLand, false, ESurface::Refined, true);
+	UStaticMesh* WaterHD = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_WaterHD"), *Level), Water, false);
+	UStaticMesh* WaterBedHD = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_WaterBedHD"), *Level), WaterBed, false, ESurface::Ground, true);
+	if (WaterHD)
+	{
+		// The water's colour: the mean of its art, as the original paints it.
+		FLinearColor Sum = FLinearColor::Black;
+		int32 N = 0;
+		for (const FBRRMeshSection& S : Water.Sections)
+		{
+			for (int32 T = 0; T + 2 < S.Vertices.Num(); T += 3, ++N)
+			{
+				Sum += FLinearColor::FromSRGBColor(World.Atlases.IsValidIndex(S.Atlas)
+					? FBRRWorld::AverageTexels(World.Atlases[S.Atlas], S.Vertices[T].UV, S.Vertices[T + 1].UV, S.Vertices[T + 2].UV) : S.Vertices[T].Color);
+			}
+		}
+		UMaterialInstanceConstant* MI = NewAsset<UMaterialInstanceConstant>(Assets.Dir / TEXT("Materials") / FString::Printf(TEXT("MI_%s_Water"), *Level));
+		MI->SetParentEditorOnly(Assets.Masters.Water);
+		if (N) MI->SetVectorParameterValueEditorOnly(FMaterialParameterInfo(TEXT("WaterColour")), Sum / float(N));
+		MI->PostEditChange();
+		SaveAsset(MI);
+		for (FStaticMaterial& M : WaterHD->GetStaticMaterials()) M.MaterialInterface = MI;
+		WaterHD->PostEditChange();
+		SaveAsset(WaterHD);
+	}
+	MakeScatterMeshes(Options.DestRoot, Assets.Masters);
 	// The ground effects' sheets: no mesh draws them, the race's particles do (ABRRParticles).
 	for (int32 Page = 0; Page < World.ParticleAtlasCount; ++Page) Assets.MaterialFor(World.ParticleAtlasBase + Page, true, ESurface::Ground);
 	TArray<FVehicleAssets> VehicleAssets;
@@ -827,7 +987,7 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 		if (!FBRRWorld::Load(DataDir, Level, Vehicles, Colour, Painted, OutError)) return false;
 		for (const FBRRVehicleMesh& Vehicle : Painted.Vehicles)
 		{
-			MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Body_C%d"), *Vehicle.Name, Colour), Vehicle.Body, false, ESurface::Paint);
+			MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Body_C%d"), *Vehicle.Name, Colour), Smoothed(Vehicle.Body, BodySmoothing), false, ESurface::Paint);
 		}
 	}
 
@@ -837,7 +997,18 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 	UWorld* Map = UWorld::CreateWorld(EWorldType::Editor, false, FName(*FPackageName::GetLongPackageAssetName(OutMapPackage)), MapPackage);
 	Map->SetFlags(AssetFlags);
 
-	SpawnMeshActor(Map, Terrain, FTransform::Identity, TEXT("Terrain"));
+	if (AStaticMeshActor* Original = SpawnMeshActor(Map, Terrain, FTransform::Identity, TEXT("Terrain")))
+	{
+		Original->Tags.Add(TEXT("BRRClassicOnly")); // hidden in the remastered look, still solid
+	}
+	for (const TPair<UStaticMesh*, const TCHAR*>& Drawn : { MakeTuple(TerrainHD, TEXT("TerrainHD")), MakeTuple(WaterHD, TEXT("WaterHD")), MakeTuple(WaterBedHD, TEXT("WaterBedHD")) })
+	{
+		if (AStaticMeshActor* Refined = SpawnMeshActor(Map, Drawn.Key, FTransform::Identity, Drawn.Value))
+		{
+			Refined->Tags.Add(TEXT("BRRRemasterOnly"));
+			Refined->GetStaticMeshComponent()->SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
+		}
+	}
 	SpawnMeshActor(Map, Decor, FTransform::Identity, TEXT("Decor"));
 
 	// The destructible decor is built by the race (ABRRWrecks) from the level data. Here: every

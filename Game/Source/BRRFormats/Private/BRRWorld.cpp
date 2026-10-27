@@ -1,5 +1,6 @@
 #include "BRRWorld.h"
 #include "BRRMeshConvert.h"
+#include "BRRRefine.h"
 
 #include "BRRConvert.h"
 
@@ -130,6 +131,57 @@ double FBRRWorld::GroundHeightAt(double UEX, double UEY) const
 	return Height * bigred::kHeightWorldScale * BRR::CmPerUnit;
 }
 
+double FBRRWorld::RefinedOffsetAt(double UEX, double UEY) const
+{
+	const int32 Rows = MapHeight, Cols = MapWidth;
+	if (Rows < 2 || Cols < 2 || CornerZ.Num() != Rows * Cols) return 0.0;
+	const double Cell = BRR::TerrainCellUnits * BRR::CmPerUnit;
+	const double GR = FMath::Clamp(UEX / Cell, 0.0, double(Rows - 1)), GC = FMath::Clamp(UEY / Cell, 0.0, double(Cols - 1));
+	const int32 R0 = FMath::Min(FMath::FloorToInt32(GR), Rows - 2), C0 = FMath::Min(FMath::FloorToInt32(GC), Cols - 2);
+	const double FR = GR - R0, FC = GC - C0;
+	auto At = [&](const TArray<float>& A, int32 R, int32 C) { return double(A[FMath::Clamp(R, 0, Rows - 1) * Cols + FMath::Clamp(C, 0, Cols - 1)]); };
+	const double Weight = FMath::Lerp(FMath::Lerp(At(CornerWeight, R0, C0), At(CornerWeight, R0, C0 + 1), FC),
+		FMath::Lerp(At(CornerWeight, R0 + 1, C0), At(CornerWeight, R0 + 1, C0 + 1), FC), FR);
+	if (Weight <= 0.0) return 0.0;
+	auto CatmullRom = [](double P0, double P1, double P2, double P3, double T)
+	{
+		return 0.5 * (2 * P1 + (P2 - P0) * T + (2 * P0 - 5 * P1 + 4 * P2 - P3) * T * T + (3 * P1 - P0 - 3 * P2 + P3) * T * T * T);
+	};
+	double Rowsums[4];
+	for (int32 K = 0; K < 4; ++K)
+	{
+		const int32 R = R0 - 1 + K;
+		Rowsums[K] = CatmullRom(At(CornerZ, R, C0 - 1), At(CornerZ, R, C0), At(CornerZ, R, C0 + 1), At(CornerZ, R, C0 + 2), FC);
+	}
+	const double Smooth = CatmullRom(Rowsums[0], Rowsums[1], Rowsums[2], Rowsums[3], FR);
+	const double Flat = FMath::Lerp(FMath::Lerp(At(CornerZ, R0, C0), At(CornerZ, R0, C0 + 1), FC),
+		FMath::Lerp(At(CornerZ, R0 + 1, C0), At(CornerZ, R0 + 1, C0 + 1), FC), FR);
+	return Weight * FMath::Clamp(Smooth - Flat, -RefineClamp, RefineClamp);
+}
+
+double FBRRWorld::WaterDepthAt(double UEX, double UEY) const
+{
+	const int32 Rows = MapHeight, Cols = MapWidth;
+	if (Rows < 2 || Cols < 2 || CornerWaterDepth.Num() != Rows * Cols) return 0.0;
+	const double Cell = BRR::TerrainCellUnits * BRR::CmPerUnit;
+	const double GR = FMath::Clamp(UEX / Cell, 0.0, double(Rows - 1)), GC = FMath::Clamp(UEY / Cell, 0.0, double(Cols - 1));
+	const int32 R0 = FMath::Min(FMath::FloorToInt32(GR), Rows - 2), C0 = FMath::Min(FMath::FloorToInt32(GC), Cols - 2);
+	const double FR = GR - R0, FC = GC - C0;
+	auto At = [&](int32 R, int32 C) { return double(CornerWaterDepth[R * Cols + C]); };
+	return FMath::Lerp(FMath::Lerp(At(R0, C0), At(R0, C0 + 1), FC), FMath::Lerp(At(R0 + 1, C0), At(R0 + 1, C0 + 1), FC), FR);
+}
+
+FBRRMesh FBRRWorld::RefinedTerrain(int32 Divisions) const
+{
+	FBRRMesh Out = BRR::Subdivide(Terrain, Divisions);
+	for (FBRRMeshSection& Section : Out.Sections)
+	{
+		for (FBRRVertex& V : Section.Vertices) V.Position.Z += float(RefinedOffsetAt(V.Position.X, V.Position.Y));
+	}
+	BRR::SmoothNormals(Out, 50.f);
+	return Out;
+}
+
 bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<FString>& VehicleNames,
 	int32 Colour, FBRRWorld& Out, FString& OutError)
 {
@@ -244,6 +296,92 @@ bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<
 					const float Lift = float(Above + GroundDecalClearance);
 					for (int32 K = 0; K < 3; ++K) V[K].Position.Z += Lift;
 					++Out.GroundDecalTriangles;
+				}
+			}
+
+			// The water's depth (WaterDepthAt): a corner is wet when every cell around it holds open
+			// water; its depth is its distance, in corners, from the nearest dry one.
+			{
+				const double Cell = BRR::TerrainCellUnits * BRR::CmPerUnit;
+				const int32 Rows = Out.MapHeight, Cols = Out.MapWidth;
+				TBitArray<> WetCell(false, Rows * Cols);
+				for (const FBRRMeshSection& Section : Out.Terrain.Sections)
+				{
+					for (int32 T = 0; T + 2 < Section.Vertices.Num(); T += 3)
+					{
+						if (Out.LiquidOf(Section.Vertices[T].Land) != EBRRLiquid::Water) continue;
+						const FVector3f Mid = (Section.Vertices[T].Position + Section.Vertices[T + 1].Position + Section.Vertices[T + 2].Position) / 3.f;
+						const int32 R = FMath::FloorToInt32(Mid.X / Cell), Col = FMath::FloorToInt32(Mid.Y / Cell);
+						if (R >= 0 && R < Rows && Col >= 0 && Col < Cols) WetCell[R * Cols + Col] = true;
+					}
+				}
+				TArray<int32> Steps;
+				Steps.Init(-1, Rows * Cols);
+				TArray<int32> Queue;
+				for (int32 R = 0; R < Rows; ++R)
+				{
+					for (int32 Col = 0; Col < Cols; ++Col)
+					{
+						bool bWet = true;
+						for (int32 DR = -1; DR <= 0 && bWet; ++DR)
+							for (int32 DC = -1; DC <= 0 && bWet; ++DC)
+							{
+								const int32 CR = R + DR, CC = Col + DC;
+								if (CR >= 0 && CC >= 0 && CR < Rows && CC < Cols && !WetCell[CR * Cols + CC]) bWet = false;
+							}
+						if (!bWet)
+						{
+							Steps[R * Cols + Col] = 0;
+							Queue.Add(R * Cols + Col);
+						}
+					}
+				}
+				for (int32 Head = 0; Head < Queue.Num(); ++Head)
+				{
+					const int32 R = Queue[Head] / Cols, Col = Queue[Head] % Cols;
+					for (const FIntPoint D : { FIntPoint(1, 0), FIntPoint(-1, 0), FIntPoint(0, 1), FIntPoint(0, -1) })
+					{
+						const int32 NR = R + D.X, NC = Col + D.Y;
+						if (NR < 0 || NC < 0 || NR >= Rows || NC >= Cols || Steps[NR * Cols + NC] >= 0) continue;
+						Steps[NR * Cols + NC] = Steps[Queue[Head]] + 1;
+						Queue.Add(NR * Cols + NC);
+					}
+				}
+				Out.CornerWaterDepth.SetNumUninitialized(Rows * Cols);
+				for (int32 I = 0; I < Rows * Cols; ++I)
+				{
+					Out.CornerWaterDepth[I] = float(FMath::Min(FMath::Max(Steps[I], 0) * WaterDepthStep, WaterDepthMax));
+				}
+			}
+
+			// The refinement's corners (RefinedOffsetAt): corner (Row, Col) at UE (Row, Col) cells.
+			{
+				const double Cell = BRR::TerrainCellUnits * BRR::CmPerUnit;
+				const int32 Rows = Out.MapHeight, Cols = Out.MapWidth;
+				Out.CornerZ.SetNumUninitialized(Rows * Cols);
+				Out.CornerWeight.Init(1.f, Rows * Cols);
+				for (int32 R = 0; R < Rows; ++R)
+					for (int32 Col = 0; Col < Cols; ++Col)
+						Out.CornerZ[R * Cols + Col] = float(GroundZ(FVector3f(float(R * Cell), float(Col * Cell), 0.f)));
+				constexpr uint8 Track = 0, Grippy = 1, Ramps = 6;
+				for (const FBRRMeshSection& Section : Out.Terrain.Sections)
+				{
+					for (int32 T = 0; T + 2 < Section.Vertices.Num(); T += 3)
+					{
+						const uint8 Type = Section.Vertices[T].Land;
+						const bool bFixed = Type == Ramps || Out.LiquidOf(Type) != EBRRLiquid::None;
+						const bool bTrack = Type == Track || Type == Grippy;
+						if (!bFixed && !bTrack) continue;
+						const FVector3f Mid = (Section.Vertices[T].Position + Section.Vertices[T + 1].Position + Section.Vertices[T + 2].Position) / 3.f;
+						const int32 R0 = FMath::FloorToInt32(Mid.X / Cell), C0 = FMath::FloorToInt32(Mid.Y / Cell);
+						for (int32 R = R0; R <= R0 + 1; ++R)
+							for (int32 Col = C0; Col <= C0 + 1; ++Col)
+								if (R >= 0 && R < Rows && Col >= 0 && Col < Cols)
+								{
+									float& W = Out.CornerWeight[R * Cols + Col];
+									W = 0.f;
+								}
+					}
 				}
 			}
 		}

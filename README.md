@@ -176,6 +176,27 @@ The classic look is untouched. Without the packed files the import still runs, w
 Tools\upscale\.venv\Scripts\python -I Tools\fetch_ground.py
 ```
 
+### Refined geometry
+The remastered look draws more than the original's polygons, from the same data
+(`BRRRefine.h`). None of it collides: the race, Chaos and the wheels keep the original's geometry.
+The classic look keeps it all exactly (`ABRRLook` shows `BRRRemasterOnly` actors and hides
+`BRRClassicOnly` ones, which stay solid, and swaps a drawn-only mesh for its `_HD` version).
+- Smooth shading everywhere: up to 50° between faces on the terrain, 35° on the scenery and 25° on
+  the bodies; sharper edges stay sharp. (Normals change nothing in the unlit classic look.)
+- The terrain (`SM_<L>_TerrainHD`): each triangle cut 4 x 4 onto a Catmull-Rom surface through the
+  physics' own heights at the cell corners (`FBRRWorld::RefinedOffsetAt`). It meets the original at
+  every corner, curves between them by up to 60 cm, and stays exactly the original on the track,
+  the ramps and the liquids, so wheels, decals and water sit where they did. Nanite tessellates it,
+  and the ground materials displace it by a few centimetres (`M_BRR_TexturedHD`).
+- Water (`SM_<L>_WaterHD`): the open water is UE's single layer water in the level's own water colour,
+  over a sand bed (`SM_<L>_WaterBedHD`) sunk from nothing at the bank to 4.5 m, three cells out.
+  Ice and lava are still the terrain's.
+- Round wheels (`SM_<V>_Wheel<n>_HD`): the six- or eight-sided tyres subdivided and put back on
+  their circle.
+- Ground detail (`ABRRScatter`): grass tufts, pebbles and rocks within 25 m of the track, coloured
+  by the ground under each, placed when the race starts (a few hundred thousand, in well under a
+  tenth of a second); procedural shapes from the import (`SM_BRR_Grass<n>`, `SM_BRR_Stone<n>`).
+
 ## Reference captures of the original
 The original runs in DOSBox-X for side-by-side checks. Put the portable 64-bit build in
 `Tools/dosbox-x/` (git-ignored), copy the rip's `RACING\` to `Tools/dosbox-x/c/RACING\`, and start it
