@@ -49,10 +49,21 @@ private:
 		UProceduralMeshComponent* Intact[2] = {};      // drawn: [0] classic, [1] remastered
 		TArray<UProceduralMeshComponent*> Steps[2];
 		TArray<int32> StepMesh;
+		FLinearColor Tint = FLinearColor::White; // the piece's mean colour, for its debris
 		int32 Shown = -1;      // index into Steps, -1 = the intact piece
 		bool bDown = false;
 		bool bSettled = false;
 	};
+	// Cosmetic chunks thrown as a piece goes over (remastered only): simulated against the world
+	// alone - never a car - and gone in a few seconds. The original's flipbook stays the truth.
+	struct FDebris
+	{
+		class UStaticMeshComponent* Comp = nullptr;
+		double Die = 0;
+	};
+	TArray<FDebris> Debris;
+	void SpawnDebris(const FPiece& P);
+	void UpdateDebris();
 	enum class EPart : uint8 { Collision, Drawn };
 
 	UProceduralMeshComponent* MakeComponent(const FBRRMesh& Mesh, EPart Part);
