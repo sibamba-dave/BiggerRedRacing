@@ -19,6 +19,10 @@ namespace BRRAudio
 	// 0..1 each: the sound effects (and speech), and the music - two settings, as in the original.
 	BRRFORMATS_API void SetVolumes(float Effects, float Music);
 
+	// How much of the effects' tunnel wash to add, 0 none (bit-identical dry mix) .. 1 full: the
+	// race sets it from the sky over the camera. The music stays dry, as the original plays it.
+	BRRFORMATS_API void SetReverb(float Wet);
+
 	// Stops every sound effect (not the music): a race ending, a level change.
 	BRRFORMATS_API void StopEffects();
 

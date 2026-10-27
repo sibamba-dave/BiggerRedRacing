@@ -138,6 +138,10 @@ public:
 	// C: the three chase heights, then - when the game has the vehicle's cabin - the cabin view,
 	// and back to the first, as the original cycles them.
 	void CyclePlayerCamera(bool bCabinAvailable = false);
+
+	// The sky over the chase camera, eased per tick: 1 in the open, 0 in a tunnel or under a roof
+	// (the same signal that keeps the camera low in there). The race's tunnel reverb reads it.
+	double PlayerCameraOpenness() const;
 	bool IsPlayerInCabin() const;
 	// The cabin's dashboard (FBRRVehicleMesh::DashAtlas) redrawn with this tick's readings - speed,
 	// revs, nitro, gear, height - in the level's palette; false when the vehicle has none. The

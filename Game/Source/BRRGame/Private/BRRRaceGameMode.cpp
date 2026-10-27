@@ -517,6 +517,9 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 
 	// The original's rules and opponents advance in whole 28 ms ticks.
 	BRRAudio::SetVolumes(CVarSoundVolume.GetValueOnGameThread(), CVarMusicVolume.GetValueOnGameThread());
+	// The tunnel wash: the effects reverberate where the sky closes over the chase camera. The
+	// classic look keeps the original's bone-dry mix.
+	BRRAudio::SetReverb(Look && Look->IsRemastered() ? float(1.0 - Race->PlayerCameraOpenness()) * 0.55f : 0.f);
 	if (const double Knock = PlayerCar->TakeImpactSpeed(); Knock > 0) Race->ReportPlayerImpact(Knock, PlayerCar->ImpactPoint);
 	if (PlayerCar->TakeRecovered()) Race->ReportPlayerRecovered();
 	const FTransform PlayerPose = PlayerCar->GetBodyOriginTransform();
@@ -732,6 +735,12 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 	{
 		if (APlayerController* PC = GetWorld()->GetFirstPlayerController(); PC && PC->MyHUD) PC->MyHUD->bShowHUD = false;
 		Film->Update(Drawn, Race->HasStarted() ? Race->RaceTime() : -1.0, RaceCamera);
+	}
+	// The hour drifts while the race runs; crossing dusk switches every lamp on or off.
+	if (Weather && Look && Look->IsRemastered() && Weather->Advance(DeltaSeconds, Look))
+	{
+		bDarkRace = Weather->SunElevationDegrees() < 15.f || Weather->RainStrength() > 0.4f;
+		SyncRaceLights();
 	}
 	if (Wake)
 	{

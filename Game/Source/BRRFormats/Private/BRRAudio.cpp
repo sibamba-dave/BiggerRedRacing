@@ -28,6 +28,56 @@ namespace
 	void (*GMixFn)(void*, int16_t*, int) = nullptr; // Mixer::mix, reached through open()
 	std::unique_ptr<bigred::Mixer> GMixer;
 	float GEffectsVolume = 1.f, GMusicVolume = 0.7f;
+
+	// A small Schroeder reverb for the effects in tunnels (BRRAudio::SetReverb): four combs into
+	// two allpasses, a mono wash for both sides. Integer-free state is fine here - the wash is
+	// presentation, never the lockstep mix.
+	struct FReverb
+	{
+		TArray<float> Comb[4];
+		int32 CombPos[4] = {};
+		TArray<float> All[2];
+		int32 AllPos[2] = {};
+		void Setup(int32 Rate)
+		{
+			const double CombSeconds[4] = { 0.0297, 0.0371, 0.0411, 0.0437 };
+			for (int32 I = 0; I < 4; ++I)
+			{
+				Comb[I].Init(0.f, FMath::Max(int32(CombSeconds[I] * Rate), 8));
+				CombPos[I] = 0;
+			}
+			const double AllSeconds[2] = { 0.005, 0.0017 };
+			for (int32 I = 0; I < 2; ++I)
+			{
+				All[I].Init(0.f, FMath::Max(int32(AllSeconds[I] * Rate), 4));
+				AllPos[I] = 0;
+			}
+		}
+		float Step(float In)
+		{
+			float Sum = 0;
+			for (int32 I = 0; I < 4; ++I)
+			{
+				float& D = Comb[I][CombPos[I]];
+				const float Y = D;
+				D = In + Y * 0.78f;
+				CombPos[I] = (CombPos[I] + 1) % Comb[I].Num();
+				Sum += Y;
+			}
+			Sum *= 0.25f;
+			for (int32 I = 0; I < 2; ++I)
+			{
+				float& D = All[I][AllPos[I]];
+				const float Y = D - 0.5f * Sum;
+				D = Sum + 0.5f * Y;
+				AllPos[I] = (AllPos[I] + 1) % All[I].Num();
+				Sum = Y;
+			}
+			return Sum;
+		}
+	};
+	TUniquePtr<FReverb> GReverb;
+	float GReverbTarget = 0.f, GReverbLevel = 0.f;
 	TArray<int16_t> GScratch;          // audio thread only
 	FString GDumpPath;                 // DumpTo: where, how much, and what so far
 	int32 GDumpFrames = 0;
@@ -332,7 +382,29 @@ namespace BRRAudio
 			FMemory::Memzero(GScratch.GetData(), Frames * 2 * sizeof(int16_t));
 			GMixFn(GMixer.get(), GScratch.GetData(), Frames);
 			const float Gain = GEffectsVolume / 32768.f;
-			for (int32 I = 0; I < Frames * 2; ++I) Out[I] += GScratch[I] * Gain;
+			// The tunnel wash: a small Schroeder reverb on the effects only, eased toward the
+			// race's setting. At zero, and once the tail has died, the mix is bit-identical dry.
+			GReverbLevel += (GReverbTarget - GReverbLevel) * 0.05f;
+			if (GReverbLevel > 0.001f)
+			{
+				if (!GReverb)
+				{
+					GReverb = MakeUnique<FReverb>();
+					GReverb->Setup(GRate);
+				}
+				for (int32 I = 0; I < Frames; ++I)
+				{
+					const float Dry = (GScratch[I * 2] + GScratch[I * 2 + 1]) * 0.5f * Gain;
+					const float Wash = GReverb->Step(Dry) * GReverbLevel;
+					Out[I * 2] += GScratch[I * 2] * Gain + Wash;
+					Out[I * 2 + 1] += GScratch[I * 2 + 1] * Gain + Wash;
+				}
+			}
+			else
+			{
+				GReverb.Reset();
+				for (int32 I = 0; I < Frames * 2; ++I) Out[I] += GScratch[I] * Gain;
+			}
 		}
 		RenderMusic(Out, Frames);
 		if (GDumpFrames > 0)
@@ -361,6 +433,12 @@ namespace BRRAudio
 		return FString::Printf(TEXT("%d voices, music %s at %.0f s"), GMixer && GMixer->ready() ? GMixer->active() : 0,
 			GInIntro ? TEXT("intro") : GLoop.IsValid() ? TEXT("loop") : TEXT("off"),
 			GMusicPos / FMath::Max((GInIntro ? GIntro : GLoop).IsValid() ? (GInIntro ? GIntro : GLoop)->Rate : 44100, 1));
+	}
+
+	void SetReverb(float Wet)
+	{
+		FScopeLock Lock(&GLock);
+		GReverbTarget = FMath::Clamp(Wet, 0.f, 1.f);
 	}
 
 	void SetVolumes(float Effects, float Music)

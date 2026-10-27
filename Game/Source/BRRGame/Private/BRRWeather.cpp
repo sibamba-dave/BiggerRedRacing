@@ -61,18 +61,17 @@ void ABRRWeather::Build(const FString& Level, ABRRLook* Look)
 	const float Sun = 1.f - 0.75f * Strength;
 	const float WindAngle = Random.FRandRange(0.f, 2.f * PI), WindSpeed = Random.FRandRange(100.f, 600.f) * (0.4f + Strength);
 	Wind = FVector(FMath::Cos(WindAngle), FMath::Sin(WindAngle), 0) * WindSpeed;
-	if (Look)
-	{
-		// The sky wears the weather: overcast with the fall's strength and the mist, and the
-		// ground soaked when it rains (snow lands dry: the ground is already white).
-		ABRRLook::FBRRMood Mood;
-		Mood.SunElevation = SunElevation;
-		Mood.SunBrightness = Sun;
-		Mood.MistDensity = Mist;
-		Mood.CloudCoverage = FMath::Clamp(0.15f + 0.8f * Strength + (Mist - 0.002f) * 8.f, 0.1f, 0.95f);
-		Mood.Wetness = Kind == EFall::Rain ? Strength : 0.f;
-		Look->SetMood(Mood);
-	}
+	// The sky wears the weather: overcast with the fall's strength and the mist, and the
+	// ground soaked when it rains (snow lands dry: the ground is already white).
+	Mood.SunElevation = SunElevation;
+	Mood.SunBrightness = Sun;
+	Mood.MistDensity = Mist;
+	Mood.CloudCoverage = FMath::Clamp(0.15f + 0.8f * Strength + (Mist - 0.002f) * 8.f, 0.1f, 0.95f);
+	Mood.Wetness = Kind == EFall::Rain ? Strength : 0.f;
+	if (Look) Look->SetMood(Mood);
+	// And the hour moves on: dawn climbs, dusk sinks, midday wanders a little - a degree or two a
+	// minute, so a long race started at dusk ends under the lamps.
+	SunDriftPerSecond = (Hour < 0.25f ? 1.f : Hour >= 0.75f ? -1.f : Random.FRand() < 0.5f ? -0.35f : 0.35f) * Random.FRandRange(0.9f, 1.8f) / 60.f;
 
 	// The box of drops, built once: all four corners of a quad sit on the drop's point, and the
 	// material (M_BRR_Rain / M_BRR_Snow) falls, wraps and spreads them in the shader. The only
@@ -119,6 +118,22 @@ void ABRRWeather::Build(const FString& Level, ABRRLook* Look)
 		}
 	}
 	UE_LOG(LogBRRWeather, Display, TEXT("%s: %s"), *Level, *Describe());
+}
+
+bool ABRRWeather::Advance(float DeltaSeconds, ABRRLook* Look)
+{
+	if (!Look || SunDriftPerSecond == 0.f) return false;
+	constexpr float DarkDegrees = 15.f; // the race's lamp threshold (BuildRaceLights)
+	const float Before = Mood.SunElevation;
+	Mood.SunElevation = FMath::Clamp(Mood.SunElevation + SunDriftPerSecond * DeltaSeconds, 3.f, 75.f);
+	SunElevation = Mood.SunElevation;
+	SinceMood += DeltaSeconds;
+	if (SinceMood >= 4.f) // the sky-light recapture is not free: a nudge every few seconds reads smooth
+	{
+		SinceMood = 0;
+		Look->SetMood(Mood);
+	}
+	return (Before < DarkDegrees) != (Mood.SunElevation < DarkDegrees);
 }
 
 FString ABRRWeather::Describe() const

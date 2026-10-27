@@ -11,11 +11,10 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "BRRLook.h"
 #include "GameFramework/Actor.h"
 
 #include "BRRWeather.generated.h"
-
-class ABRRLook;
 class UMaterialInterface;
 class UProceduralMeshComponent;
 
@@ -32,6 +31,11 @@ public:
 
 	// Each frame: carries the box of falling rain or snow along with the camera.
 	void Update(const FVector& CameraLocation, bool bOn);
+
+	// The hour moves on: the sun drifts as the race runs (a long race started at dusk ends in the
+	// dark), re-setting the mood every few seconds. Returns true when it crossed the light's
+	// dark-race threshold, so the race can switch its lamps.
+	bool Advance(float DeltaSeconds, ABRRLook* Look);
 
 	// What was drawn, for the log and the menus.
 	FString Describe() const;
@@ -52,5 +56,8 @@ private:
 	float SunElevation = 35;   // degrees
 	float Mist = 0;            // fog density
 	FVector Wind = FVector::ZeroVector; // cm/s
+	ABRRLook::FBRRMood Mood;     // as last sent (Advance drifts its sun)
+	float SunDriftPerSecond = 0; // degrees; dawn climbs, dusk sinks
+	float SinceMood = 0;         // seconds since the mood was last sent
 	FRandomStream Random;
 };

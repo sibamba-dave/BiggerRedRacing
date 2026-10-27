@@ -881,6 +881,11 @@ FTransform FBRRRace::PlayerCameraTransform(double Alpha, double Distance, double
 	return FTransform(FRotationMatrix::MakeFromXZ(Forward, FVector::UpVector).ToQuat(), Eye);
 }
 
+double FBRRRace::PlayerCameraOpenness() const
+{
+	return Impl->CameraOpen;
+}
+
 void FBRRRace::CyclePlayerCamera(bool bCabinAvailable)
 {
 	FImpl& I = *Impl;
