@@ -165,7 +165,18 @@ namespace
 			Path = Dir / Files[FMath::RandRange(0, Files.Num() - 1)];
 		}
 		TSharedPtr<FTrack> Track = MakeShared<FTrack>();
-		return LoadWav(Path, *Track) ? Track : nullptr;
+		if (!LoadWav(Path, *Track)) return nullptr;
+		// A rip of the CD's data track is not music: almost all silence, with a sector header's
+		// full-scale samples every 588 frames - a 75 Hz click train, the menus' buzz (a play
+		// test; this rip's Track02 is one). Such a track gives way to the next.
+		int32 Sounding = 0;
+		for (const int16 S : Track->Pcm) Sounding += S != 0;
+		if (Sounding < Track->Pcm.Num() / 5)
+		{
+			UE_LOG(LogTemp, Display, TEXT("BRRAudio: %s is a data track, not music: playing the next"), *FPaths::GetCleanFilename(Path));
+			return Number < 99 && FPaths::FileExists(Dir / FString::Printf(TEXT("Track%02d.wav"), Number + 1)) ? LoadTrack(Number + 1) : nullptr;
+		}
+		return Track;
 	}
 
 	// Audio thread, under GLock: the music into Out, resampled linearly to the output rate.
