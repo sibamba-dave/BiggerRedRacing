@@ -255,19 +255,21 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 	Race->SetParticleAtlasBase(World.ParticleAtlasBase);
 	Wrecks->Build(World.Wrecks, LevelName);
 	GetWorld()->SpawnActor<ABRRScatter>()->Build(World);
-	// -BRRLookAt=<SHAPE>[:<n>]: the camera held on the n-th placement of a decor shape (a look at
+	// -BRRLookAt=<SHAPE>[:<n>[:<cm>]]: the camera held on the n-th placement of a decor shape, cm away (a look at
 	// the remastered look's rebuilt scenery, for screenshots).
 	FString LookAtSpec;
 	if (FParse::Value(FCommandLine::Get(), TEXT("BRRLookAt="), LookAtSpec))
 	{
-		FString Shape = LookAtSpec, Nth;
-		LookAtSpec.Split(TEXT(":"), &Shape, &Nth);
-		int32 Want = Nth.IsEmpty() ? 0 : FCString::Atoi(*Nth);
+		TArray<FString> Parts;
+		LookAtSpec.ParseIntoArray(Parts, TEXT(":"));
+		const FString Shape = Parts.IsEmpty() ? FString() : Parts[0];
+		int32 Want = Parts.Num() > 1 ? FCString::Atoi(*Parts[1]) : 0;
+		const double Away = Parts.Num() > 2 ? FCString::Atod(*Parts[2]) : 900.0;
 		for (const FBRRPlacement& P : World.Placements)
 		{
 			if (!P.Shape.Equals(Shape, ESearchCase::IgnoreCase) || Want-- > 0) continue;
-			const FVector Target = P.Location + FVector(0, 0, 150);
-			const FVector Eye = P.Location + FVector(-700, 450, 380);
+			const FVector Target = P.Location + FVector(0, 0, 150 + Away * 0.1);
+			const FVector Eye = P.Location + FVector(-0.78, 0.5, 0.42).GetSafeNormal() * Away;
 			LookAtCamera = FTransform((Target - Eye).Rotation(), Eye);
 			bLookAt = true;
 			break;

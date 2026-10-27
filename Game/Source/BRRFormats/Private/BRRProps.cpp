@@ -17,6 +17,15 @@ BRR::EPropKind BRR::PropKindOf(const FString& Shape)
 	if (S.StartsWith(TEXT("ROCK"))) return EPropKind::Rock;
 	if (S == TEXT("ROADSIGN") || S == TEXT("DIR1") || S == TEXT("DIR2") || S == TEXT("CHEVRONS") || S.StartsWith(TEXT("MSIGN")) || S.StartsWith(TEXT("BILBORD"))
 		|| S == TEXT("SIGN1") || S == TEXT("SIGNPOST") || S == TEXT("BSIGN") || S == TEXT("ARROSIGN") || S == TEXT("ARROW") || S.StartsWith(TEXT("VSIGN"))) return EPropKind::Sign;
+	if (S.Contains(TEXT("TUNN")) || S.Contains(TEXT("BRIJ")) || S.Contains(TEXT("BRIDGE")) || S.StartsWith(TEXT("BR_")) || S == TEXT("FOOT_BR")
+		|| S.StartsWith(TEXT("RAMP")) || S.StartsWith(TEXT("PLAT")) || S.StartsWith(TEXT("MARSPLA")) || S == TEXT("SUPP") || S == TEXT("HUG_FLR") || S == TEXT("SLOPE")
+		|| S == TEXT("FLAT") || S.StartsWith(TEXT("JOIN")) || S == TEXT("JETTY") || S == TEXT("STEPS") || S == TEXT("HELIPAD") || S == TEXT("OVERHANG")) return EPropKind::Structure;
+	static const TCHAR* Buildings[] = { TEXT("BLOCK"), TEXT("OFFICE"), TEXT("SHOP"), TEXT("BIGBLK"), TEXT("BIGBUIL"), TEXT("PUB"), TEXT("MUDHUT"), TEXT("PAGODA"),
+		TEXT("BAY_ROOF"), TEXT("BAY_POLE"), TEXT("FONEBOX"), TEXT("CHINA1"), TEXT("IND1"), TEXT("IND2"), TEXT("TOWER"), TEXT("VTOWER"), TEXT("SPIRE"), TEXT("VSPIRE"),
+		TEXT("PINNACLE"), TEXT("CITADEL"), TEXT("DOME"), TEXT("LUNAPOD"), TEXT("ROCKET"), TEXT("MONOLITH"), TEXT("NODE"), TEXT("VNODE"), TEXT("CRANE"),
+		TEXT("STATUE"), TEXT("COLUMN"), TEXT("START"), TEXT("GANTRY"), TEXT("BAYWATCH"), TEXT("HAWT"), TEXT("WALL"), TEXT("VWALL"), TEXT("MWALL"), TEXT("LEG"), TEXT("BIN_LID"),
+		TEXT("BUILD"), TEXT("TEST"), TEXT("ENT2"), TEXT("BUS") };
+	for (const TCHAR* B : Buildings) if (S.StartsWith(B)) return EPropKind::Building;
 	return EPropKind::None;
 }
 
@@ -236,6 +245,82 @@ FBRRMesh BRR::BuildProps(const FBRRWorld& World, TBitArray<>& OutReplaced, int32
 			for (FBRRMeshSection& S : Rock.Mesh.Sections)
 				for (FBRRVertex& V : S.Vertices) V.Position.Z = FMath::Max(V.Position.Z, Box.Min.Z - 10.f); // sat in the ground
 			for (int32 S = 0; S < Rock.Mesh.Sections.Num(); ++S) B.Mesh.Sections[S].Vertices.Append(Rock.Mesh.Sections[S].Vertices);
+			break;
+		}
+		case EPropKind::Structure:
+			// Driven on or through: exactly the race's, crisp.
+			for (const int32 I : All) Keep(Tris[I]);
+			break;
+		case EPropKind::Building:
+		{
+			// Each box-like part kept crisp and given depth; anything rounder goes back to the
+			// rounded scenery (a dome, a rocket, a spire suit it).
+			const bool bCity = Place.Shape.StartsWith(TEXT("BLOCK")) || Place.Shape.StartsWith(TEXT("OFFICE")) || Place.Shape.StartsWith(TEXT("SHOP"))
+				|| Place.Shape.StartsWith(TEXT("BIG")) || Place.Shape.StartsWith(TEXT("PUB")) || Place.Shape.StartsWith(TEXT("IND"));
+			for (const TArray<int32>& Piece : Group.Value)
+			{
+				FBox3f P(ForceInit);
+				float Area = 0;
+				for (const int32 I : Piece)
+				{
+					for (int32 K = 0; K < 3; ++K) P += Local(Tris[I].V[K].Position);
+					Area += ((Tris[I].V[1].Position - Tris[I].V[0].Position) ^ (Tris[I].V[2].Position - Tris[I].V[0].Position)).Size() * 0.5f;
+				}
+				const FVector3f PE = P.GetSize(), PC = P.GetCenter();
+				const float BoxArea = 2.f * (PE.X * PE.Y + PE.Y * PE.Z + PE.X * PE.Z);
+				const bool bBoxy = Piece.Num() <= 48 && BoxArea > 0 && Area > BoxArea * 0.55f && Area < BoxArea * 1.15f;
+				if (!bBoxy)
+				{
+					for (const int32 I : Piece) OutReplaced[Tris[I].Index] = false; // rounded with the rest
+					continue;
+				}
+				for (const int32 I : Piece) Keep(Tris[I]);
+				if (PE.Z < 120.f || FMath::Min(PE.X, PE.Y) < 80.f) continue; // a part too small to dress
+				const FColor Wall = MeanColour(World, Tris, Piece);
+				const FColor Trim = Shade(Wall, 0.72f), Base = Shade(Wall, 0.6f);
+				const float Out = 6.f, Lip = FMath::Clamp(PE.Z * 0.03f, 12.f, 35.f);
+				// Cornice and plinth all round, pilasters at the corners.
+				for (const int32 Ax : { 0, 1 })
+				{
+					const int32 Other = 1 - Ax;
+					for (const float Side : { -0.5f, 0.5f })
+					{
+						FVector3f Half, At = PC;
+						At[Other] += Side * (PE[Other] + Out);
+						Half[Ax] = PE[Ax] * 0.5f + Out * 2.f;
+						Half[Other] = Out;
+						Half.Z = Lip * 0.5f;
+						B.Box(FVector3f(At.X, At.Y, P.Max.Z - Lip * 0.5f), Half, Identity, Trim);
+						Half.Z = Lip * 0.7f;
+						B.Box(FVector3f(At.X, At.Y, P.Min.Z + Lip * 0.7f), FVector3f(Half.X, Half.Y, Half.Z) + FVector3f(Ax == 0 ? 0 : 2, Ax == 1 ? 0 : 2, 0), Identity, Base);
+					}
+				}
+				for (const float SX : { -0.5f, 0.5f })
+					for (const float SY : { -0.5f, 0.5f })
+						B.Box(FVector3f(PC.X + SX * PE.X, PC.Y + SY * PE.Y, PC.Z), FVector3f(Out * 1.6f, Out * 1.6f, PE.Z * 0.5f), Identity, Shade(Wall, 0.85f));
+				// A city roof's plant: air conditioning units, vents, a water tank, an aerial.
+				if (bCity && PE.X * PE.Y > 40000.f)
+				{
+					const float Top = P.Max.Z;
+					const int32 Units = FMath::Clamp(int32(PE.X * PE.Y / 400000.f), 1, 6);
+					const FColor Plant(150, 152, 150);
+					for (int32 U = 0; U < Units; ++U)
+					{
+						const FVector3f At(P.Min.X + PE.X * Rnd.FRandRange(0.2f, 0.8f), P.Min.Y + PE.Y * Rnd.FRandRange(0.2f, 0.8f), Top);
+						B.Box(At + FVector3f(0, 0, 35), FVector3f(60, 45, 35), FQuat4f(FVector3f::UpVector, Rnd.FRandRange(0.f, PI)), Plant);
+						B.Lathe(At + FVector3f(0, 0, 70), { {22, 0}, {22, 4}, {0, 4} }, { DarkMetal, DarkMetal, DarkMetal }, 12);
+					}
+					if (Rnd.FRand() < 0.6f)
+					{
+						const FVector3f T(P.Min.X + PE.X * 0.75f, P.Min.Y + PE.Y * 0.3f, Top);
+						for (const float SX : { -50.f, 50.f })
+							for (const float SY : { -50.f, 50.f }) B.Box(T + FVector3f(SX, SY, 90), FVector3f(5, 5, 90), Identity, DarkMetal);
+						B.Lathe(T + FVector3f(0, 0, 180), { {85, 0}, {85, 180}, {60, 215}, {0, 225} }, { Shade(Wall, 0.7f), Shade(Wall, 0.8f), Shade(Wall, 0.75f), Shade(Wall, 0.75f) }, 16);
+					}
+					const FVector3f Aerial(P.Min.X + PE.X * 0.25f, P.Min.Y + PE.Y * 0.7f, Top);
+					B.Lathe(Aerial, { {4, 0}, {2, 450}, {0, 455} }, { Metal, Metal, Metal }, 6);
+				}
+			}
 			break;
 		}
 		case EPropKind::Sign:
