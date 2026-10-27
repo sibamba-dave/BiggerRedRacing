@@ -255,6 +255,24 @@ bool ABRRRaceGameMode::BuildRace(FString& OutError)
 	Race->SetParticleAtlasBase(World.ParticleAtlasBase);
 	Wrecks->Build(World.Wrecks, LevelName);
 	GetWorld()->SpawnActor<ABRRScatter>()->Build(World);
+	// -BRRLookAt=<SHAPE>[:<n>]: the camera held on the n-th placement of a decor shape (a look at
+	// the remastered look's rebuilt scenery, for screenshots).
+	FString LookAtSpec;
+	if (FParse::Value(FCommandLine::Get(), TEXT("BRRLookAt="), LookAtSpec))
+	{
+		FString Shape = LookAtSpec, Nth;
+		LookAtSpec.Split(TEXT(":"), &Shape, &Nth);
+		int32 Want = Nth.IsEmpty() ? 0 : FCString::Atoi(*Nth);
+		for (const FBRRPlacement& P : World.Placements)
+		{
+			if (!P.Shape.Equals(Shape, ESearchCase::IgnoreCase) || Want-- > 0) continue;
+			const FVector Target = P.Location + FVector(0, 0, 150);
+			const FVector Eye = P.Location + FVector(-700, 450, 380);
+			LookAtCamera = FTransform((Target - Eye).Rotation(), Eye);
+			bLookAt = true;
+			break;
+		}
+	}
 	Wake = GetWorld()->SpawnActor<ABRRWake>();
 	Wake->Build(World);
 	Dust = GetWorld()->SpawnActor<ABRRDust>();
@@ -540,6 +558,7 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 		Drawn.Add(R == Race->PlayerIndex() ? PlayerCar->GetBodyOriginTransform()
 			: FTransform(FQuat::Slerp(PrevPose[R].GetRotation(), CurrPose[R].GetRotation(), Alpha), FMath::Lerp(PrevPose[R].GetLocation(), CurrPose[R].GetLocation(), Alpha)));
 	}
+	if (bLookAt && RaceCamera) RaceCamera->SetActorTransform(LookAtCamera);
 	if (Film)
 	{
 		if (APlayerController* PC = GetWorld()->GetFirstPlayerController(); PC && PC->MyHUD) PC->MyHUD->bShowHUD = false;

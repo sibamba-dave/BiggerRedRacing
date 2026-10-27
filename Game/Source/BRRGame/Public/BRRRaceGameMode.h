@@ -79,6 +79,8 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<class ABRRFilm> Film;
+	FTransform LookAtCamera;
+	bool bLookAt = false;
 
 	// The ground effects: dust, spray, sparks.
 	UPROPERTY()

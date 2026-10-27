@@ -9,6 +9,7 @@
 #include "Engine/Texture2DArray.h"
 #include "BRRRefine.h"
 #include "BRRTrees.h"
+#include "BRRProps.h"
 #include "Materials/MaterialExpressionPerInstanceCustomData.h"
 #include "Materials/MaterialExpressionSingleLayerWaterMaterialOutput.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
@@ -1199,10 +1200,18 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 	UStaticMesh* Decor = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_Decor"), *Level), Smoothed(World.Decor, DecorSmoothing), true, ESurface::Ground, true);
 	// The remastered look's scenery, rounded, its plants grown again (BRR::FindTrees, GrowTree):
 	// drawn only, the original's collides (as the terrain).
-	TBitArray<> PlantTriangles;
+	TBitArray<> PlantTriangles, PropTriangles;
 	const TArray<BRR::FBRRTree> Trees = BRR::FindTrees(World, PlantTriangles);
+	// ...and its furniture rebuilt (BRR::BuildProps): tyre walls, cones, bales, fences, barriers,
+	// posts, rocks, the signs' art in frames.
+	int32 PropCount = 0;
+	const FBRRMesh Props = BRR::BuildProps(World, PropTriangles, PropCount);
+	TBitArray<> Rebuilt = PlantTriangles;
+	for (int32 I = 0; I < Rebuilt.Num() && I < PropTriangles.Num(); ++I) Rebuilt[I] = Rebuilt[I] || PropTriangles[I];
 	UStaticMesh* DecorHD = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_DecorHD"), *Level),
-		BRR::SubdivideSmooth(BRR::WithoutPlants(World.Decor, PlantTriangles), 2, DecorCrease), false, ESurface::Ground, true);
+		BRR::SubdivideSmooth(BRR::WithoutPlants(World.Decor, Rebuilt), 2, DecorCrease), false, ESurface::Ground, true);
+	UE_LOG(LogBRRImport, Display, TEXT("%s: %d pieces of furniture rebuilt (%d triangles)"), *Level, PropCount, Props.NumTriangles());
+	UStaticMesh* PropsHD = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_PropsHD"), *Level), Props, false, ESurface::Ground, true);
 	FBRRMesh Grown;
 	for (const BRR::FBRRTree& Tree : Trees)
 	{
@@ -1289,7 +1298,7 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 	{
 		if (DecorHD) Original->Tags.Add(TEXT("BRRClassicOnly")); // hidden in the remastered look, still solid
 	}
-	for (const TPair<UStaticMesh*, const TCHAR*>& Drawn : { MakeTuple(DecorHD, TEXT("DecorHD")), MakeTuple(TreesHD, TEXT("TreesHD")) })
+	for (const TPair<UStaticMesh*, const TCHAR*>& Drawn : { MakeTuple(DecorHD, TEXT("DecorHD")), MakeTuple(TreesHD, TEXT("TreesHD")), MakeTuple(PropsHD, TEXT("PropsHD")) })
 	{
 		if (AStaticMeshActor* Round = SpawnMeshActor(Map, Drawn.Key, FTransform::Identity, Drawn.Value))
 		{
