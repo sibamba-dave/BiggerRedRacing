@@ -402,11 +402,14 @@ void BRR::SplitWater(const FBRRWorld& World, const FBRRMesh& Refined, FBRRMesh& 
 					if (const float* L = Level.Find(CornerOf(P))) Z = FMath::Min(Z, *L);
 				}
 				if (Z == TNumericLimits<float>::Max()) continue;
+				// Only banks let down into the water (FBRRWorld::ShoreSinkAt): water drawn over
+				// plain low land looked navigable where the race has land, and a boat steered
+				// onto it grounded, passed a checkpoint outside its line and sat under the sheet
+				// in the dark (a play test).
 				for (int32 K = 0; K < 3; ++K)
 				{
 					const FVector3f& P = S.Vertices[T + K].Position;
-					const double Ground = P.Z + World.RefinedOffsetAt(P.X, P.Y) - World.ShoreSinkAt(P.X, P.Y);
-					bNear |= Ground < Z + 60.0;
+					bNear |= World.ShoreSinkAt(P.X, P.Y) > 1.0;
 				}
 				if (!bNear) continue;
 				Taken.Add(&S.Vertices[T]);

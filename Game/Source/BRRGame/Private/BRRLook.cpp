@@ -105,7 +105,7 @@ void ABRRLook::Build(const FVector& SunDirection, UMaterialParameterCollection* 
 	P.bOverride_LocalExposureHighlightContrastScale = true;
 	P.LocalExposureHighlightContrastScale = 0.85f;
 	P.bOverride_LocalExposureShadowContrastScale = true;
-	P.LocalExposureShadowContrastScale = 0.85f;
+	P.LocalExposureShadowContrastScale = 0.7f; // lifts the deep shadow side (dusk read too black)
 	P.bOverride_LensFlareIntensity = true;
 	P.LensFlareIntensity = 0.15f;
 	// MegaLights (stochastic many-light sampling on hardware ray tracing): only this volume asks
@@ -138,6 +138,10 @@ void ABRRLook::SetMood(const FBRRMood& Mood)
 		CloudMID->SetScalarParameterValue(TEXT("Cloud_GlobalCoverage"), FMath::Clamp(Mood.CloudCoverage, 0.05f, 0.98f));
 		CloudMID->SetScalarParameterValue(TEXT("Cloud_GlobalDensity"), FMath::Lerp(0.2f, 0.6f, Mood.CloudCoverage));
 	}
+	// A low sun leaves the shadow side to the sky alone: at its midday strength that read as
+	// near-black at dusk (a play test: "shadows extreme"), so the sky fills harder as the sun sinks.
+	if (SkyLight)
+		SkyLight->GetLightComponent()->SetIntensity(FMath::Lerp(2.2f, 1.f, FMath::Clamp((Mood.SunElevation - 10.f) / 25.f, 0.f, 1.f)));
 	// The soaked ground: the materials' blend darkens and polishes by it (classic reads none).
 	if (Collection) UKismetMaterialLibrary::SetScalarParameterValue(GetWorld(), Collection, TEXT("Wetness"), Mood.Wetness);
 	if (SkyLight) SkyLight->GetLightComponent()->RecaptureSky();
