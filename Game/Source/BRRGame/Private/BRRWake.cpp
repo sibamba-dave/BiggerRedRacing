@@ -280,7 +280,7 @@ void ABRRWake::Update(const TArray<FTransform>& Poses, float DeltaSeconds, bool 
 		const double T = S.Age / SplashSeconds;
 		const double Height = S.Size * 220.0 * FMath::Sin(T * PI * 0.8);
 		const double Width = S.Size * (70.0 + 110.0 * T);
-		const double Alpha = (1.0 - T) * 0.7;
+		const double Alpha = (1.0 - T) * 0.35; // at 0.7 a busy bank stood behind a white wall of sheets
 		const FVector Side = FVector(-S.Across.Y, S.Across.X, 0);
 		for (const FVector& Dir : { S.Across, Side })
 		{

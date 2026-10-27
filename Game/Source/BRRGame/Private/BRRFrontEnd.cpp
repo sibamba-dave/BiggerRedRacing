@@ -337,8 +337,10 @@ bool ABRRFrontEndGameMode::PlayMovie(const FString& Path)
 		MovieSound->bIsUISound = true;
 		MovieSound->SetMediaPlayer(MoviePlayer);
 		MovieSound->RegisterComponentWithWorld(GetWorld());
-		MovieSound->Start();
 	}
+	// The movie's sound runs only while a movie does: left running on a closed player it starved
+	// and buzzed under the menus from the end of the intro on (a play test).
+	MovieSound->Start();
 	bMovieStarted = false;
 	// The whole window, not the menus' 4:3.
 	if (Camera) Camera->GetCameraComponent()->bConstrainAspectRatio = false;
@@ -348,6 +350,7 @@ bool ABRRFrontEndGameMode::PlayMovie(const FString& Path)
 void ABRRFrontEndGameMode::StopMovie()
 {
 	if (MoviePlayer) MoviePlayer->Close();
+	if (MovieSound) MovieSound->Stop();
 	bMovieStarted = false;
 	if (Camera) Camera->GetCameraComponent()->bConstrainAspectRatio = true;
 }

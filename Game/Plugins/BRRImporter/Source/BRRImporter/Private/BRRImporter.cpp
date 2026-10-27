@@ -207,6 +207,7 @@ namespace
 		UMaterial* Display = nullptr;  // replaces the tonemapper: scene colour out as sRGB, untouched
 		UTexture2D* FlatDetail = nullptr; // a page's normal/roughness map where it has no upscale: flat, average
 		UTexture2DArray* Ground = nullptr; // the ground materials' detail, a slice per EBRRGround after None
+		UTexture2DArray* GroundAlbedo = nullptr; // their photo colour relative to its mean (the photoreal terrain)
 		UMaterial* Scatter = nullptr;      // the scattered ground detail: the instance's colour, lit (remastered only)
 		UMaterial* TexturedHD = nullptr;   // Textured, tessellated and displaced: the refined terrain's
 		UMaterial* Water = nullptr;        // the remastered look's open water (single layer water)
@@ -218,17 +219,20 @@ namespace
 	// The ground materials Tools/fetch_ground.py packs (normal X/Y, roughness, brightness), one
 	// slice each, in EBRRGround's order. Without them, one neutral slice: no detail, the import
 	// otherwise the same.
-	UTexture2DArray* MakeGroundArray(const FString& PackageName)
+	// Suffix "" is the packed detail (normal X/Y, roughness, brightness); "_albedo" the photo's
+	// colour relative to its mean, halved (Tools/fetch_ground.py) - both linear data.
+	UTexture2DArray* MakeGroundArray(const FString& PackageName, const TCHAR* Suffix = TEXT(""))
 	{
 		static const TCHAR* Kinds[] = { TEXT("dirt"), TEXT("grass"), TEXT("sand"), TEXT("snow"), TEXT("rock"), TEXT("asphalt"), TEXT("regolith") };
 		static_assert(UE_ARRAY_COUNT(Kinds) == int32(EBRRGround::Count) - 1, "a slice per ground kind");
 		const FString Dir = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("../Tools/ground"));
+		const bool bAlbedo = FCString::Strlen(Suffix) > 0;
 		TArray<uint8> Data;
 		int32 Size = 0, Slices = 0;
 		for (const TCHAR* Kind : Kinds)
 		{
 			FImage Image;
-			if (!FImageUtils::LoadImage(*(Dir / Kind + TEXT(".png")), Image) || (Size && (Image.SizeX != Size || Image.SizeY != Size)))
+			if (!FImageUtils::LoadImage(*(Dir / Kind + FString(Suffix) + TEXT(".png")), Image) || (Size && (Image.SizeX != Size || Image.SizeY != Size)))
 			{
 				UE_LOG(LogBRRImport, Warning, TEXT("No ground material %s in %s (Tools/fetch_ground.py): the remastered ground has no detail"), Kind, *Dir);
 				Slices = 0;
@@ -244,7 +248,11 @@ namespace
 			Size = 4;
 			Slices = 1;
 			Data.Reset();
-			for (int32 I = 0; I < 16; ++I) Data.Append({ 191, 128, 128, 128 }); // BGRA: flat, rough 0.75, average
+			for (int32 I = 0; I < 16; ++I)
+			{
+				if (bAlbedo) Data.Append({ 128, 128, 128, 255 }); // BGRA: the mean, neutral
+				else Data.Append({ 191, 128, 128, 128 });         // BGRA: flat, rough 0.75, average
+			}
 		}
 		UTexture2DArray* Texture = NewAsset<UTexture2DArray>(PackageName);
 		Texture->Source.Init(Size, Size, Slices, 1, TSF_BGRA8, Data.GetData());
@@ -334,8 +342,11 @@ namespace
 	// original's colour by its brightness and adding its relief and roughness to the page's own;
 	// fading out by 160 m, where its tiling would show. Returns the colour (float3) and the
 	// detail (float4) to hand ConnectLook in place of the ones given.
+	// Albedo (the refined terrain's only): the ground is coloured as a photo - the kind's albedo
+	// grain over a tint the importer averages from the original art at each vertex (the vertex
+	// colour) - instead of the art's 32-pixel tiles, whose edges showed every triangle.
 	TPair<UMaterialExpression*, UMaterialExpression*> AddGround(UMaterial* Mat, UMaterialParameterCollection* Collection, UTexture2DArray* Ground,
-		UMaterialExpression* Colour, int32 ColourOutput, UMaterialExpression* Detail, bool bDisplace = false)
+		UMaterialExpression* Colour, int32 ColourOutput, UMaterialExpression* Detail, bool bDisplace = false, UTexture2DArray* Albedo = nullptr)
 	{
 		auto Make = [Mat](UClass* Class, int32 X, int32 Y) { return UMaterialEditingLibrary::CreateMaterialExpression(Mat, Class, X, Y); };
 		auto Coordinate = [&](int32 Index, int32 Y)
@@ -354,6 +365,7 @@ namespace
 		// A sample per corner, of its kind's slice (a kind-less corner reads the first, unused).
 		TArray<TTuple<FName, UMaterialExpression*, int32>> BlendInputs = { MakeTuple(FName(TEXT("A")), Kinds01, 0),
 			MakeTuple(FName(TEXT("B")), Kinds2, 0), MakeTuple(FName(TEXT("W")), Weights, 0) };
+		TArray<TTuple<FName, UMaterialExpression*, int32>> AlbedoInputs = BlendInputs;
 		for (int32 Corner = 0; Corner < 3; ++Corner)
 		{
 			UMaterialExpressionCustom* Coord = MakeCustomOutputs(Mat, FString::Printf(TEXT(
@@ -370,6 +382,17 @@ namespace
 			Sample->SamplerSource = SSM_Wrap_WorldGroupSettings;
 			Sample->Coordinates.Connect(0, Coord);
 			BlendInputs.Add(MakeTuple(FName(*FString::Printf(TEXT("T%d"), Corner)), (UMaterialExpression*)Sample, 5));
+			AlbedoInputs.Add(MakeTuple(FName(*FString::Printf(TEXT("T%d"), Corner)), (UMaterialExpression*)Sample, 5));
+			if (Albedo)
+			{
+				auto* Photo = Cast<UMaterialExpressionTextureSampleParameter2DArray>(Make(UMaterialExpressionTextureSampleParameter2DArray::StaticClass(), -1100, 2300 + Corner * 100));
+				Photo->ParameterName = TEXT("GroundAlbedo");
+				Photo->Texture = Albedo;
+				Photo->SamplerType = SAMPLERTYPE_LinearColor;
+				Photo->SamplerSource = SSM_Wrap_WorldGroupSettings;
+				Photo->Coordinates.Connect(0, Coord);
+				AlbedoInputs.Add(MakeTuple(FName(*FString::Printf(TEXT("L%d"), Corner)), (UMaterialExpression*)Photo, 5));
+			}
 		}
 		// Kind-less corners are neutral (flat, average roughness and brightness): the detail fades
 		// out towards them. Weighted by how near the corner and how high its material stands.
@@ -401,10 +424,48 @@ namespace
 		TArray<TTuple<FName, UMaterialExpression*, int32>> ColourInputs = Common;
 		ColourInputs.Add(MakeTuple(FName(TEXT("C")), Colour, ColourOutput));
 		ColourInputs.Add(MakeTuple(FName(TEXT("Wet")), Wet, 0));
-		// Rain-soaked ground reads darker; the darkening rides `on`, so the classic look (R = 0)
-		// never sees it.
-		UMaterialExpressionCustom* NewColour = MakeCustomOutputs(Mat, FString(On) +
-			TEXT("return C.rgb * lerp(1, T.a * 2, on * 0.55) * lerp(1.0, 0.62, Wet * on);"), CMOT_Float3, ColourInputs, 1700);
+		UMaterialExpressionCustom* NewColour = nullptr;
+		if (!Albedo)
+		{
+			// Rain-soaked ground reads darker; the darkening rides `on`, so the classic look
+			// (R = 0) never sees it.
+			NewColour = MakeCustomOutputs(Mat, FString(On) +
+				TEXT("return C.rgb * lerp(1, T.a * 2, on * 0.55) * lerp(1.0, 0.62, Wet * on);"), CMOT_Float3, ColourInputs, 1700);
+		}
+		else
+		{
+			// The photoreal ground. The kinds' albedo grain, blended exactly as the detail is (the
+			// same weights, from the same samples' heights), over the vertex tint - the original
+			// art's colour averaged about each vertex at import, so it runs smoothly across
+			// triangles where the art's tiles changed abruptly. A slow world-space mottle keeps
+			// the tiling from showing at range. Only where the ground has a kind (the decor's
+			// kind-less faces keep their art), only in the remastered look.
+			UMaterialExpressionCustom* Blended = MakeCustomOutputs(Mat, TEXT(
+				"const float4 n = float4(0.5, 0.5, 0.75, 0.5);\n"
+				"float4 t0 = A.x > 0.5 ? T0 : n, t1 = A.y > 0.5 ? T1 : n, t2 = B.x > 0.5 ? T2 : n;\n"
+				"float3 l0 = A.x > 0.5 ? L0.rgb : 0.5, l1 = A.y > 0.5 ? L1.rgb : 0.5, l2 = B.x > 0.5 ? L2.rgb : 0.5;\n"
+				"float3 b = float3(W.x, W.y, saturate(1 - W.x - W.y));\n"
+				"float3 h = b + 0.6 * float3(t0.a, t1.a, t2.a);\n"
+				"float3 w = max(h - (max(h.x, max(h.y, h.z)) - 0.2), 0);\n"
+				"w /= max(w.x + w.y + w.z, 1e-4);\n"
+				"float kinded = (A.x > 0.5 || A.y > 0.5 || B.x > 0.5) ? 1 : 0;\n"
+				"return float4((l0 * w.x + l1 * w.y + l2 * w.z) * 2.0, kinded);"), CMOT_Float4, AlbedoInputs, 2600);
+			ColourInputs.Add(MakeTuple(FName(TEXT("L")), (UMaterialExpression*)Blended, 0));
+			ColourInputs.Add(MakeTuple(FName(TEXT("V")), Make(UMaterialExpressionVertexColor::StaticClass(), -1400, 2700), 0));
+			ColourInputs.Add(MakeTuple(FName(TEXT("P")), Position, 0));
+			NewColour = MakeCustomOutputs(Mat, FString(On) + TEXT(
+				"float3 art = C.rgb * lerp(1, T.a * 2, on * 0.55);\n"
+				"float3 v = saturate(V.rgb);\n"
+				"float3 tint = lerp(pow((v + 0.055) / 1.055, 2.4), v / 12.92, step(v, 0.04045));\n"
+				"float2 q = P.xy / 2600.0;\n"
+				"float2 i = floor(q), f = frac(q); f = f * f * (3 - 2 * f);\n"
+				"float h00 = frac(sin(dot(i, float2(127.1, 311.7))) * 43758.5), h10 = frac(sin(dot(i + float2(1, 0), float2(127.1, 311.7))) * 43758.5);\n"
+				"float h01 = frac(sin(dot(i + float2(0, 1), float2(127.1, 311.7))) * 43758.5), h11 = frac(sin(dot(i + float2(1, 1), float2(127.1, 311.7))) * 43758.5);\n"
+				"float mottle = 0.86 + 0.28 * lerp(lerp(h00, h10, f.x), lerp(h01, h11, f.x), f.y);\n"
+				"float3 photo = tint * L.rgb * mottle;\n"
+				"float p = R > 0.5 ? L.a * 0.92 : 0;\n"
+				"return lerp(art, photo, p) * lerp(1.0, 0.62, Wet * (R > 0.5 ? 1 : 0));"), CMOT_Float3, ColourInputs, 1700);
+		}
 		TArray<TTuple<FName, UMaterialExpression*, int32>> DetailInputs = Common;
 		DetailInputs.Add(MakeTuple(FName(TEXT("D")), Detail, 0));
 		DetailInputs.Add(MakeTuple(FName(TEXT("G")), (UMaterialExpression*)ToTangent, 0));
@@ -579,6 +640,7 @@ namespace
 			M.FlatDetail = Texture;
 		}
 		M.Ground = MakeGroundArray(Root / TEXT("Textures/T_BRR_Ground"));
+		M.GroundAlbedo = MakeGroundArray(Root / TEXT("Textures/T_BRR_GroundAlbedo"), TEXT("_albedo"));
 		{
 			// The scattered grass and stones (ABRRScatter): the ground's colour under each, from the
 			// instance, shaded by the vertex colour (the grass darker at its root). Only the
@@ -811,7 +873,7 @@ namespace
 			UMaterialExpression* Remaster = MakeCollectionValue(Mat, Collection, TEXT("Remaster"), -800, 500);
 			UMaterialExpressionCustom* Colour = MakeCustomOutputs(Mat, TEXT("return lerp(A, B, R);"), CMOT_Float4,
 				{ MakeTuple(FName(TEXT("A")), (UMaterialExpression*)Classic, 5), MakeTuple(FName(TEXT("B")), (UMaterialExpression*)Smooth, 5), MakeTuple(FName(TEXT("R")), Remaster, 0) }, 500);
-			const TPair<UMaterialExpression*, UMaterialExpression*> Ground = AddGround(Mat, Collection, M.Ground, Colour, 0, Detail, bHD);
+			const TPair<UMaterialExpression*, UMaterialExpression*> Ground = AddGround(Mat, Collection, M.Ground, Colour, 0, Detail, bHD, bHD ? M.GroundAlbedo : nullptr);
 			ConnectLook(Mat, Collection, Ground.Key, 0, Ground.Value);
 			auto* Mask = MakeCustomOutputs(Mat, TEXT("return C.a * D;"), CMOT_Float1,
 				{ MakeTuple(FName(TEXT("C")), (UMaterialExpression*)Colour, 0), MakeTuple(FName(TEXT("D")), MakeDrawRange(Mat, Collection), 0) }, 600);
@@ -927,12 +989,13 @@ namespace
 				"  p *= 2.7; a *= 0.4;\n"
 				"}\n"
 				"float edge = sin(saturate(U.y) * 3.14159);\n"
-				"return saturate((n - 0.25) * 1.8) * edge * C;");
+				"return saturate((n - 0.3) * 1.6) * edge * C * 0.7;");
 			UMaterialExpressionCustom* Opacity = MakeCustomOutputs(Mat, Noise, CMOT_Float1,
 				{ MakeTuple(FName(TEXT("C")), Vertex, 4), MakeTuple(FName(TEXT("U")), Uv, 0), MakeTuple(FName(TEXT("P")), Where, 0), MakeTuple(FName(TEXT("T")), Time, 0) }, 0);
 			UMaterialEditingLibrary::ConnectMaterialProperty(Opacity, TEXT(""), MP_Opacity);
-			// A sunlit white (ABRRLook's 10 lux sun gives a white surface about 3, its sky a little more).
-			UMaterialEditingLibrary::ConnectMaterialProperty(MakeCustom(Mat, TEXT("return float3(0.92, 0.96, 0.95) * 4.0;"), CMOT_Float3, {}), TEXT(""), MP_EmissiveColor);
+			// Sunlit white water, a little under a lit white surface: at 4 it glowed over the
+			// river like paint (a play test: "the water looked very odd").
+			UMaterialEditingLibrary::ConnectMaterialProperty(MakeCustom(Mat, TEXT("return float3(0.88, 0.93, 0.93) * 2.2;"), CMOT_Float3, {}), TEXT(""), MP_EmissiveColor);
 			UMaterialEditingLibrary::RecompileMaterial(Mat);
 			SaveAsset(Mat);
 			M.Foam = Mat;
@@ -1503,6 +1566,37 @@ bool BRRImport::ImportLevel(const FBRRImportOptions& Options, FString& OutMapPac
 	// original's heights (FBRRWorld::RefinedTerrain). Drawn only: the original's collides.
 	FBRRMesh RefinedLand, Water, WaterBed;
 	BRR::SplitWater(World, World.RefinedTerrain(4), RefinedLand, Water, WaterBed);
+	{
+		// The photoreal ground's tint (AddGround): each vertex carries the original art's colour
+		// averaged over every triangle about it, weighted by area - the art's tiles become one
+		// smooth field of colour, with no edge where one tile meets the next.
+		struct FSum { FVector3f Rgb = FVector3f::ZeroVector; float W = 0; };
+		TMap<FIntVector, FSum> Sums;
+		auto Key = [](const FVector3f& P) { return FIntVector(FMath::RoundToInt32(P.X * 0.5f), FMath::RoundToInt32(P.Y * 0.5f), FMath::RoundToInt32(P.Z * 0.5f)); };
+		for (const FBRRMeshSection& S : RefinedLand.Sections)
+		{
+			const FBRRImage* Page = World.Atlases.IsValidIndex(S.Atlas) ? &World.Atlases[S.Atlas] : nullptr;
+			for (int32 T = 0; T + 2 < S.Vertices.Num(); T += 3)
+			{
+				const FBRRVertex* V = &S.Vertices[T];
+				const FColor C = Page ? FBRRWorld::AverageTexels(*Page, V[0].UV, V[1].UV, V[2].UV) : V[0].Color;
+				const float Area = ((V[1].Position - V[0].Position) ^ (V[2].Position - V[0].Position)).Size() * 0.5f + 1.f;
+				for (int32 K = 0; K < 3; ++K)
+				{
+					FSum& Sum = Sums.FindOrAdd(Key(V[K].Position));
+					Sum.Rgb += FVector3f(C.R, C.G, C.B) * Area;
+					Sum.W += Area;
+				}
+			}
+		}
+		for (FBRRMeshSection& S : RefinedLand.Sections)
+			for (FBRRVertex& V : S.Vertices)
+				if (const FSum* Sum = Sums.Find(Key(V.Position)); Sum && Sum->W > 0)
+				{
+					const FVector3f Rgb = Sum->Rgb / Sum->W;
+					V.Color = FColor(uint8(FMath::Clamp(Rgb.X, 0.f, 255.f)), uint8(FMath::Clamp(Rgb.Y, 0.f, 255.f)), uint8(FMath::Clamp(Rgb.Z, 0.f, 255.f)), V.Color.A);
+				}
+	}
 	UStaticMesh* TerrainHD = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_TerrainHD"), *Level), RefinedLand, false, ESurface::Refined, true);
 	UStaticMesh* WaterHD = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_WaterHD"), *Level), Water, false);
 	UStaticMesh* WaterBedHD = MakeMesh(Assets, FString::Printf(TEXT("SM_%s_WaterBedHD"), *Level), WaterBed, false, ESurface::Ground, true);
