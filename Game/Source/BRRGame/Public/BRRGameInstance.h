@@ -87,6 +87,9 @@ public:
 	bool bCommentary = true;
 	int32 Look = 1;          // brr.Look
 	int32 ViewCells = 16;    // brr.ViewCells (the classic look's view distance)
+	bool bNativeResolution = false; // brr.DLAA: the remastered look at full resolution, not upscaled
+	bool bFrameGeneration = true;   // brr.FrameGeneration
+	bool bMotionBlur = true;        // r.MotionBlurQuality
 	void ApplySettings() const;
 	void SaveSettings() const;
 };

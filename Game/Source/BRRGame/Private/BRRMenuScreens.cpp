@@ -11,6 +11,9 @@
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Engine/Engine.h"
+#include "GameFramework/GameUserSettings.h"
+#include "HAL/IConsoleManager.h"
 
 // The original's screens, each on its own .SCN (the scripts are quoted where a box id matters).
 // Their order is the game's: CONFSCN -> GLOBESCN -> TRAKSCN (-> CARSCN) -> the race -> RESULSCN.
@@ -523,38 +526,184 @@ namespace
 		}
 	};
 
-	// --- LANDSCN: the display -----------------------------------------------------------------
-	// mbox 0/1/2 the vision distance -/scale/+ (the classic look's brr.ViewCells, 10..22 as the
-	// original tuned it); the second row - the original's texture distance - picks the look here,
-	// classic or remastered. 10 OK.
-	class FDisplayScreen : public FBRRMenuScreen
+	// --- the graphics: a list of its own on LANDSCN's picture -----------------------------------
+	// The original's display screen had two sliders; the remaster has more to set. Each row is a
+	// box: up/down walk them, left/right (or Enter, or a click) change the focused one. The window
+	// and quality rows are UE's GameUserSettings; the rest the game instance's [BRR] settings.
+	class FGraphicsScreen : public FBRRMenuScreen
 	{
 	public:
+		enum ERow { Look, Window, Resolution, VSync, FrameLimit, Quality, Upscaling, FrameGen, MotionBlur, Hdr, ViewDistance, Count };
+		static constexpr int32 OkId = 100;
+		static constexpr double Top = 34, Pitch = 12, LabelX = 28, ValueX = 172;
+		TArray<FIntPoint> Resolutions;
+
 		virtual bool Load() override
 		{
-			FocusOrder = { 10 };
-			HiddenKeys = { TEXT("SCAPE_TEXT"), TEXT("SCAPE_AUTO") };
-			HiddenGroups = { 2, 3 };
-			return LoadScreen(*this, TEXT("LANDSCN"));
+			if (!LoadScreen(*this, TEXT("LANDSCN"))) return false;
+			Scn.Texts.Reset();
+			Scn.AniSprites.Reset();
+			Scn.Keys.Reset();
+			Scn.Boxes.Reset();
+			for (int32 Row = 0; Row < Count; ++Row)
+			{
+				Scn.Boxes.Add({ Row, 20, int32(Top + Row * Pitch) - 2, 280, int32(Pitch) });
+				FocusOrder.Add(Row);
+			}
+			Scn.Boxes.Add({ OkId, 140, int32(Top + int32(Count) * Pitch) + 4, 40, 12 });
+			FocusOrder.Add(OkId);
+			UKismetSystemLibrary::GetSupportedFullscreenResolutions(Resolutions);
+			return true;
+		}
+		static UGameUserSettings* Settings() { return GEngine ? GEngine->GetGameUserSettings() : nullptr; }
+		static bool HasFrameGeneration() { return IConsoleManager::Get().FindConsoleVariable(TEXT("r.Streamline.DLSSG.Enable")) != nullptr; }
+		static const TArray<float>& FrameLimits() { static const TArray<float> L = { 0.f, 30.f, 60.f, 120.f, 144.f, 165.f, 240.f }; return L; }
+
+		FString Label(int32 Row) const
+		{
+			static const TCHAR* Labels[Count] = { TEXT("LOOK"), TEXT("DISPLAY"), TEXT("RESOLUTION"), TEXT("VSYNC"), TEXT("FRAME LIMIT"),
+				TEXT("QUALITY"), TEXT("UPSCALING"), TEXT("FRAME GENERATION"), TEXT("MOTION BLUR"), TEXT("HDR"), TEXT("VIEW DISTANCE") };
+			return Labels[Row];
+		}
+		FString Value(int32 Row) const
+		{
+			UBRRGameInstance* G = Menu->Game();
+			UGameUserSettings* S = Settings();
+			auto OnOff = [](bool b) { return FString(b ? TEXT("ON") : TEXT("OFF")); };
+			switch (Row)
+			{
+			case Look: return G->Look ? TEXT("REMASTERED") : TEXT("CLASSIC");
+			case Window:
+			{
+				const EWindowMode::Type M = S ? S->GetFullscreenMode() : EWindowMode::WindowedFullscreen;
+				return M == EWindowMode::Fullscreen ? TEXT("FULLSCREEN") : M == EWindowMode::Windowed ? TEXT("WINDOWED") : TEXT("BORDERLESS");
+			}
+			case Resolution:
+			{
+				if (!S) return TEXT("-");
+				if (S->GetFullscreenMode() == EWindowMode::WindowedFullscreen) return TEXT("DESKTOP");
+				const FIntPoint R = S->GetScreenResolution();
+				return FString::Printf(TEXT("%d X %d"), R.X, R.Y);
+			}
+			case VSync: return OnOff(S && S->IsVSyncEnabled());
+			case FrameLimit:
+			{
+				const float L = S ? S->GetFrameRateLimit() : 0.f;
+				return L <= 0.f ? FString(TEXT("NONE")) : FString::Printf(TEXT("%d FPS"), FMath::RoundToInt(L));
+			}
+			case Quality:
+			{
+				static const TCHAR* Levels[] = { TEXT("LOW"), TEXT("MEDIUM"), TEXT("HIGH"), TEXT("EPIC"), TEXT("CINEMATIC") };
+				const int32 L = S ? S->GetOverallScalabilityLevel() : -1;
+				return L >= 0 && L <= 4 ? Levels[L] : TEXT("CUSTOM");
+			}
+			case Upscaling: return G->bNativeResolution ? TEXT("NATIVE") : TEXT("QUALITY");
+			case FrameGen: return HasFrameGeneration() ? OnOff(G->bFrameGeneration) : TEXT("N/A");
+			case MotionBlur: return OnOff(G->bMotionBlur);
+			case Hdr: return S && S->SupportsHDRDisplayOutput() ? OnOff(S->IsHDREnabled()) : TEXT("N/A");
+			default: return FString();
+			}
 		}
 		virtual void Draw(FBRRMenuPainter& P) override
 		{
 			UBRRGameInstance* G = Menu->Game();
-			const double Fill = (G->ViewCells - BRR::ViewCellsMin) / double(BRR::ViewCellsMax - BRR::ViewCellsMin);
-			P.Box(112, 58, 96 * Fill, 4, FLinearColor(1.f, 0.85f, 0.1f, 0.85f));
-			P.Text(TEXT("LOOK"), 10, 70, 5, -1, Scn.Palette, 1);
-			P.Text(G->Look ? TEXT("REMASTERED") : TEXT("CLASSIC"), 112, 100, 0, 5, Scn.Palette);
+			const int32 Focused = FocusOrder.IsValidIndex(Focus) ? FocusOrder[Focus] : -1;
+			P.Box(16, 4, 288, 192, FLinearColor(0.f, 0.f, 0.f, 0.6f));
+			P.Text(TEXT("GRAPHICS"), 160 - FBRRMenuPainter::TextWidth(Menu, TEXT("GRAPHICS"), 3) * 0.5, 8, 3, -1, Scn.Palette, 1);
+			for (int32 Row = 0; Row < Count; ++Row)
+			{
+				const double Y = Top + Row * Pitch;
+				const int32 Ramp = Row == Focused ? FBRRMenuPainter::FocusRamp : -1;
+				P.Text(Label(Row), LabelX, Y, 0, Ramp, Scn.Palette);
+				if (Row == ViewDistance)
+				{
+					const double Fill = (G->ViewCells - BRR::ViewCellsMin) / double(BRR::ViewCellsMax - BRR::ViewCellsMin);
+					P.Box(ValueX, Y + 1, 100, 6, FLinearColor(1.f, 1.f, 1.f, 0.25f));
+					P.Box(ValueX, Y + 1, 100 * Fill, 6, FLinearColor(1.f, 0.85f, 0.1f, 0.9f));
+				}
+				else
+				{
+					const FString V = Value(Row);
+					P.Text(Row == Focused ? FString::Printf(TEXT("< %s >"), *V) : V, Row == Focused ? ValueX - 16 : ValueX, Y, 0, Ramp, Scn.Palette);
+				}
+			}
+			P.Text(TEXT("OK"), 152, Top + int32(Count) * Pitch + 6, 0, Focused == OkId ? FBRRMenuPainter::FocusRamp : -1, Scn.Palette);
+			// What the focused row is for, where it does nothing in the look now chosen.
+			const TCHAR* Note = nullptr;
+			if (Focused == ViewDistance && G->Look) Note = TEXT("THE CLASSIC LOOK'S VIEW DISTANCE");
+			else if ((Focused == Upscaling || Focused == FrameGen || Focused == MotionBlur) && !G->Look) Note = TEXT("THE REMASTERED LOOK ONLY");
+			else if (Focused == Quality && Settings() && Settings()->GetOverallScalabilityLevel() >= 0 && Settings()->GetOverallScalabilityLevel() < 2) Note = TEXT("LUMEN NEEDS HIGH OR ABOVE");
+			else if (Focused == Resolution && Settings() && Settings()->GetFullscreenMode() == EWindowMode::WindowedFullscreen) Note = TEXT("BORDERLESS USES THE DESKTOP'S");
+			if (Note) P.Text(Note, 160 - FBRRMenuPainter::TextWidth(Menu, Note, 0) * 0.5, 186, 0, -1, Scn.Palette);
+		}
+		void Change(int32 Row, int32 Dir)
+		{
+			UBRRGameInstance* G = Menu->Game();
+			UGameUserSettings* S = Settings();
+			auto Step = [Dir](int32 Index, int32 Num) { return Num > 0 ? (Index + Dir + Num) % Num : 0; };
+			switch (Row)
+			{
+			case Look: G->Look = G->Look ? 0 : 1; break;
+			case Window:
+				if (S)
+				{
+					// Borderless, fullscreen, windowed.
+					static const EWindowMode::Type Modes[] = { EWindowMode::WindowedFullscreen, EWindowMode::Fullscreen, EWindowMode::Windowed };
+					int32 Index = 0;
+					for (int32 i = 0; i < 3; ++i) if (Modes[i] == S->GetFullscreenMode()) Index = i;
+					const EWindowMode::Type Mode = Modes[Step(Index, 3)];
+					S->SetFullscreenMode(Mode);
+					if (Mode == EWindowMode::WindowedFullscreen) S->SetScreenResolution(S->GetDesktopResolution());
+					else if (Mode == EWindowMode::Windowed && S->GetScreenResolution() == S->GetDesktopResolution() && !Resolutions.IsEmpty())
+					{
+						// A window the size of the desktop is borderless under another name: a size smaller.
+						const FIntPoint D = S->GetDesktopResolution();
+						FIntPoint Best = Resolutions[0];
+						for (const FIntPoint& R : Resolutions) if (R.X < D.X && R.Y < D.Y && R.X * R.Y > Best.X * Best.Y) Best = R;
+						S->SetScreenResolution(Best);
+					}
+				}
+				break;
+			case Resolution:
+				if (S && S->GetFullscreenMode() != EWindowMode::WindowedFullscreen && !Resolutions.IsEmpty())
+				{
+					int32 Index = Resolutions.IndexOfByKey(S->GetScreenResolution());
+					if (Index == INDEX_NONE) Index = Resolutions.Num() - 1;
+					S->SetScreenResolution(Resolutions[Step(Index, Resolutions.Num())]);
+				}
+				break;
+			case VSync: if (S) S->SetVSyncEnabled(!S->IsVSyncEnabled()); break;
+			case FrameLimit:
+				if (S)
+				{
+					const TArray<float>& L = FrameLimits();
+					int32 Index = L.IndexOfByPredicate([S](float F) { return FMath::IsNearlyEqual(F, S->GetFrameRateLimit()); });
+					S->SetFrameRateLimit(L[Step(FMath::Max(Index, 0), L.Num())]);
+				}
+				break;
+			case Quality:
+				if (S) S->SetOverallScalabilityLevel(Step(FMath::Clamp(S->GetOverallScalabilityLevel(), 0, 4), 5));
+				break;
+			case Upscaling: G->bNativeResolution = !G->bNativeResolution; break;
+			case FrameGen: if (HasFrameGeneration()) G->bFrameGeneration = !G->bFrameGeneration; break;
+			case MotionBlur: G->bMotionBlur = !G->bMotionBlur; break;
+			case Hdr: if (S && S->SupportsHDRDisplayOutput()) S->EnableHDRDisplayOutput(!S->IsHDREnabled()); break;
+			case ViewDistance: G->ViewCells = FMath::Clamp(G->ViewCells + Dir * 2, BRR::ViewCellsMin, BRR::ViewCellsMax); break;
+			default: return;
+			}
+			if (S && (Row == Window || Row == Resolution || Row == VSync || Row == FrameLimit || Row == Quality)) S->ApplySettings(false);
+			G->ApplySettings();
 		}
 		virtual void OnBox(int32 Id) override
 		{
-			UBRRGameInstance* G = Menu->Game();
-			if (Id == 0) G->ViewCells = FMath::Max(G->ViewCells - 2, BRR::ViewCellsMin);
-			else if (Id == 2) G->ViewCells = FMath::Min(G->ViewCells + 2, BRR::ViewCellsMax);
-			else if (Id >= 3 && Id <= 5) G->Look = G->Look ? 0 : 1;
-			else if (Id == 10) { OnBack(); return; }
-			G->ApplySettings();
+			if (Id == OkId) { OnBack(); return; }
+			Change(Id, 1);
 		}
-		virtual void OnLeftRight(int32 Dir) override { OnBox(Dir < 0 ? 0 : 2); }
+		virtual void OnLeftRight(int32 Dir) override
+		{
+			const int32 Focused = FocusOrder.IsValidIndex(Focus) ? FocusOrder[Focus] : -1;
+			if (Focused >= 0 && Focused < Count) Change(Focused, Dir);
+		}
 		virtual void OnBack() override
 		{
 			Menu->Game()->SaveSettings();
@@ -576,7 +725,7 @@ namespace
 		}
 		virtual void OnBox(int32 Id) override
 		{
-			if (Id == 2) Menu->Push(MakeShared<FDisplayScreen>());
+			if (Id == 2) Menu->Push(MakeShared<FGraphicsScreen>());
 			else if (Id == 3) Menu->Push(MakeShared<FSoundScreen>());
 			else if (Id == 10) OnBack();
 		}

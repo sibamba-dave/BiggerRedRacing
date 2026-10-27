@@ -48,7 +48,10 @@ its picture stands where the original's 3D globe turns), TRAKSCN (car, preview l
 circuit's music starts here), CARSCN (the vehicle turning in front of its picture, its stats),
 the race, RESULSCN. The championship is TOURN.TXT's seven rounds: win the round's `need` of its
 circuits to go on (ORR's rules; for the session only, as in the original). Options: sound
-(music and effects volumes, commentary) and display (the classic view distance, and the look).
+(music and effects volumes, commentary) and graphics: the look, borderless / fullscreen /
+windowed (borderless by default), resolution, vsync, frame limit, quality (UE's scalability; Lumen
+needs High or above), upscaling (DLSS/TSR quality, or native), frame generation, motion blur, HDR
+and the classic view distance.
 The intro (`VIDEO/INTROSND.RPL`, beside `RACING`) plays first, the victory video (`VICTORY.MVI`)
 after a championship won; any key skips them, `-nointro` leaves the intro out. Both are decoded as
 they play (`FBRRVideo`, from `Tools/brr_video.py`), the intro at the 15 frames a second its sound

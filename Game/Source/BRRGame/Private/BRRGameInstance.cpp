@@ -28,6 +28,9 @@ void UBRRGameInstance::Init()
 	GConfig->GetBool(ConfigSection, TEXT("Commentary"), bCommentary, GGameUserSettingsIni);
 	GConfig->GetInt(ConfigSection, TEXT("Look"), Look, GGameUserSettingsIni);
 	GConfig->GetInt(ConfigSection, TEXT("ViewCells"), ViewCells, GGameUserSettingsIni);
+	GConfig->GetBool(ConfigSection, TEXT("NativeResolution"), bNativeResolution, GGameUserSettingsIni);
+	GConfig->GetBool(ConfigSection, TEXT("FrameGeneration"), bFrameGeneration, GGameUserSettingsIni);
+	GConfig->GetBool(ConfigSection, TEXT("MotionBlur"), bMotionBlur, GGameUserSettingsIni);
 	ApplySettings();
 }
 
@@ -42,6 +45,9 @@ void UBRRGameInstance::ApplySettings() const
 	Set(TEXT("brr.Commentary"), bCommentary ? TEXT("1") : TEXT("0"));
 	Set(TEXT("brr.Look"), FString::FromInt(Look));
 	Set(TEXT("brr.ViewCells"), FString::FromInt(ViewCells));
+	Set(TEXT("brr.DLAA"), bNativeResolution ? TEXT("1") : TEXT("0"));
+	Set(TEXT("brr.FrameGeneration"), bFrameGeneration ? TEXT("1") : TEXT("0"));
+	Set(TEXT("r.MotionBlurQuality"), bMotionBlur ? TEXT("4") : TEXT("0"));
 	BRRAudio::SetVolumes(SoundVolume, MusicVolume);
 }
 
@@ -79,6 +85,9 @@ void UBRRGameInstance::SaveSettings() const
 	GConfig->SetBool(ConfigSection, TEXT("Commentary"), bCommentary, GGameUserSettingsIni);
 	GConfig->SetInt(ConfigSection, TEXT("Look"), Look, GGameUserSettingsIni);
 	GConfig->SetInt(ConfigSection, TEXT("ViewCells"), ViewCells, GGameUserSettingsIni);
+	GConfig->SetBool(ConfigSection, TEXT("NativeResolution"), bNativeResolution, GGameUserSettingsIni);
+	GConfig->SetBool(ConfigSection, TEXT("FrameGeneration"), bFrameGeneration, GGameUserSettingsIni);
+	GConfig->SetBool(ConfigSection, TEXT("MotionBlur"), bMotionBlur, GGameUserSettingsIni);
 	GConfig->Flush(false, GGameUserSettingsIni);
 	ApplySettings();
 }
