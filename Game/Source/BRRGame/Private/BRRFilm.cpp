@@ -4,11 +4,17 @@
 #include "Camera/CameraComponent.h"
 #include "Dom/JsonObject.h"
 #include "HAL/FileManager.h"
+#include "HAL/IConsoleManager.h"
 #include "HAL/PlatformMisc.h"
+#include "Kismet/GameplayStatics.h"
+#include "Misc/App.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
+#include "ShaderCompiler.h"
 #include "UnrealClient.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBRRFilm, Log, All);
@@ -20,7 +26,8 @@ namespace
 
 ABRRFilm::ABRRFilm()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true; // only the path-traced gather uses it, under the pause
+	SetTickableWhenPaused(true);
 }
 
 bool ABRRFilm::Load(const FString& PlanPath, const FString& InOutDir, const FString& Level)
@@ -45,7 +52,23 @@ bool ABRRFilm::Load(const FString& PlanPath, const FString& InOutDir, const FStr
 		Shot.Racer = int32(S->GetNumberField(TEXT("racer")));
 	}
 	OutDir = InOutDir;
-	UE_LOG(LogBRRFilm, Display, TEXT("%s: %d shots to film into %s"), *Level, Shots.Num(), *OutDir);
+	// Path-traced filming: every saved frame converges on a frozen scene before time takes its
+	// next 30 Hz step - the offline route to re-rendering the videos at photo quality.
+	if (FParse::Value(FCommandLine::Get(), TEXT("BRRFilmPT="), PTSamples) && PTSamples > 0)
+	{
+		PTSamples = FMath::Clamp(PTSamples, 4, 1024);
+		if (IConsoleVariable* PT = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.PathTracing"))) PT->Set(1, ECVF_SetByCode);
+		if (IConsoleVariable* Spp = IConsoleManager::Get().FindConsoleVariable(TEXT("r.PathTracing.SamplesPerPixel"))) Spp->Set(PTSamples, ECVF_SetByCode);
+		// Native resolution, as the photo holds it: under an upscaler's jitter the accumulation
+		// never settles.
+		if (IConsoleVariable* Native = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.DLAA"))) Native->Set(1, ECVF_SetByCode);
+		// Something nudges a material parameter every frame even while the world stands paused,
+		// and each nudge would restart the accumulation: filming ignores those (the scene is held
+		// still by the pause; the parameters that matter cannot move).
+		if (IConsoleVariable* Inv = IConsoleManager::Get().FindConsoleVariable(TEXT("r.PathTracing.InvalidateOnMaterialParameterChange"))) Inv->Set(0, ECVF_SetByCode);
+	}
+	UE_LOG(LogBRRFilm, Display, TEXT("%s: %d shots to film into %s%s"), *Level, Shots.Num(), *OutDir,
+		PTSamples > 0 ? *FString::Printf(TEXT(" (path traced, %d samples a frame)"), PTSamples) : TEXT(""));
 	return !Shots.IsEmpty();
 }
 
@@ -109,6 +132,14 @@ void ABRRFilm::Update(const TArray<FTransform>& Racers, double RaceSeconds, ACam
 		Lens->SetFieldOfView(Fov);
 	}
 
+	if (Frame >= 0 && PTSamples > 0)
+	{
+		// The camera is placed for this frame: pause the game - the scene truly stands still, as
+		// the photo mode holds it - and gather, with frames on top for the denoised image to land.
+		Gather = PTSamples + 6;
+		UGameplayStatics::SetGamePaused(GetWorld(), true);
+		return;
+	}
 	if (Frame >= 0)
 	{
 		const FString Path = OutDir / FString::Printf(TEXT("shot_%03d/%04d.png"), Shot.Id, Frame);
@@ -121,4 +152,34 @@ void ABRRFilm::Update(const TArray<FTransform>& Racers, double RaceSeconds, ACam
 		++Current;
 		Frame = -CutSettleFrames - 1;
 	}
+}
+
+void ABRRFilm::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	if (PTSamples <= 0 || Gather <= 0 || !UGameplayStatics::IsGamePaused(GetWorld())) return;
+	// A shader still compiling draws with a stand-in and restarts the samples (as the photo
+	// waits): the gather only counts once nothing is compiling.
+	if (GShaderCompilingManager && GShaderCompilingManager->IsCompiling())
+	{
+		Gather = PTSamples + 6;
+		return;
+	}
+	--Gather;
+	// The screenshot resolves on the frame AFTER its request: it is asked for two held frames
+	// before the pause lifts, so it captures the converged image, not a fresh accumulation.
+	if (Gather == 2 && Current < Shots.Num() && Frame >= 0)
+	{
+		const FString Path = OutDir / FString::Printf(TEXT("shot_%03d/%04d.png"), Shots[Current].Id, Frame);
+		IFileManager::Get().MakeDirectory(*FPaths::GetPath(Path), true);
+		FScreenshotRequest::RequestScreenshot(Path, /*bShowUI=*/false, /*bAddFilenameSuffix=*/false);
+		++Frame;
+		if (Frame >= Shots[Current].Frames)
+		{
+			++Current;
+			Frame = -CutSettleFrames - 1;
+		}
+	}
+	if (Gather > 0) return;
+	UGameplayStatics::SetGamePaused(GetWorld(), false); // one 30 Hz step runs, then the next gather
 }

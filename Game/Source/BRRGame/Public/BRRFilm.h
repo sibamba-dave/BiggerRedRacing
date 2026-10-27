@@ -28,6 +28,10 @@ public:
 	// since the start; negative before it).
 	void Update(const TArray<FTransform>& Racers, double RaceSeconds, ACameraActor* Camera);
 
+	// Path-traced filming gathers under a game pause (the only way the scene truly stands still);
+	// this tick keeps counting while everything else sleeps, saves, and lifts the pause.
+	virtual void Tick(float DeltaSeconds) override;
+
 	static constexpr double FrameSeconds = 1.0 / 30.0;
 
 private:
@@ -40,6 +44,8 @@ private:
 	};
 	TArray<FShot> Shots;
 	FString OutDir;
+	int32 PTSamples = 0;       // -BRRFilmPT=<spp>: each saved frame is path-traced, gathered on held time
+	int32 Gather = 0;          // held frames left before the current one is saved
 	int32 Current = 0;
 	int32 Frame = -13;         // within the current shot; negative while it settles (from -SettleFrames - 1, a cut)
 	FVector Anchor = FVector::ZeroVector; // a trackside camera's place
