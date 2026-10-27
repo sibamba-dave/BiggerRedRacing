@@ -734,7 +734,7 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 	if (Film)
 	{
 		if (APlayerController* PC = GetWorld()->GetFirstPlayerController(); PC && PC->MyHUD) PC->MyHUD->bShowHUD = false;
-		Film->Update(Drawn, Race->HasStarted() ? Race->RaceTime() : -1.0, RaceCamera);
+		Film->Update(Drawn, Race->HasStarted() ? Race->RaceTime() : -1.0, RaceCamera, Photo, Look);
 	}
 	// The hour drifts while the race runs; crossing dusk switches every lamp on or off.
 	if (Weather && Look && Look->IsRemastered() && Weather->Advance(DeltaSeconds, Look))
