@@ -58,5 +58,4 @@ private:
 	TArray<FRacer> Racers;
 	FRandomStream Random{ 1996 };
 	FBRRCardBuffer Cards;
-	bool bShown = true;
 };

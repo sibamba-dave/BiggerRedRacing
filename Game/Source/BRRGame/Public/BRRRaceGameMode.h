@@ -125,6 +125,11 @@ private:
 	void SyncRaceLights();
 	void HandleLookChanged(bool bRemastered);
 
+	// The effects opt out of ray tracing for Lumen's sake, but the path-traced photo draws ONLY
+	// the ray-tracing scene: while one is taken they go back in.
+	void SetEffectsVisibleInRayTracing(bool bVisible);
+	bool bPhotoWasBusy = false;
+
 	// The billboards, turned to the camera every frame.
 	UPROPERTY()
 	TObjectPtr<ABRRSprites> Sprites;

@@ -53,5 +53,4 @@ private:
 	float Mist = 0;            // fog density
 	FVector Wind = FVector::ZeroVector; // cm/s
 	FRandomStream Random;
-	bool bShown = true;
 };

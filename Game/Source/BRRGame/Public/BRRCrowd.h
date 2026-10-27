@@ -44,5 +44,4 @@ private:
 	TObjectPtr<UMaterialInterface> ClothMaterial;
 
 	int32 PeopleCount = 0;
-	bool bShown = true;
 };

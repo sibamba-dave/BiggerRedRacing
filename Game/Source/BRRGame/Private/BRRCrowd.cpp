@@ -176,9 +176,7 @@ void ABRRCrowd::Build(const FBRRWorld& World, const TArray<FVector>& Lines)
 void ABRRCrowd::Update(bool bOn)
 {
 	bOn = bOn && CVarCrowds.GetValueOnGameThread() != 0;
-	if (bOn != bShown)
-	{
-		bShown = bOn;
-		SetActorHiddenInGame(!bOn);
-	}
+	// Against the actor's real state, not a cache: the look sweep (ABRRLook::Apply) un-hides every
+	// remaster-only actor, and a cache would leave the stands full with brr.Crowds 0.
+	if (bOn == IsHidden()) SetActorHiddenInGame(!bOn);
 }

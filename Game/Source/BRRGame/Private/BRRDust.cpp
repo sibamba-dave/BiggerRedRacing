@@ -31,7 +31,7 @@ void ABRRDust::Build(const FBRRWorld& World)
 	if (Material)
 	{
 		// The one section, at capacity, once: frames only refill it (FBRRCardBuffer).
-		Cards.Create(Haze, 0, MaxPuffs);
+		Cards.Create(Haze, 0, MaxPuffs * 2); // a puff is a quad: two triangles
 		Haze->SetMaterial(0, Material);
 	}
 	Rows = World.MapHeight;
@@ -80,11 +80,9 @@ void ABRRDust::Update(const TArray<FTransform>& Poses, const FVector& CameraRigh
 {
 	static const IConsoleVariable* Effects = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.Effects"));
 	bOn = bOn && (!Effects || Effects->GetInt() != 0);
-	if (bOn != bShown)
-	{
-		bShown = bOn;
-		SetActorHiddenInGame(!bOn);
-	}
+	// Against the actor's real state, not a cache: the look sweep (ABRRLook::Apply) un-hides every
+	// remaster-only actor, and a cache would leave this one showing with its own gate off.
+	if (bOn == IsHidden()) SetActorHiddenInGame(!bOn);
 	if (!bOn || !Material || Rows == 0)
 	{
 		Puffs.Reset();

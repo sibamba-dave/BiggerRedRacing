@@ -40,7 +40,7 @@ void ABRRWake::Build(const FBRRWorld& World)
 	else
 	{
 		// The one section, at capacity, once: frames only refill it (FBRRCardBuffer).
-		Cards.Create(Foam, 0, 4096);
+		Cards.Create(Foam, 0, 8192); // in triangles: 4,096 quads, over twice the worst case seen
 		Foam->SetMaterial(0, Material);
 	}
 	Rows = World.MapHeight;
@@ -151,11 +151,9 @@ void ABRRWake::Update(const TArray<FTransform>& Poses, float DeltaSeconds, bool 
 {
 	static const IConsoleVariable* Effects = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.Effects"));
 	bOn = bOn && (!Effects || Effects->GetInt() != 0);
-	if (bOn != bShown)
-	{
-		bShown = bOn;
-		SetActorHiddenInGame(!bOn);
-	}
+	// Against the actor's real state, not a cache: the look sweep (ABRRLook::Apply) un-hides every
+	// remaster-only actor, and a cache would leave this one showing with its own gate off.
+	if (bOn == IsHidden()) SetActorHiddenInGame(!bOn);
 	if (!bOn || !Material || Rows == 0)
 	{
 		Trails.Reset();
@@ -300,7 +298,7 @@ void ABRRWake::Update(const TArray<FTransform>& Poses, float DeltaSeconds, bool 
 		{
 			int32 Crumbs = 0, OnWater = 0;
 			for (const FTrail& T : Trails) Crumbs += T.Crumbs.Num(), OnWater += T.bOnWater;
-			UE_LOG(LogBRRWake, Display, TEXT("wake: %d on the water, %d points, %d splashes, %d quads"), OnWater, Crumbs, Splashes.Num(), Cards.Used);
+			UE_LOG(LogBRRWake, Display, TEXT("wake: %d on the water, %d points, %d splashes, %d quads"), OnWater, Crumbs, Splashes.Num(), Cards.Used / 2);
 		}
 	}
 	Cards.Commit(Foam, 0);

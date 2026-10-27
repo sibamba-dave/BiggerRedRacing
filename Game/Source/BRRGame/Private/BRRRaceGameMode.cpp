@@ -439,6 +439,10 @@ void ABRRRaceGameMode::BuildRaceLights(const FBRRWorld& World, const TArray<FVec
 		Glow->SetCastShadows(false);
 		Glow->RegisterComponent();
 	}
+	// The glows were created visible, after the first UpdateStartLights already ran: re-sync, or
+	// all four shine through the whole first red phase.
+	ShownStartLight = -1;
+	UpdateStartLights();
 
 	// A spot under each lamp post's head, the ones nearest where the racing goes first.
 	TArray<BRR::FBRRLampHead> Lamps = BRR::FindLamps(World);
@@ -491,6 +495,13 @@ void ABRRRaceGameMode::HandleLookChanged(bool bRemastered)
 	// The dual-look wrecks and animated decor switch their drawn set with the look.
 	if (Wrecks) Wrecks->SetLook(bRemastered);
 	if (AnimDecor) AnimDecor->SetLook(bRemastered);
+}
+
+void ABRRRaceGameMode::SetEffectsVisibleInRayTracing(bool bVisible)
+{
+	for (AActor* A : TArray<AActor*>{ Sprites, Particles, Crowd, Weather, Dust, Wake })
+		if (A)
+			A->ForEachComponent<UPrimitiveComponent>(false, [bVisible](UPrimitiveComponent* P) { P->SetVisibleInRayTracing(bVisible); });
 }
 
 void ABRRRaceGameMode::Tick(float DeltaSeconds)
@@ -652,6 +663,13 @@ void ABRRRaceGameMode::Tick(float DeltaSeconds)
 				if (PhotoAt >= 0) PhotoAt = -2; // taken: quit once it is saved
 			}
 			if (PhotoAt == -2 && Photo && !Photo->IsBusy() && !Photo->LastSaved().IsEmpty()) FPlatformMisc::RequestExit(false, TEXT("BRRPhoto"));
+		}
+		// While the path tracer gathers a photo, the effects rejoin the ray-tracing scene it
+		// draws from; the raster race then takes them back out.
+		if (const bool bPhotoBusy = Photo && Photo->IsBusy(); bPhotoBusy != bPhotoWasBusy)
+		{
+			bPhotoWasBusy = bPhotoBusy;
+			SetEffectsVisibleInRayTracing(bPhotoBusy);
 		}
 		Look->Apply(CVarLook.GetValueOnGameThread() != 0, CVarPathTracing.GetValueOnGameThread() != 0, CVarFrameGeneration.GetValueOnGameThread() != 0,
 			CVarDlaa.GetValueOnGameThread() != 0);

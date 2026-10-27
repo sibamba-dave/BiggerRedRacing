@@ -131,11 +131,9 @@ void ABRRWeather::Update(const FVector& CameraLocation, bool bOn)
 {
 	static const IConsoleVariable* Effects = IConsoleManager::Get().FindConsoleVariable(TEXT("brr.Effects"));
 	const bool bShow = bOn && Fall->GetNumSections() > 0 && (!Effects || Effects->GetInt() != 0);
-	if (bShow != bShown)
-	{
-		bShown = bShow;
-		SetActorHiddenInGame(!bShow);
-	}
+	// Against the actor's real state, not a cache: the look sweep (ABRRLook::Apply) un-hides every
+	// remaster-only actor, and a cache would leave the rain box showing wherever it last stood.
+	if (bShow == IsHidden()) SetActorHiddenInGame(!bShow);
 	// The box rides with the camera; the drops fall and wrap inside it, in the shader.
 	if (bShow) SetActorLocation(CameraLocation - FVector(BoxSize * 0.5f, BoxSize * 0.5f, BoxHeight * 0.6f));
 }
