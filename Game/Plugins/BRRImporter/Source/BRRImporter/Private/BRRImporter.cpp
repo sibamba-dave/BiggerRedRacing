@@ -381,6 +381,10 @@ namespace
 			Sample->SamplerType = SAMPLERTYPE_LinearColor;
 			Sample->SamplerSource = SSM_Wrap_WorldGroupSettings;
 			Sample->Coordinates.Connect(0, Coord);
+			// A mip softer than the screen asks: the 3 m tiles' pebbles otherwise alias into a
+			// crawl as the camera moves (a play test).
+			Sample->MipValueMode = TMVM_MipBias;
+			Sample->ConstMipValue = 1;
 			BlendInputs.Add(MakeTuple(FName(*FString::Printf(TEXT("T%d"), Corner)), (UMaterialExpression*)Sample, 5));
 			AlbedoInputs.Add(MakeTuple(FName(*FString::Printf(TEXT("T%d"), Corner)), (UMaterialExpression*)Sample, 5));
 			if (Albedo)
@@ -391,6 +395,8 @@ namespace
 				Photo->SamplerType = SAMPLERTYPE_LinearColor;
 				Photo->SamplerSource = SSM_Wrap_WorldGroupSettings;
 				Photo->Coordinates.Connect(0, Coord);
+				Photo->MipValueMode = TMVM_MipBias;
+				Photo->ConstMipValue = 1;
 				AlbedoInputs.Add(MakeTuple(FName(*FString::Printf(TEXT("L%d"), Corner)), (UMaterialExpression*)Photo, 5));
 			}
 		}
@@ -401,7 +407,7 @@ namespace
 			"float4 t0 = A.x > 0.5 ? T0 : n, t1 = A.y > 0.5 ? T1 : n, t2 = B.x > 0.5 ? T2 : n;\n"
 			"float3 b = float3(W.x, W.y, saturate(1 - W.x - W.y));\n"
 			"float3 h = b + 0.6 * float3(t0.a, t1.a, t2.a);\n"
-			"float3 w = max(h - (max(h.x, max(h.y, h.z)) - 0.2), 0);\n"
+			"float3 w = max(h - (max(h.x, max(h.y, h.z)) - 0.35), 0);\n"
 			"w /= max(w.x + w.y + w.z, 1e-4);\n"
 			"return t0 * w.x + t1 * w.y + t2 * w.z;"), CMOT_Float4, BlendInputs, 1600);
 		// The sample's normal (DirectX: X along u, Y along v) into the world, by the projection's axes.
@@ -446,7 +452,7 @@ namespace
 				"float3 l0 = A.x > 0.5 ? L0.rgb : 0.5, l1 = A.y > 0.5 ? L1.rgb : 0.5, l2 = B.x > 0.5 ? L2.rgb : 0.5;\n"
 				"float3 b = float3(W.x, W.y, saturate(1 - W.x - W.y));\n"
 				"float3 h = b + 0.6 * float3(t0.a, t1.a, t2.a);\n"
-				"float3 w = max(h - (max(h.x, max(h.y, h.z)) - 0.2), 0);\n"
+				"float3 w = max(h - (max(h.x, max(h.y, h.z)) - 0.35), 0);\n"
 				"w /= max(w.x + w.y + w.z, 1e-4);\n"
 				"float kinded = (A.x > 0.5 || A.y > 0.5 || B.x > 0.5) ? 1 : 0;\n"
 				"return float4((l0 * w.x + l1 * w.y + l2 * w.z) * 2.0, kinded);"), CMOT_Float4, AlbedoInputs, 2600);
@@ -462,7 +468,11 @@ namespace
 				"float h00 = frac(sin(dot(i, float2(127.1, 311.7))) * 43758.5), h10 = frac(sin(dot(i + float2(1, 0), float2(127.1, 311.7))) * 43758.5);\n"
 				"float h01 = frac(sin(dot(i + float2(0, 1), float2(127.1, 311.7))) * 43758.5), h11 = frac(sin(dot(i + float2(1, 1), float2(127.1, 311.7))) * 43758.5);\n"
 				"float mottle = 0.86 + 0.28 * lerp(lerp(h00, h10, f.x), lerp(h01, h11, f.x), f.y);\n"
-				"float3 photo = tint * L.rgb * mottle;\n"
+				// The photo's grain only near: past ~25 m it is finer than a pixel and crawled like
+				// static in motion (a play test). It fades out by ~105 m to the smooth tint (still
+				// seam-free), and is a little softened even close.
+				"float grain = saturate(1 - (Z - 2500) / 8000) * 0.85;\n"
+				"float3 photo = tint * lerp(1.0, L.rgb, grain) * mottle;\n"
 				"float p = R > 0.5 ? L.a * 0.92 : 0;\n"
 				"return lerp(art, photo, p) * lerp(1.0, 0.62, Wet * (R > 0.5 ? 1 : 0));"), CMOT_Float3, ColourInputs, 1700);
 		}
@@ -954,10 +964,23 @@ namespace
 				UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionScalarParameter::StaticClass(), -800, 450));
 			Brightness->ParameterName = TEXT("Brightness");
 			Brightness->DefaultValue = 2.5f;
+			// Foam (FBRRWorld::bSplashes): the water tracks' spray, whose sheet is olive and
+			// near-black - a dark blob against the water (a play test). Remastered, it is white
+			// water instead: the sprite's shape and brightness, its dark texels see-through.
+			auto* Foam = Cast<UMaterialExpressionScalarParameter>(
+				UMaterialEditingLibrary::CreateMaterialExpression(Mat, UMaterialExpressionScalarParameter::StaticClass(), -800, 500));
+			Foam->ParameterName = TEXT("Foam");
+			Foam->DefaultValue = 0.f;
 			UMaterialExpression* Remaster = MakeCollectionValue(Mat, Collection, TEXT("Remaster"), -800, 550);
-			UMaterialExpressionCustom* Colour = MakeCustomOutputs(Mat, TEXT("return R > 0.5 ? float4(B.rgb * L, saturate(B.a * 1.3) * 0.6) : float4(A.rgb, A.a > 0.5);"), CMOT_Float4,
+			UMaterialExpressionCustom* Colour = MakeCustomOutputs(Mat, TEXT(
+				"if (R < 0.5) return float4(A.rgb, A.a > 0.5);\n"
+				"float l = dot(B.rgb, float3(0.3, 0.59, 0.11));\n"
+				"float3 c = lerp(B.rgb, 0.8 + 0.2 * saturate(l * 4), F);\n"
+				"float a = saturate(B.a * 1.3) * 0.6 * lerp(1.0, smoothstep(0.015, 0.1, l), F);\n"
+				"return float4(c * L, a);"), CMOT_Float4,
 				{ MakeTuple(FName(TEXT("A")), (UMaterialExpression*)Classic, 5), MakeTuple(FName(TEXT("B")), (UMaterialExpression*)Smooth, 5),
-				  MakeTuple(FName(TEXT("L")), (UMaterialExpression*)Brightness, 0), MakeTuple(FName(TEXT("R")), Remaster, 0) }, 500);
+				  MakeTuple(FName(TEXT("L")), (UMaterialExpression*)Brightness, 0), MakeTuple(FName(TEXT("R")), Remaster, 0),
+				  MakeTuple(FName(TEXT("F")), (UMaterialExpression*)Foam, 0) }, 500);
 			UMaterialEditingLibrary::ConnectMaterialProperty(MakeCustom(Mat, TEXT("return C.rgb;"), CMOT_Float3, { { TEXT("C"), Colour } }), TEXT(""), MP_EmissiveColor);
 			auto* Mask = MakeCustomOutputs(Mat, TEXT("return C.a * D;"), CMOT_Float1,
 				{ MakeTuple(FName(TEXT("C")), (UMaterialExpression*)Colour, 0), MakeTuple(FName(TEXT("D")), MakeDrawRange(Mat, Collection), 0) }, 600);
@@ -1172,6 +1195,7 @@ namespace
 				MI->SetTextureParameterValueEditorOnly(FMaterialParameterInfo(TEXT("AtlasHD")), Up->Key ? Up->Key : Texture);
 				MI->SetTextureParameterValueEditorOnly(FMaterialParameterInfo(TEXT("AtlasDetail")), Up->Value ? Up->Value : Masters.FlatDetail);
 			}
+			if (Surface == ESurface::Effect && World->bSplashes) MI->SetScalarParameterValueEditorOnly(FMaterialParameterInfo(TEXT("Foam")), 1.f);
 			if (bTwoSided)
 			{
 				MI->BasePropertyOverrides.bOverride_TwoSided = true;

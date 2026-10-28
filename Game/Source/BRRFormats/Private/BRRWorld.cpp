@@ -610,6 +610,7 @@ bool FBRRWorld::Load(const FString& DataDir, const FString& Level, const TArray<
 			bigred::build_particle_visuals(Spots, *EnvArchive, Scene);
 			Out.ParticleAtlasBase = Before;
 			Out.ParticleAtlasCount = Scene.atlas_count - Before;
+			for (const bigred::SpotEffect& Spot : Spots) Out.bSplashes |= Spot.shape == "BIGSPL" || Spot.shape == "SPLASH2";
 		}
 
 		const size_t PageBytes = size_t(BRR::AtlasWidth) * BRR::AtlasHeight * 4;

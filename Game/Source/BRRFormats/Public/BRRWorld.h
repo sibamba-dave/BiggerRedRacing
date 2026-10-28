@@ -194,6 +194,9 @@ struct BRRFORMATS_API FBRRWorld
 	// from these pages (FBRRRace::SetParticleAtlasBase).
 	int32 ParticleAtlasBase = INDEX_NONE;
 	int32 ParticleAtlasCount = 0;
+	// The theme throws up water (a BIGSPL or SPLASH2 spot: the WATER tracks). Its sheets' spray is
+	// drawn olive and near-black, which the remastered look shows as white foam instead.
+	bool bSplashes = false;
 
 	TArray<FColor> Palette;          // the level's 256 colours (MAP.COL)
 	TArray<FColor> SkyStrip;         // 18 sky colours: SkyBandDegrees order, then ground near, ground far
